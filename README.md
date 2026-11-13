@@ -60,13 +60,15 @@ Important boundaries:
 These pairings build on the previous use-case assignments. Confirm them at kickoff.
 They coordinate work; code remains collectively owned.
 
-| Pair | Initial scope |
-| --- | --- |
-| Julian + Jolin | UC01/UC02 — resources and delivery requests; C03/C04 |
-| Ye + Zecheng | UC03/UC07 — initial planning and replanning; C05 |
-| Shixian + Oscar | UC04/UC08 — assignment and negotiation; C08 |
-| Bruno + Alejandro | UC05/UC06 — monitoring and disruption detection; C06/C07 |
-| Qingyuan + Bangchen | UC09/UC10 — retrieval and explanations; C09/C10 |
+
+| Pair / developer | Assigned scope | Components |
+|---|---|---|
+| **Julian + Jolin** | UC01 Register logistics resource; UC02 Submit delivery request | C03, C04 |
+| **Ye + Zecheng** | UC03 Generate delivery plan; UC07 Replan deliveries | C05 |
+| **Shixian + Oscar** | UC04 Assign vehicle; UC08 Negotiate resource allocation | C08 |
+| **Bruno + Alejandro** | UC05 Monitor city conditions; UC06 Detect disruption | C06, C07 |
+| **Qingyuan + Bangchen** | UC09 Query logistics knowledge; UC10 Explain logistics decision | C09, C10 |
+| **Jolin** | UC11 Monitor KPIs; UC12 Replay simulation | C11, C12 |
 
 UC11 and UC12 remain assigned to Jolin until the team agrees a handover. The proposed
 support split is UC11 to Qingyuan/Bangchen and UC12 to Bruno/Alejandro, with Jolin
