@@ -1,0 +1,98 @@
+name: Technical task
+description: Track bootstrap, contracts, tests, documentation, or a focused refactor.
+title: "[Task]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Define one small deliverable and how completion will be checked.
+        Use a user story for user-visible behaviour or a bug report for incorrect behaviour.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Task category
+      options:
+        - Bootstrap or tooling
+        - API, event, or shared model contract
+        - Database migration
+        - Test or integration work
+        - Documentation
+        - Refactor
+        - Other technical work
+    validations:
+      required: true
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective and scope
+      description: What will this task deliver, why is it needed, and what is outside its scope?
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: Use cases and components
+      description: List relevant UC and C identifiers, or identify this as cross-cutting repository work.
+      placeholder: "UC identifiers; C identifiers; or Repository-wide bootstrap"
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Deliverables and acceptance criteria
+      description: List concrete outputs and observable conditions for completion.
+      placeholder: |
+        - Deliverable:
+        - Completion criterion:
+    validations:
+      required: true
+
+  - type: input
+    id: collaboration
+    attributes:
+      label: Pair and reviewer
+      description: Name both pair members and a reviewer outside the pair. Use "To be assigned" for backlog items and update before starting.
+      placeholder: "Pair: @member + @member; reviewer or consuming pair: ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and coordination
+      description: Link related issues and identify shared-file or migration coordination. State "No known dependencies" when applicable.
+      placeholder: |
+        Depends on: #...
+        Affected pairs and shared files:
+        Decisions or agreements still needed:
+    validations:
+      required: true
+
+  - type: textarea
+    id: contract_changes
+    attributes:
+      label: Contract changes, if applicable
+      description: For API, event, or shared-model changes, record the proposal and obtain producer/consumer agreement before implementation.
+      placeholder: |
+        Producing and consuming components/pairs:
+        Schema path in contracts/ and version:
+        Fields, types, validation, identifier formats, timestamps, units, and statuses:
+        Valid example and relevant error examples:
+        Compatibility or transition plan:
+        Agreements still needed:
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan and limitations
+      description: Describe checks or a repeatable demonstration suitable for this task. Identify synthetic data, test doubles, and incomplete integrations where relevant.
+      placeholder: |
+        Checks and expected results:
+        Integration or demonstration, if relevant:
+        Simulated inputs, test doubles, or limitations:
+    validations:
+      required: true

@@ -1,0 +1,83 @@
+name: User story
+description: Define a small user-visible outcome with acceptance examples.
+title: "[Story]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep the story small enough for one pair to complete and integrate.
+        Agree affected shared contracts with their producers and consumers before coding.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+      description: Who needs this behaviour, what should they be able to do, and why?
+      placeholder: Describe the outcome and its value to the actor.
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: Use cases and components
+      description: List the relevant UC and C identifiers, including affected collaborators.
+      placeholder: "UC identifiers; C identifiers; related architecture section"
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance examples
+      description: Describe observable success, boundaries, and relevant failure cases.
+      placeholder: |
+        - Given ..., when ..., then ...
+        - If ... fails or is unavailable, then ...
+    validations:
+      required: true
+
+  - type: input
+    id: collaboration
+    attributes:
+      label: Pair and reviewer
+      description: Name both pair members and a reviewer outside the pair. Use "To be assigned" for backlog items and update before coding.
+      placeholder: "Pair: @member + @member; reviewer or consuming pair: ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and shared changes
+      description: Link related issues and identify API, event, schema, migration, or shared-file changes. State "No known dependencies" when applicable.
+      placeholder: |
+        Depends on: #...
+        Shared changes and affected producer/consumer pairs:
+        Agreements still needed:
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: How will the pair check the acceptance examples and demonstrate integrated behaviour? Include relevant failure checks.
+      placeholder: |
+        Behavioural tests:
+        Contract/integration checks, if relevant:
+        Repeatable demonstration:
+    validations:
+      required: true
+
+  - type: textarea
+    id: data_and_integrations
+    attributes:
+      label: Data and integrations
+      description: Identify real providers, synthetic data, recorded inputs, and test doubles. Note what must be integrated for the demonstration, or state "Not applicable".
+      placeholder: |
+        Inputs and their source:
+        Simulated behaviour or test doubles:
+        Integration work and known limitations:
+    validations:
+      required: true
