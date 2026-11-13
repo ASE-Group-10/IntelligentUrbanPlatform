@@ -97,6 +97,9 @@ independently deployed services.
 4. Create a feature branch from the latest `develop`.
 5. Implement with your partner, test, and open a pull request into `develop`.
 
+For guidance on choosing between User story, Technical task, and Bug report,
+see [Choosing an issue template](CONTRIBUTION.md#choosing-an-issue-template).
+
 Replace `<REPOSITORY_URL>` with the real team repository URL:
 
 ```sh

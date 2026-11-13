@@ -70,6 +70,49 @@ Before coding, record:
 Select one active story per pair. Technical coordination ownership does not prevent
 another pair from improving a component through the same review process.
 
+### Choosing an issue template
+
+When opening a new issue, choose the template that matches the work. Each issue
+should describe a small task, its purpose, and how completion will be checked.
+
+1. **[User story](.github/ISSUE_TEMPLATE/01_user_story.yml) - add a capability for a user.**
+   Use this when someone needs to do something new or receive useful information
+   from the platform. Focus on the user outcome and observable acceptance examples.
+
+   **Example:** `View disruptions affecting active deliveries`. The Logistics
+   Operator needs to see which disruptions affect their active deliveries. Describe
+   the expected behaviour and examples that demonstrate it works.
+
+2. **[Technical task](.github/ISSUE_TEMPLATE/03_technical_task.yml) - complete technical or supporting work.**
+   Use this for configuration, API/event/shared-model contracts, database
+   migrations, tests, documentation, or refactoring. Define concrete deliverables
+   and how they will be verified.
+
+   **Example:** `Define the CityStateUpdated event contract`. C06 and C07 need an
+   agreed event structure before implementing their integration. Identify the
+   producer and consumer, the schema and examples to deliver, and compatibility
+   checks. Obtain agreement from both pairs before implementation. Other examples
+   include setting up Docker Compose or adding CI checks.
+
+3. **[Bug report](.github/ISSUE_TEMPLATE/02_bug_report.yml) - record observed incorrect behaviour.**
+   Use this when something behaves differently from what is expected. Include
+   reproduction steps, expected and actual results, the version/environment, and
+   sanitised evidence where available. You do not need to know the solution before
+   reporting the bug.
+
+   **Hypothetical example:** `Duplicate disruption records after repeated event delivery`.
+   Receiving the same event twice creates two disruption records instead of one.
+   Record the starting state and steps that reproduce the problem.
+
+Prepare user stories and technical tasks before implementation. Report bugs when
+they are observed. Backlog items can use `To be assigned` for the pair/reviewer;
+agree both pair members and an outside reviewer before work starts.
+
+Issues can be related: a user story may depend on a technical task, and testing
+that functionality may reveal a bug. Link related issues and dependencies. We do
+not need all three templates for every change; choose the one that best describes
+the work.
+
 ## 4. Agree models and contracts before parallel implementation
 
 Agree shared domain meanings together; agree API/event fields between their producer
