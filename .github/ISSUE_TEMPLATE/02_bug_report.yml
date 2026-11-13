@@ -1,0 +1,87 @@
+name: Bug report
+description: Report incorrect behaviour with reproduction steps and evidence.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the observed behaviour and a repeatable example where possible.
+        Remove credentials and personal data from logs, screenshots, and sample inputs.
+        The eventual fix must include a regression test; a test is not required to report the bug.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem
+      description: What went wrong, and which workflow is affected?
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: Use cases and components
+      description: List relevant UC and C identifiers if known.
+      placeholder: "UC identifiers; C identifiers; or Unknown"
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the starting state and relevant inputs. If intermittent, record frequency and what is known.
+      placeholder: |
+        Starting state and inputs:
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should happen? Link the relevant acceptance example, contract, or requirement if available.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead? Include errors or incorrect state transitions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Version, environment, and data
+      description: Provide enough context to reproduce the result; mark unknown details explicitly.
+      placeholder: |
+        Commit or release:
+        Environment and relevant tool/browser versions:
+        Live, simulation, or replay scope:
+        Real provider, synthetic data, recorded input, or test double:
+        Run/seed, entity versions, or correlation IDs, if relevant:
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and workaround
+      description: Who or what is affected? Does this block another issue, integration, or demonstration? Is there a workaround?
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting evidence
+      description: Add sanitised logs, screenshots, a minimal sample, or a failing test if available.
+
+  - type: input
+    id: collaboration
+    attributes:
+      label: Pair and reviewer
+      description: If known, name both implementing pair members and a reviewer outside the pair. Otherwise assign them before fixing.
+      placeholder: "To be assigned"
