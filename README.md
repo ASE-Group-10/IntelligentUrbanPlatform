@@ -68,7 +68,7 @@ They coordinate work; code remains collectively owned.
 | **Shixian + Oscar** | UC04 Assign vehicle; UC08 Negotiate resource allocation | C08 |
 | **Bruno + Alejandro** | UC05 Monitor city conditions; UC06 Detect disruption | C06, C07 |
 | **Qingyuan + Bangchen** | UC09 Query logistics knowledge; UC10 Explain logistics decision | C09, C10 |
-| **Jolin** | UC11 Monitor KPIs; UC12 Replay simulation | C11, C12 |
+| **Jolin + Qingyuan** | UC11 Monitor KPIs; UC12 Replay simulation | C11, C12 |
 
 UC11 and UC12 remain assigned to Jolin until the team agrees a handover. The proposed
 support split is UC11 to Qingyuan/Bangchen and UC12 to Bruno/Alejandro, with Jolin
