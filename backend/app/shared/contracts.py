@@ -31,8 +31,8 @@ UtcDatetime = Annotated[AwareDatetime, AfterValidator(_require_utc)]
 Version = Annotated[int, Field(ge=1)]
 """Entity version: starts at 1 and increments on every committed change."""
 
-SegmentKey = Annotated[str, Field(min_length=1)]
-"""Road segment key. Format (``seg:<osm_way_id>`` proposed) is not yet agreed."""
+SegmentKey = Annotated[str, Field(pattern=r"^seg:[1-9][0-9]*$")]
+"""Road segment key ``seg:<osm_way_id>`` (OpenStreetMap way ID): ``seg:4471023``."""
 
 Quality = Literal["good", "degraded", "unknown"]
 RunScope = Literal["live", "simulation"]

@@ -172,3 +172,17 @@ class TestReplanOutcome:
 
     def test_no_change_needs_nothing_else(self):
         assert ReplanOutcome.model_validate({"status": "NoChange"}).status == "NoChange"
+
+
+@pytest.mark.parametrize(
+    "key", ["4471023", "seg:", "seg:abc", "seg:-1", "edge:4471023"]
+)
+def test_segment_key_must_be_seg_osm_way_id(key, example):
+    data = example("change_scope.json") | {"segmentKeys": [key]}
+    with pytest.raises(ValidationError):
+        ChangeScope.model_validate(data)
+
+
+def test_replan_is_synchronous_so_publication_pending_is_rejected():
+    with pytest.raises(ValidationError):
+        ReplanOutcome.model_validate({"status": "PublicationPending"})

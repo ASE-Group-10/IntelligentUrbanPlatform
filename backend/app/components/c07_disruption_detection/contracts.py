@@ -26,9 +26,8 @@ ReplanReason = Literal[
     "operational_failure",
     "weather",
 ]
-ReplanOutcomeStatus = Literal[
-    "NoChange", "ReviewRequired", "PlanSaved", "PublicationPending"
-]
+ReplanOutcomeStatus = Literal["NoChange", "ReviewRequired", "PlanSaved"]
+"""requestReplan is synchronous: C05 always answers with a final outcome."""
 DisruptionStatus = Literal["active", "resolved", "unknown"]
 DisruptionCause = Literal[SegmentCause, "resource", "operational"]
 Severity = Literal["low", "medium", "high"]

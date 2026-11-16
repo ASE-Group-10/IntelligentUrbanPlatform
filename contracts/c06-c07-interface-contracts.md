@@ -13,7 +13,7 @@ All pairs need to agree these once, and every contract below uses them.
 | Identifiers | UUID v4 strings for every entity and event ID (`eventId`, `planId`, `disruptionId`, ...) |
 | Versions | Integers starting at 1, incremented on every committed change to an entity |
 | Timestamps | ISO 8601 in UTC with `Z` suffix, e.g. `2026-11-20T08:15:00Z`; UI converts to local time |
-| Road segment key | `seg:<osm_way_id>` (OpenStreetMap way ID), e.g. `seg:4471023` |
+| Road segment key | `seg:<osm_way_id>` (OpenStreetMap way ID), e.g. `seg:4471023`. **Agreed.** |
 | Zone key | `zone:<code>`, using a fixed grid or Dublin postal district (to decide) |
 | Units | Speed in km/h, delay in seconds, rainfall in mm/h, temperature in °C, distance in metres |
 | Quality | Enum `good` / `degraded` / `unknown` on any observed or derived value |
@@ -140,7 +140,7 @@ Zone-level weather (`zoneKey`, `rainMmH`, `tempC`, `windKmh`, `quality`) follows
 
 ## 3. findAffectedWork and requestReplan (with Ye + Zecheng)
 
-C07 asks C05 which unfinished work a change touches, then sends one `requestReplan` per affected plan. Both are synchronous internal calls. C05 owns plans, so it decides what "affected" means for a route; C07 only says where and what changed.
+C07 asks C05 which unfinished work a change touches, then sends one `requestReplan` per affected plan. Both are synchronous internal calls: C05 answers `requestReplan` with a final outcome straight away. For the slice, C07 sends one `findAffectedWork` call per changed segment. C05 owns plans, so it decides what "affected" means for a route; C07 only says where and what changed.
 
 ### findAffectedWork(changeScope) → Result<AffectedWork>
 
@@ -186,7 +186,7 @@ C07 asks C05 which unfinished work a change touches, then sends one `requestRepl
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `status` | enum | yes | `NoChange` / `ReviewRequired` / `PlanSaved` / `PublicationPending` |
+| `status` | enum | yes | `NoChange` / `ReviewRequired` / `PlanSaved` |
 | `newPlanVersion` | integer | when saved | Version of the saved revision |
 | `decisionId` | UUID | when saved | C10 decision record |
 
@@ -297,24 +297,29 @@ Ingestion returns `IngestionReceipt { observationId, disposition, snapshotVersio
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `disruptionId` | UUID | yes | Stable across updates |
-| `version` | integer | yes | Bumped only when impact changes materially |
+| `version` | integer | yes | Bumped only on a material change: status or severity changes, or a new affected plan |
 | `status` | enum | yes | `active` / `resolved` / `unknown` |
 | `cause` | enum | yes | Same as SegmentCondition `cause`, plus `resource` / `operational` |
-| `severity` | enum | yes | `low` / `medium` / `high` |
+| `severity` | enum | yes | `low` / `medium` / `high`. Slice rule: `closed` on a used segment = `high` |
 | `segmentKeys` / `resourceIds` | arrays | yes | What is disrupted |
 | `affectedPlans` | array | yes | `[{ planId, planVersion, replanRequested, replanOutcome }]` |
 | `triggerEventIds` | array of UUID | yes | Every event folded into this record (dedup) |
 | `quality` | enum | yes | Confidence in the classification |
 | `createdAt` / `updatedAt` | timestamp | yes | |
 
-## Open questions for the workshop
+## Decisions (16 Nov 2026)
 
-- [ ] Segment keys: are OSM way IDs fine for C05's routing graph, or does C05 use its own edge IDs?
+- [x] Segment keys: `seg:<osm_way_id>` (OpenStreetMap way ID).
+- [x] Default `maxAgeSeconds` for freshness: 900 s.
+- [x] Material change that bumps a disruption version: status or severity changes, or new affected plans.
+- [x] Severity rule for the slice: `closed` on a used segment = `high`; anything else is out of scope until Iteration 3.
+- [x] `findAffectedWork`: one C05 call per changed segment for now.
+- [x] `requestReplan` is synchronous; `PublicationPending` is dropped from `ReplanOutcome`.
+
+## Still open
+
+- [ ] RabbitMQ exchange and queue naming, and who creates them (proposed: `ulop.events` topic exchange, routing key = `eventType`, shared setup script in the repo).
 - [ ] Zones: fixed grid or postal districts? Only needed for weather, so this can wait.
-- [ ] Default `maxAgeSeconds` for freshness (900 s proposed) and per-source overrides.
-- [ ] What counts as a "material" change that bumps a disruption version (proposed: status or severity changes, or new affected plans).
-- [ ] Severity rules for the slice (proposed: `closed` on a used segment = `high`; anything else is out of scope until Iteration 3).
-- [ ] Is `findAffectedWork` one C05 call per change, or should C07 batch several segments together?
-- [ ] Does C05 accept `requestReplan` synchronously, or return `PublicationPending` and finish in a worker?
-- [ ] RabbitMQ exchange and queue naming, and who creates them (proposed: a shared setup script in the repo).
+- [ ] Per-source freshness overrides.
 - [ ] If we take over UC12: does C12 replay read events from a C06/C07 history table or from a separate run log?
+- [ ] Database: Julian is setting up the Supabase PostgreSQL instance; agree the migration tool and where C06/C07 schemas and migrations live.
