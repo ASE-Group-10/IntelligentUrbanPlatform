@@ -128,6 +128,18 @@ The first implementation issue must add and verify:
 Add executable setup commands here when they have been verified from a clean clone.
 Keep local secrets out of Git; privileged database keys never belong in the browser.
 
+### Local database
+
+Start Postgres and apply migrations with Docker Compose and dbmate:
+
+```sh
+cp .env.example .env
+docker compose up -d db
+docker compose run --rm dbmate up
+```
+
+See [database/README.md](database/README.md) for migration conventions.
+
 ## Suggested repository structure
 
 Create this structure as implementation begins; it is not an inventory of existing files.
