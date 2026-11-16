@@ -10,7 +10,7 @@ Run from the repository root. Requires Docker with Compose.
 
 ```sh
 cp .env.example .env                  # once
-docker compose up -d db               # start Postgres
+docker compose up -d db rabbitmq      # start Postgres and RabbitMQ
 docker compose run --rm dbmate up     # apply pending migrations
 docker compose run --rm dbmate status # list applied/pending migrations
 docker compose run --rm dbmate rollback  # undo the latest migration
@@ -42,3 +42,14 @@ Migrations reach the shared database only from merged `develop`, run by the
 database owner. Set `MIGRATION_DATABASE_URL` in `.env` (see `.env.example`)
 and run `docker compose run --rm dbmate up`. The connection string is a
 secret: keep it in `.env` or the team secret store, never in Git.
+
+## Local RabbitMQ
+
+The `rabbitmq` service provides an isolated broker for local development and
+tests. It exposes AMQP on port `5672` and the management UI on
+`http://localhost:15672` using the credentials in `.env.example`.
+
+Applications running on the host connect with `RABBITMQ_URL`. Applications
+running in Compose should use `amqp://ulop:ulop@rabbitmq:5672/%2F` instead.
+CloudAMQP can be used for shared environments by replacing `RABBITMQ_URL` in
+the environment; never commit that URL or its credentials.
