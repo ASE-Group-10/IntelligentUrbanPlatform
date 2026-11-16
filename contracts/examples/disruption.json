@@ -1,0 +1,21 @@
+{
+  "disruptionId": "d4c3b2a1-0f9e-4d8c-b7a6-5e4d3c2b1a0f",
+  "version": 1,
+  "status": "active",
+  "cause": "roadworks",
+  "severity": "high",
+  "segmentKeys": ["seg:4471023"],
+  "resourceIds": [],
+  "affectedPlans": [
+    {
+      "planId": "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c",
+      "planVersion": 3,
+      "replanRequested": true,
+      "replanOutcome": "PlanSaved"
+    }
+  ],
+  "triggerEventIds": ["5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e"],
+  "quality": "good",
+  "createdAt": "2026-11-20T08:14:32Z",
+  "updatedAt": "2026-11-20T08:14:33Z"
+}
