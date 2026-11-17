@@ -1,0 +1,158 @@
+asyncapi: 3.0.0
+info:
+  title: C03 Resource Management Events
+  version: 1.0.0
+  summary: Asynchronous events emitted by C03.
+  description: |
+    C03 writes these events to its outbox in the same transaction as the
+    resource change. Consumers must deduplicate by `eventId` and use
+    `resourceVersion` for optimistic ordering.
+  contact:
+    name: C03 Resource Management
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    host: localhost
+    protocol: amqp
+    description: Local RabbitMQ topic exchange
+channels:
+  c03Events:
+    address: ulop.events
+    messages:
+      resourceRegistered:
+        $ref: '#/components/messages/ResourceRegistered'
+      resourceUpdated:
+        $ref: '#/components/messages/ResourceUpdated'
+      resourceAvailabilityChanged:
+        $ref: '#/components/messages/ResourceAvailabilityChanged'
+      agentActivationRequested:
+        $ref: '#/components/messages/AgentActivationRequested'
+operations:
+  publishResourceRegistered:
+    action: send
+    channel:
+      $ref: '#/channels/c03Events'
+    title: Publish resource registration
+    messages:
+      - $ref: '#/channels/c03Events/messages/resourceRegistered'
+  publishResourceUpdated:
+    action: send
+    channel:
+      $ref: '#/channels/c03Events'
+    title: Publish resource update
+    messages:
+      - $ref: '#/channels/c03Events/messages/resourceUpdated'
+  publishResourceAvailabilityChanged:
+    action: send
+    channel:
+      $ref: '#/channels/c03Events'
+    title: Publish availability change
+    messages:
+      - $ref: '#/channels/c03Events/messages/resourceAvailabilityChanged'
+  publishAgentActivationRequested:
+    action: send
+    channel:
+      $ref: '#/channels/c03Events'
+    title: Publish agent activation request
+    messages:
+      - $ref: '#/channels/c03Events/messages/agentActivationRequested'
+components:
+  messages:
+    ResourceRegistered:
+      name: ResourceRegistered
+      title: Resource registered
+      summary: A resource profile was committed.
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+      examples:
+        - name: registeredVehicle
+          payload:
+            eventId: 5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e
+            eventType: ResourceRegistered
+            schemaVersion: 1
+            producer: C03
+            emittedAt: '2026-11-17T17:00:00Z'
+            correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+            resourceId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+            resourceVersion: 1
+            payload:
+              resource:
+                id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+                resource_type: vehicle
+                external_identifier: VAN-001
+                observed_availability: available
+              integration_mode: mock
+              scope: development
+    ResourceUpdated:
+      name: ResourceUpdated
+      title: Resource updated
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    ResourceAvailabilityChanged:
+      name: ResourceAvailabilityChanged
+      title: Resource availability changed
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+    AgentActivationRequested:
+      name: AgentActivationRequested
+      title: Agent activation requested
+      payload:
+        $ref: '#/components/schemas/EventEnvelope'
+  schemas:
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - eventType
+        - schemaVersion
+        - producer
+        - emittedAt
+        - correlationId
+        - resourceId
+        - resourceVersion
+        - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique event identifier used for consumer deduplication.
+        eventType:
+          type: string
+          enum:
+            - ResourceRegistered
+            - ResourceUpdated
+            - ResourceAvailabilityChanged
+            - AgentActivationRequested
+        schemaVersion:
+          type: integer
+          minimum: 1
+        producer:
+          type: string
+          const: C03
+        emittedAt:
+          type: string
+          format: date-time
+          description: UTC commit time.
+        correlationId:
+          type: string
+          format: uuid
+        resourceId:
+          type: string
+          format: uuid
+        resourceVersion:
+          type: integer
+          minimum: 1
+        payload:
+          type: object
+          required: [resource, integration_mode, scope]
+          properties:
+            resource:
+              type: object
+              description: The complete ResourceResponse at commit time.
+            integration_mode:
+              type: string
+              const: mock
+            scope:
+              type: string
+              const: development
