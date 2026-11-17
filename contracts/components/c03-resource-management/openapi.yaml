@@ -1,0 +1,718 @@
+openapi: 3.1.0
+info:
+  title: C03 Resource Management API
+  version: 1.0.0
+  summary: Register and manage logistics resources.
+  description: |
+    Synchronous HTTP contract for C03 Resource Management.
+
+    Resource changes are scoped to the authenticated provider. Mutating
+    operations require a manager role, an Idempotency-Key header, and the
+    expected resource version where applicable.
+  contact:
+    name: C03 Resource Management
+servers:
+  - url: /
+    description: Relative URL for the deployed platform
+tags:
+  - name: C03 Resource Management
+    description: C03 logistics resource profiles and agent activation
+paths:
+  /api/v1/resources:
+    post:
+      operationId: registerResource
+      summary: Register a resource
+      tags: [C03 Resource Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/MockLocationResult'
+        - $ref: '#/components/parameters/MockAgentResult'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceCreate'
+            example:
+              external_identifier: VAN-001
+              name: Dublin electric van
+              resource_type: vehicle
+              address: 1 Example Quay, Dublin 1
+              latitude: 53.3498
+              longitude: -6.2603
+              observed_availability: available
+              details:
+                timezone: Europe/Dublin
+                operating_hours:
+                  - day: monday
+                    opens: '08:00:00'
+                    closes: '18:00:00'
+                restrictions: []
+                vehicle_category: van
+                max_weight_kg: 1000
+                max_volume_m3: 12
+                powertrain: electric
+                range_km: 240
+                autonomous: false
+      responses:
+        '201':
+          description: Resource registered.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: listResources
+      summary: List provider resources
+      tags: [C03 Resource Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceType'
+        - $ref: '#/components/parameters/ProfileStatus'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of resources.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/resources/{resource_id}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      operationId: getResource
+      summary: Get a resource
+      tags: [C03 Resource Management]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: updateResource
+      summary: Replace selected resource fields
+      description: |
+        `expected_version` is required for optimistic concurrency. Supplied
+        fields replace the corresponding values; resource type and audit
+        fields remain server controlled.
+      tags: [C03 Resource Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/MockLocationResult'
+        - $ref: '#/components/parameters/MockAgentResult'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceUpdate'
+      responses:
+        '200':
+          description: Resource updated.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/resources/{resource_id}/agent-activation:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    post:
+      operationId: activateAgent
+      summary: Request resource agent activation
+      description: An already active agent is reused without a version bump.
+      tags: [C03 Resource Management]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/MockAgentResult'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivationRequest'
+      responses:
+        '200':
+          description: Agent is active.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceResponse'
+        '202':
+          description: Activation is pending.
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: development-token
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+        pattern: '^[A-Za-z0-9._:-]+$'
+    ResourceId:
+      name: resource_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ResourceType:
+      name: resource_type
+      in: query
+      schema:
+        $ref: '#/components/schemas/ResourceType'
+    ProfileStatus:
+      name: profile_status
+      in: query
+      schema:
+        $ref: '#/components/schemas/ProfileStatus'
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        format: uuid
+    MockLocationResult:
+      name: X-Mock-Location-Result
+      in: header
+      description: Development-only location gateway outcome.
+      schema:
+        type: string
+        enum: [matched, unmatched, unavailable]
+        default: matched
+    MockAgentResult:
+      name: X-Mock-Agent-Result
+      in: header
+      description: Development-only agent gateway outcome.
+      schema:
+        type: string
+        enum: [active, pending, failed]
+        default: active
+  headers:
+    Location:
+      description: URL of the newly created resource.
+      schema:
+        type: string
+    IdempotencyReplayed:
+      description: Whether the response was returned from the idempotency receipt.
+      schema:
+        type: string
+        enum: ['true', 'false']
+  responses:
+    Unauthenticated:
+      description: Authentication missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: The role does not permit this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource missing or outside the authorised provider.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Duplicate identifier, stale version, or reused idempotency key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Invalid fields, details, or unmatched location.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unavailable:
+      description: Database, identity, or required dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ResourceType:
+      type: string
+      enum: [vehicle, depot, warehouse, locker]
+    ProfileStatus:
+      type: string
+      enum: [active, inactive]
+    Availability:
+      type: string
+      enum: [available, unavailable, unknown]
+    OperatingHours:
+      type: object
+      required: [day, opens, closes]
+      additionalProperties: false
+      properties:
+        day:
+          type: string
+          enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+        opens:
+          type: string
+          format: time
+        closes:
+          type: string
+          format: time
+    TemperatureRestriction:
+      type: object
+      required: [type, min_celsius, max_celsius]
+      additionalProperties: false
+      properties:
+        type:
+          const: temperature_range
+        min_celsius:
+          type: number
+        max_celsius:
+          type: number
+    ZoneRestriction:
+      type: object
+      required: [type, zone_ids]
+      additionalProperties: false
+      properties:
+        type:
+          const: operating_zone
+        zone_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+    Restriction:
+      oneOf:
+        - $ref: '#/components/schemas/TemperatureRestriction'
+        - $ref: '#/components/schemas/ZoneRestriction'
+      discriminator:
+        propertyName: type
+    CommonDetails:
+      type: object
+      required: [timezone, operating_hours, restrictions]
+      additionalProperties: false
+      properties:
+        timezone:
+          type: string
+          default: Europe/Dublin
+          description: Valid IANA timezone.
+        operating_hours:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperatingHours'
+        restrictions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Restriction'
+    VehicleDetails:
+      allOf:
+        - $ref: '#/components/schemas/CommonDetails'
+        - type: object
+          required: [vehicle_category, max_weight_kg, powertrain]
+          properties:
+            vehicle_category:
+              type: string
+              enum: [van, truck, cargo_bike, autonomous_vehicle]
+            max_weight_kg:
+              type: number
+              exclusiveMinimum: 0
+            max_volume_m3:
+              type: number
+              exclusiveMinimum: 0
+            powertrain:
+              type: string
+              enum: [electric, diesel, petrol, hybrid, human]
+            emission_class:
+              type: string
+              minLength: 1
+              maxLength: 50
+            range_km:
+              type: number
+              exclusiveMinimum: 0
+            autonomous:
+              type: boolean
+              default: false
+    DepotDetails:
+      allOf:
+        - $ref: '#/components/schemas/CommonDetails'
+        - type: object
+          required: [storage_capacity_m3, loading_bays, supported_vehicle_categories]
+          properties:
+            storage_capacity_m3:
+              type: number
+              exclusiveMinimum: 0
+            loading_bays:
+              type: integer
+              minimum: 0
+            supported_vehicle_categories:
+              type: array
+              minItems: 1
+              items:
+                type: string
+                enum: [van, truck, cargo_bike, autonomous_vehicle]
+    WarehouseDetails:
+      allOf:
+        - $ref: '#/components/schemas/CommonDetails'
+        - type: object
+          required: [storage_capacity_m3, handling_capabilities]
+          properties:
+            storage_capacity_m3:
+              type: number
+              exclusiveMinimum: 0
+            handling_capabilities:
+              type: array
+              minItems: 1
+              items:
+                type: string
+                enum: [ambient, chilled, frozen, fragile, pallets]
+    Compartment:
+      type: object
+      required: [size, count, length_cm, width_cm, height_cm]
+      additionalProperties: false
+      properties:
+        size:
+          type: string
+          enum: [small, medium, large]
+        count:
+          type: integer
+          exclusiveMinimum: 0
+        length_cm:
+          type: number
+          exclusiveMinimum: 0
+        width_cm:
+          type: number
+          exclusiveMinimum: 0
+        height_cm:
+          type: number
+          exclusiveMinimum: 0
+    LockerDetails:
+      allOf:
+        - $ref: '#/components/schemas/CommonDetails'
+        - type: object
+          required: [public_access, max_parcel_weight_kg, compartments]
+          properties:
+            public_access:
+              type: boolean
+            max_parcel_weight_kg:
+              type: number
+              exclusiveMinimum: 0
+            compartments:
+              type: array
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/Compartment'
+    ResourceBase:
+      type: object
+      required:
+        - external_identifier
+        - name
+        - address
+        - latitude
+        - longitude
+        - profile_status
+        - observed_availability
+      additionalProperties: false
+      properties:
+        external_identifier:
+          type: string
+          minLength: 1
+          maxLength: 100
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        address:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        profile_status:
+          $ref: '#/components/schemas/ProfileStatus'
+          default: active
+        observed_availability:
+          $ref: '#/components/schemas/Availability'
+          default: unknown
+    VehicleCreate:
+      allOf:
+        - $ref: '#/components/schemas/ResourceBase'
+        - type: object
+          required: [resource_type, details]
+          properties:
+            resource_type:
+              const: vehicle
+            details:
+              $ref: '#/components/schemas/VehicleDetails'
+    DepotCreate:
+      allOf:
+        - $ref: '#/components/schemas/ResourceBase'
+        - type: object
+          required: [resource_type, details]
+          properties:
+            resource_type:
+              const: depot
+            details:
+              $ref: '#/components/schemas/DepotDetails'
+    WarehouseCreate:
+      allOf:
+        - $ref: '#/components/schemas/ResourceBase'
+        - type: object
+          required: [resource_type, details]
+          properties:
+            resource_type:
+              const: warehouse
+            details:
+              $ref: '#/components/schemas/WarehouseDetails'
+    LockerCreate:
+      allOf:
+        - $ref: '#/components/schemas/ResourceBase'
+        - type: object
+          required: [resource_type, details]
+          properties:
+            resource_type:
+              const: locker
+            details:
+              $ref: '#/components/schemas/LockerDetails'
+    ResourceCreate:
+      oneOf:
+        - $ref: '#/components/schemas/VehicleCreate'
+        - $ref: '#/components/schemas/DepotCreate'
+        - $ref: '#/components/schemas/WarehouseCreate'
+        - $ref: '#/components/schemas/LockerCreate'
+      discriminator:
+        propertyName: resource_type
+    ResourceUpdate:
+      type: object
+      required: [expected_version]
+      minProperties: 2
+      additionalProperties: false
+      properties:
+        expected_version:
+          type: integer
+          exclusiveMinimum: 0
+        external_identifier:
+          type: string
+          minLength: 1
+          maxLength: 100
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        address:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        profile_status:
+          $ref: '#/components/schemas/ProfileStatus'
+        observed_availability:
+          $ref: '#/components/schemas/Availability'
+        details:
+          type: object
+    ActivationRequest:
+      type: object
+      required: [expected_version]
+      additionalProperties: false
+      properties:
+        expected_version:
+          type: integer
+          exclusiveMinimum: 0
+    ResourceResponse:
+      allOf:
+        - $ref: '#/components/schemas/ResourceBase'
+        - type: object
+          required:
+            - id
+            - provider_id
+            - resource_type
+            - details
+            - location_validated_at
+            - agent_status
+            - version
+            - created_by
+            - created_at
+            - updated_at
+            - planning_eligible
+            - eligibility_reasons
+          properties:
+            id:
+              type: string
+              format: uuid
+            provider_id:
+              type: string
+              format: uuid
+            resource_type:
+              $ref: '#/components/schemas/ResourceType'
+            details:
+              type: object
+            location_reference:
+              type: string
+              nullable: true
+            location_validated_at:
+              type: string
+              format: date-time
+            availability_observed_at:
+              type: string
+              format: date-time
+              nullable: true
+            agent_status:
+              type: string
+              enum: [pending, active, failed]
+            agent_id:
+              type: string
+              format: uuid
+              nullable: true
+            version:
+              type: integer
+              minimum: 1
+            created_by:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+            planning_eligible:
+              type: boolean
+            eligibility_reasons:
+              type: array
+              items:
+                type: string
+    ResourceList:
+      type: object
+      required: [items, next_cursor]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceResponse'
+        next_cursor:
+          type: string
+          format: uuid
+          nullable: true
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          additionalProperties: true
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlation_id:
+              type: string
+              format: uuid
