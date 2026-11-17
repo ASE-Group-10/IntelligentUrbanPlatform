@@ -12,7 +12,7 @@ from app.components.c09_logistics_knowledge.contracts import (
     PolicyQuery,
     RetrievalStatus,
 )
-from app.components.c09_logistics_knowledge.query import LogisticsKnowledge
+from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c09_logistics_knowledge.store import InMemoryKnowledgeStore
 from app.shared.c09_c10_common import AuthContext
 from app.shared.result import Failure, Ok
@@ -94,3 +94,24 @@ def test_unreachable_store_is_unavailable(query):
     result = _service(store).query_knowledge(_ctx(), query)
     assert isinstance(result, Failure)
     assert result.kind == "Unavailable"
+
+
+def test_same_query_gives_same_order_on_ties(query):
+    tied = [p.model_copy(update={"score": 0.8}) for p in _passages()]
+    forward = InMemoryKnowledgeStore({"dublin-D2"}, tied)
+    backward = InMemoryKnowledgeStore({"dublin-D2"}, list(reversed(tied)))
+    orders = [
+        [
+            p.passage_id
+            for p in _service(s).query_knowledge(_ctx(), query).value.passages
+        ]
+        for s in (forward, forward, backward)
+    ]
+    assert orders[0] == orders[1] == orders[2] == sorted(orders[0], key=str)
+
+
+def test_invalid_time_window_is_rejected_by_the_contract():
+    data = _example("query_knowledge.request.json")
+    data["timeWindow"]["end"] = data["timeWindow"]["start"]
+    with pytest.raises(ValueError, match="end must be after start"):
+        PolicyQuery.model_validate(data)
