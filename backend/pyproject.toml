@@ -1,0 +1,25 @@
+[project]
+name = "ulop-backend"
+version = "0.1.0"
+description = "Intelligent Urban Logistics Optimisation Platform backend (C02-C12)."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic==2.14.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B"]
+
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "ruff==0.17.5",
+]
