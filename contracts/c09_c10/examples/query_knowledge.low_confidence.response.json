@@ -1,0 +1,118 @@
+{
+  "status": "LowConfidence",
+  "passages": [
+    {
+      "passageId": "7e215c90-4d3b-4a6f-b0c8-91d2e3f4a503",
+      "content": "Loading and unloading on Grafton Street is permitted between 06:00 and 11:00 only.",
+      "documentId": "dcc-loading-bays",
+      "documentTitle": "City Centre Loading Bay Rules (demo data)",
+      "documentVersion": 1,
+      "sectionId": "2.1",
+      "validFrom": "2026-03-01T00:00:00Z",
+      "validTo": null,
+      "applicability": {
+        "zoneIds": [
+          "dublin-D2"
+        ],
+        "vehicleClasses": [],
+        "activities": [
+          "Delivery",
+          "Loading"
+        ]
+      },
+      "score": 0.41,
+      "constraints": [
+        {
+          "constraintId": "dcc-loading-bays:v1:2.1:c1",
+          "kind": "LoadingWindow",
+          "zoneIds": [
+            "dublin-D2"
+          ],
+          "vehicleClasses": [],
+          "timeOfDay": {
+            "from": "06:00",
+            "to": "11:00"
+          },
+          "daysOfWeek": [],
+          "value": null,
+          "exemption": null
+        }
+      ]
+    }
+  ],
+  "conflicts": [],
+  "limitations": [
+    "Top score 0.41 is below the confidence threshold 0.60."
+  ],
+  "corpusVersion": 7,
+  "indexVersion": "idx-7",
+  "embeddingModel": "embedding-model-tbd",
+  "retrievedAt": "2026-11-20T06:55:02Z",
+  "evidenceSnapshot": {
+    "snapshotId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c06",
+    "query": {
+      "area": {
+        "zoneIds": [
+          "dublin-D2"
+        ]
+      },
+      "timeWindow": {
+        "start": "2026-11-20T07:30:00Z",
+        "end": "2026-11-20T09:00:00Z"
+      },
+      "vehicleClass": "HGV",
+      "activity": "Delivery",
+      "freeText": "city-centre delivery to a Grafton Street retailer",
+      "maxPassages": 5
+    },
+    "retrievalStatus": "LowConfidence",
+    "items": [
+      {
+        "passageId": "7e215c90-4d3b-4a6f-b0c8-91d2e3f4a503",
+        "content": "Loading and unloading on Grafton Street is permitted between 06:00 and 11:00 only.",
+        "documentId": "dcc-loading-bays",
+        "documentTitle": "City Centre Loading Bay Rules (demo data)",
+        "documentVersion": 1,
+        "sectionId": "2.1",
+        "validFrom": "2026-03-01T00:00:00Z",
+        "validTo": null,
+        "applicability": {
+          "zoneIds": [
+            "dublin-D2"
+          ],
+          "vehicleClasses": [],
+          "activities": [
+            "Delivery",
+            "Loading"
+          ]
+        },
+        "score": 0.41,
+        "constraints": [
+          {
+            "constraintId": "dcc-loading-bays:v1:2.1:c1",
+            "kind": "LoadingWindow",
+            "zoneIds": [
+              "dublin-D2"
+            ],
+            "vehicleClasses": [],
+            "timeOfDay": {
+              "from": "06:00",
+              "to": "11:00"
+            },
+            "daysOfWeek": [],
+            "value": null,
+            "exemption": null
+          }
+        ]
+      }
+    ],
+    "conflicts": [],
+    "limitations": [
+      "Top score 0.41 is below the confidence threshold 0.60."
+    ],
+    "corpusVersion": 7,
+    "indexVersion": "idx-7",
+    "embeddingModel": "embedding-model-tbd",
+    "retrievedAt": "2026-11-20T06:55:02Z"
+  }
+}
