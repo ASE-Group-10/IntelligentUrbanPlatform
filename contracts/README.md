@@ -39,5 +39,19 @@ cd dist && python3 -m http.server 8080
 
 Open <http://localhost:8080/openapi/> to view the generated documentation.
 
-Event contracts belong in `events.yaml`. Event rendering is not part of the
-current OpenAPI/Redoc workflow.
+## Event rules
+
+Event contracts belong in one `events.yaml` per component:
+
+- Use AsyncAPI `3.0.0`.
+- Name messages after their event types.
+- Define the channel or exchange, routing key, producer, and payload schema.
+- Include a unique event ID, schema version, correlation ID, entity ID, and
+  entity version where applicable.
+- Include realistic message examples.
+- Consumers must deduplicate messages by event ID.
+- Breaking payload changes require a schema-version change and review by
+  affected consumers.
+
+Event files are currently source-only. The CI workflow does not yet validate or
+render them.
