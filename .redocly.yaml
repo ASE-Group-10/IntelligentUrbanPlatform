@@ -1,6 +1,6 @@
 apis:
   platform:
-    root: contracts/openapi.yaml
+    root: .tmp/contracts/openapi.yaml
 
 extends:
   - recommended

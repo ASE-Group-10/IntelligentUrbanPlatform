@@ -142,10 +142,10 @@ See [database/README.md](database/README.md) for migration conventions.
 
 ### API contract documentation
 
-The aggregated OpenAPI entry point is
-[`contracts/openapi.yaml`](contracts/openapi.yaml). Component-owned source
-documents live under `contracts/components/<component>/`. Pull requests lint and
-build the aggregate with Redocly. Run the documentation locally with:
+Component-owned OpenAPI source documents live under
+`contracts/components/<component>/`. CI discovers and aggregates them into a
+temporary file before linting and building the Redoc site. Run the documentation
+locally with:
 
 ```sh
 npm ci

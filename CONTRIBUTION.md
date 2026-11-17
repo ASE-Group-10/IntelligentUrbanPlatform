@@ -150,11 +150,12 @@ and demonstration evidence.
 ### Contract documentation workflow
 
 Keep each component's HTTP contract in
-`contracts/components/<component>/openapi.yaml` and add its paths to the
-aggregated `contracts/openapi.yaml` entry point. The aggregate is the document
-rendered by Redoc; component tags provide the collapsible sections in the
-documentation panel. Event contracts can remain in the component's
-`events.yaml` until an event renderer is added.
+`contracts/components/<component>/openapi.yaml`. CI discovers every component
+document and generates the aggregate in `.tmp/contracts/openapi.yaml`; do not
+maintain or commit an aggregate file. The generated aggregate is rendered by
+Redoc, while component tags provide the collapsible sections in the
+documentation panel. Event contracts can remain in the component's `events.yaml`
+until an event renderer is added.
 
 Run the same checks locally as CI:
 
