@@ -148,9 +148,7 @@ class ContractTests(unittest.TestCase):
 
     def test_interruption_requires_paused_status(self):
         with self.assertRaises(ValidationError):
-            ReplayFrame.model_validate(
-                {**EXAMPLES["pausedFrame"], "status": "playing"}
-            )
+            ReplayFrame.model_validate({**EXAMPLES["pausedFrame"], "status": "playing"})
 
     def test_unknown_fields_fail_loudly(self):
         with self.assertRaises(ValidationError):
