@@ -1,8 +1,6 @@
 """UC09 publishKnowledge and conflict detection acceptance examples (#14)."""
 
-import json
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import uuid4
 
 from app.components.c09_logistics_knowledge.contracts import (
@@ -18,14 +16,10 @@ from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c09_logistics_knowledge.store import InMemoryKnowledgeStore
 from app.shared.c09_c10_common import AuthContext
 from app.shared.result import Failure, Ok
+from tests.c09_examples import example as _example
 
-EXAMPLES = Path(__file__).resolve().parents[2] / "contracts" / "c09_c10" / "examples"
 NOW = datetime(2026, 11, 18, 14, 2, tzinfo=UTC)
 ZONES = {"dublin-D1", "dublin-D2"}
-
-
-def _example(name):
-    return json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
 
 
 def _ctx(*roles: str) -> AuthContext:

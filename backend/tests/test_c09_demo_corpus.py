@@ -40,6 +40,8 @@ def _query(vehicle: str, zone: str = "dublin-D2") -> PolicyQuery:
             },
             "vehicleClass": vehicle,
             "activity": "Delivery",
+            # unranked (no freeText): ask for every passage so none is cut at random
+            "maxPassages": 20,
         }
     )
 

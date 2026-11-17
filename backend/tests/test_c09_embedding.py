@@ -1,8 +1,6 @@
 """Embedding stand-in and similarity ranking for C09 (#14)."""
 
-import json
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import uuid4
 
 from app.components.c09_logistics_knowledge.contracts import (
@@ -18,8 +16,8 @@ from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c09_logistics_knowledge.store import InMemoryKnowledgeStore
 from app.shared.c09_c10_common import AuthContext
 from app.shared.result import Failure
+from tests.c09_examples import example as _example
 
-EXAMPLES = Path(__file__).resolve().parents[2] / "contracts" / "c09_c10" / "examples"
 NOW = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)
 
 
@@ -27,10 +25,6 @@ def _ctx(role: str) -> AuthContext:
     return AuthContext(
         principal_id="x", principal_type="User", roles=[role], correlation_id=uuid4()
     )
-
-
-def _example(name):
-    return json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
 
 
 def test_vectors_are_deterministic_unit_length():
