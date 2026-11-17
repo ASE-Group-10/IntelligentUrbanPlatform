@@ -107,6 +107,6 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: dist
-          target-folder: ${{ github.ref_name }}/
-          clean: false
+          branch: gh-pages
+          clean: true
           single-commit: true
