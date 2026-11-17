@@ -1,0 +1,11 @@
+{
+  "failureId": "f0e1d2c3-b4a5-4968-8776-655443322110",
+  "failureKind": "resource_lost",
+  "planId": "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c",
+  "planVersion": 3,
+  "deliveryIds": ["7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"],
+  "resourceIds": ["1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"],
+  "committedState": { "stillCommitted": [], "released": ["2b3c4d5e-6f70-4819-9a0b-1c2d3e4f5a6b"] },
+  "decisionId": null,
+  "detail": "Vehicle reported breakdown before pickup"
+}
