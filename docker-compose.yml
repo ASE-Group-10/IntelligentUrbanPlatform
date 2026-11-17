@@ -3,7 +3,7 @@ name: ulop
 
 services:
   db:
-    image: postgres:17.7 # official, multi-arch; add PostGIS when a component needs it
+    image: pgvector/pgvector:0.8.1-pg17 # Postgres 17 + pgvector (C09 embeddings); add PostGIS when a component needs it
     environment:
       POSTGRES_USER: ulop
       POSTGRES_PASSWORD: ulop # local-only; never reuse for a shared database
