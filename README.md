@@ -140,6 +140,14 @@ docker compose run --rm dbmate up
 
 See [database/README.md](database/README.md) for migration conventions.
 
+### Frontend
+
+```sh
+cd frontend && npm ci && npm run dev
+```
+
+See [frontend/README.md](frontend/README.md) for checks, structure and conventions.
+
 ## Suggested repository structure
 
 Create this structure as implementation begins; it is not an inventory of existing files.
