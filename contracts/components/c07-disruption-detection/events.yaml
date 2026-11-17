@@ -2,8 +2,9 @@ asyncapi: 3.0.0
 info:
   title: C07 Disruption Detection Events
   version: 1.0.0
-  summary: Events consumed by C07 Disruption Detection (UC06).
   description: |
+    Events consumed by C07 Disruption Detection (UC06).
+
     C07 consumes city, resource and operational-exception events
     (`evaluateChange`), deduplicates them by `eventId` and evaluates their
     impact. For actionable new conditions it requests a separate C05 replan

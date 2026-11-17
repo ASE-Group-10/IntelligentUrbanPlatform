@@ -2,8 +2,9 @@ asyncapi: 3.0.0
 info:
   title: C06 City Monitoring Events
   version: 1.0.0
-  summary: Events published by C06 City Monitoring (UC05).
   description: |
+    Events published by C06 City Monitoring (UC05).
+
     C06 owns City State. It writes `CityStateUpdated` to its outbox in the same
     transaction as the City State change and publishes it afterwards.
     `CityStateUpdated` carries only what changed. Consumers that need full
