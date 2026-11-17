@@ -1,0 +1,54 @@
+# Local integration services. See database/README.md for commands.
+name: ulop
+
+services:
+  db:
+    image: postgres:17.7 # official, multi-arch; add PostGIS when a component needs it
+    environment:
+      POSTGRES_USER: ulop
+      POSTGRES_PASSWORD: ulop # local-only; never reuse for a shared database
+      POSTGRES_DB: ulop
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ulop -d ulop"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:4.4.0-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-ulop}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-ulop}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One-shot migration runner: docker compose run --rm dbmate up
+  dbmate:
+    image: ghcr.io/amacneil/dbmate:2.36.0
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:-postgres://ulop:ulop@db:5432/ulop?sslmode=disable}
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    volumes:
+      - ./database/migrations:/db/migrations
+
+volumes:
+  db-data:
+  rabbitmq-data:
