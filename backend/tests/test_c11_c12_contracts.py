@@ -21,9 +21,8 @@ from app.components.c11_c12_contracts import (
     TimeRange,
 )
 
-EXAMPLES = json.loads(
-    (Path(__file__).resolve().parents[2] / "contracts/examples/c11-c12.json").read_text()
-)
+EXAMPLE_PATH = Path(__file__).resolve().parents[2] / "contracts/examples/c11-c12.json"
+EXAMPLES = json.loads(EXAMPLE_PATH.read_text())
 
 
 class ContractTests(unittest.TestCase):
