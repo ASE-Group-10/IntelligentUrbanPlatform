@@ -3,9 +3,10 @@
 JSON uses camelCase; Python attributes use snake_case via aliases.
 extra="forbid" so any field drift between producer and consumer fails loudly.
 """
+
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,10 +14,12 @@ from pydantic.alias_generators import to_camel
 
 
 class Model(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, extra="forbid"
+    )
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     OK = "Ok"
     INVALID = "Invalid"
     FORBIDDEN = "Forbidden"
@@ -29,46 +32,46 @@ class Outcome(str, Enum):
 
 
 # shared with C03/C04/C06 — pending confirmation (doc §2 item 14)
-class VehicleClass(str, Enum):
+class VehicleClass(StrEnum):
     CARGO_BIKE = "CargoBike"
     VAN = "Van"
     LGV = "LGV"
     HGV = "HGV"
 
 
-class Activity(str, Enum):
+class Activity(StrEnum):
     PICKUP = "Pickup"
     DELIVERY = "Delivery"
     TRANSIT = "Transit"
     LOADING = "Loading"
 
 
-class PrincipalType(str, Enum):
+class PrincipalType(StrEnum):
     USER = "User"
     SERVICE = "Service"
 
 
 class AuthScope(Model):
-    provider_ids: Optional[list[str]] = None
-    zone_ids: Optional[list[str]] = None
+    provider_ids: list[str] | None = None
+    zone_ids: list[str] | None = None
 
 
 class AuthContext(Model):
     principal_id: str
     principal_type: PrincipalType
     roles: list[str]
-    scope: Optional[AuthScope] = None
+    scope: AuthScope | None = None
     correlation_id: UUID
 
 
-class RunMode(str, Enum):
+class RunMode(StrEnum):
     LIVE = "Live"
     SIMULATION = "Simulation"
 
 
 class RunScope(Model):
     mode: RunMode
-    run_id: Optional[UUID]
+    run_id: UUID | None
 
     @model_validator(mode="after")
     def _simulation_needs_run_id(self):
@@ -81,7 +84,7 @@ class ErrorBody(Model):
     outcome: Outcome
     code: str = Field(pattern=r"^C\d{2}\.[A-Z_]+$")
     message: str
-    details: Optional[dict[str, Any]] = None
+    details: dict[str, Any] | None = None
     correlation_id: UUID
 
 

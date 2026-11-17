@@ -1,12 +1,13 @@
 """C09 Logistics Knowledge contracts (contract doc §7.2–7.8)."""
+
 from datetime import datetime
-from enum import Enum
-from typing import Any, Literal, Optional
+from enum import StrEnum
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from .common import Activity, Model, TimeWindow, VehicleClass
+from app.shared.c09_c10_common import Activity, Model, TimeWindow, VehicleClass
 
 
 class Area(Model):
@@ -18,7 +19,7 @@ class PolicyQuery(Model):
     time_window: TimeWindow
     vehicle_class: VehicleClass
     activity: Activity
-    free_text: Optional[str] = Field(default=None, max_length=500)
+    free_text: str | None = Field(default=None, max_length=500)
     max_passages: int = Field(default=5, ge=1, le=20)
 
 
@@ -28,7 +29,7 @@ class Applicability(Model):
     activities: list[Activity]  # empty = all
 
 
-class ConstraintKind(str, Enum):
+class ConstraintKind(StrEnum):
     VEHICLE_BAN = "VehicleBan"
     LOADING_WINDOW = "LoadingWindow"
     MAX_GROSS_WEIGHT = "MaxGrossWeight"
@@ -40,7 +41,7 @@ class TimeOfDay(Model):
     to: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
-class Weekday(str, Enum):
+class Weekday(StrEnum):
     MON = "Mon"
     TUE = "Tue"
     WED = "Wed"
@@ -55,10 +56,10 @@ class Constraint(Model):  # pending C05 confirmation (doc §2 item 4)
     kind: ConstraintKind
     zone_ids: list[str]
     vehicle_classes: list[VehicleClass]
-    time_of_day: Optional[TimeOfDay]
+    time_of_day: TimeOfDay | None
     days_of_week: list[Weekday]  # empty = every day
-    value: Optional[dict[str, Any]]
-    exemption: Optional[str]
+    value: dict[str, Any] | None
+    exemption: str | None
 
 
 class Passage(Model):
@@ -69,13 +70,13 @@ class Passage(Model):
     document_version: int = Field(ge=1)
     section_id: str
     valid_from: datetime
-    valid_to: Optional[datetime]
+    valid_to: datetime | None
     applicability: Applicability
     score: float = Field(ge=0, le=1)
     constraints: list[Constraint]
 
 
-class RetrievalStatus(str, Enum):
+class RetrievalStatus(StrEnum):
     OK = "Ok"
     LOW_CONFIDENCE = "LowConfidence"
     CONFLICT = "Conflict"
@@ -97,7 +98,9 @@ class _RetrievalFields(Model):
     retrieved_at: datetime
 
 
-def _check_status(status: RetrievalStatus, passages: list[Passage], conflicts: list[KnowledgeConflict]) -> None:
+def _check_status(
+    status: RetrievalStatus, passages: list[Passage], conflicts: list[KnowledgeConflict]
+) -> None:
     if status is RetrievalStatus.CONFLICT and not conflicts:
         raise ValueError("status Conflict requires at least one conflict")
     if status is RetrievalStatus.NO_APPLICABLE and passages:
@@ -128,10 +131,17 @@ class KnowledgeResult(_RetrievalFields):
     @model_validator(mode="after")
     def _consistent(self):
         _check_status(self.status, self.passages, self.conflicts)
-        if self.passages != sorted(self.passages, key=lambda p: (-p.score, str(p.passage_id))):
+        if self.passages != sorted(
+            self.passages, key=lambda p: (-p.score, str(p.passage_id))
+        ):
             raise ValueError("passages must be sorted by score desc, then passageId")
-        if self.evidence_snapshot.items != self.passages or self.evidence_snapshot.retrieval_status != self.status:
-            raise ValueError("evidenceSnapshot must be an exact copy of the returned passages and status")
+        if (
+            self.evidence_snapshot.items != self.passages
+            or self.evidence_snapshot.retrieval_status != self.status
+        ):
+            raise ValueError(
+                "evidenceSnapshot must exactly copy the returned passages and status"
+            )
         return self
 
 
@@ -147,8 +157,8 @@ class DocumentMetadata(Model):
     issuer: str
     applicability: Applicability
     valid_from: datetime
-    valid_to: Optional[datetime]
-    constraints_by_section: Optional[dict[str, list[Constraint]]] = None
+    valid_to: datetime | None
+    constraints_by_section: dict[str, list[Constraint]] | None = None
 
 
 class PublishKnowledgeRequest(Model):
