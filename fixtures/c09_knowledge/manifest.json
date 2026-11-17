@@ -1,0 +1,115 @@
+[
+  {
+    "file": "hgv-cordon.md",
+    "title": "City Centre HGV Restrictions (demo data)",
+    "metadata": {
+      "documentId": "dcc-hgv-cordon",
+      "issuer": "City authority (demo data)",
+      "applicability": {"zoneIds": ["dublin-D1", "dublin-D2"], "vehicleClasses": ["HGV"], "activities": []},
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validTo": null,
+      "constraintsBySection": {
+        "4.2": [
+          {
+            "constraintId": "dcc-hgv-cordon:v1:4.2:c1",
+            "kind": "VehicleBan",
+            "zoneIds": ["dublin-D1", "dublin-D2"],
+            "vehicleClasses": ["HGV"],
+            "timeOfDay": {"from": "07:00", "to": "19:00"},
+            "daysOfWeek": [],
+            "value": null,
+            "exemption": "Valid HGV permit"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "file": "loading-bays.md",
+    "title": "Dublin 2 Loading Bays (demo data)",
+    "metadata": {
+      "documentId": "dcc-loading-bays",
+      "issuer": "City authority (demo data)",
+      "applicability": {"zoneIds": ["dublin-D2"], "vehicleClasses": [], "activities": ["Delivery", "Loading"]},
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validTo": null,
+      "constraintsBySection": {
+        "2.1": [
+          {
+            "constraintId": "dcc-loading-bays:v1:2.1:c1",
+            "kind": "LoadingWindow",
+            "zoneIds": ["dublin-D2"],
+            "vehicleClasses": [],
+            "timeOfDay": {"from": "06:00", "to": "11:00"},
+            "daysOfWeek": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+            "value": null,
+            "exemption": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "file": "weight-limit.md",
+    "title": "Quay Bridge Weight Limits (demo data)",
+    "metadata": {
+      "documentId": "dcc-bridge-weight",
+      "issuer": "City authority (demo data)",
+      "applicability": {"zoneIds": ["dublin-D1", "dublin-D2"], "vehicleClasses": ["LGV", "HGV"], "activities": []},
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validTo": null,
+      "constraintsBySection": {
+        "3.1": [
+          {
+            "constraintId": "dcc-bridge-weight:v1:3.1:c1",
+            "kind": "MaxGrossWeight",
+            "zoneIds": ["dublin-D1", "dublin-D2"],
+            "vehicleClasses": ["LGV", "HGV"],
+            "timeOfDay": null,
+            "daysOfWeek": [],
+            "value": {"maxKg": 18000},
+            "exemption": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "file": "cargo-bikes.md",
+    "title": "Cargo Bike Deliveries (demo data)",
+    "metadata": {
+      "documentId": "dcc-cargo-bikes",
+      "issuer": "City authority (demo data)",
+      "applicability": {"zoneIds": ["dublin-D2"], "vehicleClasses": ["CargoBike"], "activities": ["Delivery"]},
+      "validFrom": "2026-01-01T00:00:00Z",
+      "validTo": null,
+      "constraintsBySection": {}
+    }
+  },
+  {
+    "file": "hgv-cordon-amendment.md",
+    "scenario": "conflict",
+    "title": "HGV Cordon Trial Amendment (demo data)",
+    "metadata": {
+      "documentId": "dcc-hgv-cordon-amendment",
+      "issuer": "City authority (demo data)",
+      "applicability": {"zoneIds": ["dublin-D1", "dublin-D2"], "vehicleClasses": ["HGV"], "activities": []},
+      "validFrom": "2026-11-01T00:00:00Z",
+      "validTo": null,
+      "constraintsBySection": {
+        "1.1": [
+          {
+            "constraintId": "dcc-hgv-cordon-amendment:v1:1.1:c1",
+            "kind": "VehicleBan",
+            "zoneIds": ["dublin-D1", "dublin-D2"],
+            "vehicleClasses": ["HGV"],
+            "timeOfDay": {"from": "07:00", "to": "10:30"},
+            "daysOfWeek": [],
+            "value": null,
+            "exemption": null
+          }
+        ]
+      }
+    }
+  }
+]
