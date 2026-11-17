@@ -1,0 +1,48 @@
+{
+  "decisionId": "d7c6b5a4-9384-4756-a1b2-c3d4e5f60708",
+  "referenceId": "5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01",
+  "kind": "Evidence",
+  "status": "Stored",
+  "evidence": {
+    "passageId": "5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01",
+    "content": "Heavy goods vehicles with five or more axles are not permitted to enter the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.",
+    "documentId": "dcc-hgv-cordon",
+    "documentTitle": "City Centre HGV Restrictions (demo data)",
+    "documentVersion": 3,
+    "sectionId": "4.2",
+    "validFrom": "2026-01-01T00:00:00Z",
+    "validTo": null,
+    "applicability": {
+      "zoneIds": [
+        "dublin-D1",
+        "dublin-D2"
+      ],
+      "vehicleClasses": [
+        "HGV"
+      ],
+      "activities": []
+    },
+    "score": 0.87,
+    "constraints": [
+      {
+        "constraintId": "dcc-hgv-cordon:v3:4.2:c1",
+        "kind": "VehicleBan",
+        "zoneIds": [
+          "dublin-D1",
+          "dublin-D2"
+        ],
+        "vehicleClasses": [
+          "HGV"
+        ],
+        "timeOfDay": {
+          "from": "07:00",
+          "to": "19:00"
+        },
+        "daysOfWeek": [],
+        "value": null,
+        "exemption": "Valid HGV permit"
+      }
+    ]
+  },
+  "alternative": null
+}

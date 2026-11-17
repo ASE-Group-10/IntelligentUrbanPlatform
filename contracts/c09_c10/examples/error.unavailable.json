@@ -1,0 +1,9 @@
+{
+  "outcome": "Unavailable",
+  "code": "C09.INDEX_UNAVAILABLE",
+  "message": "Vector index is not reachable; retry later.",
+  "details": {
+    "retryAfterSec": 30
+  },
+  "correlationId": "4c0ffee0-1234-4abc-9def-001122334455"
+}
