@@ -652,22 +652,19 @@ components:
             details:
               type: object
             location_reference:
-              type: string
-              nullable: true
+              type: [string, 'null']
             location_validated_at:
               type: string
               format: date-time
             availability_observed_at:
-              type: string
+              type: [string, 'null']
               format: date-time
-              nullable: true
             agent_status:
               type: string
               enum: [pending, active, failed]
             agent_id:
-              type: string
+              type: [string, 'null']
               format: uuid
-              nullable: true
             version:
               type: integer
               minimum: 1
@@ -696,9 +693,8 @@ components:
           items:
             $ref: '#/components/schemas/ResourceResponse'
         next_cursor:
-          type: string
+          type: [string, 'null']
           format: uuid
-          nullable: true
     ErrorResponse:
       type: object
       required: [error]

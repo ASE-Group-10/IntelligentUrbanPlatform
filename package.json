@@ -2,9 +2,12 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
+    "@redocly/cli": "^2.22.0",
     "husky": "^9.1.7"
   },
   "scripts": {
+    "contracts:lint": "redocly lint --config=.redocly.yaml contracts/openapi.yaml",
+    "contracts:build": "redocly build-docs --config=.redocly.yaml contracts/openapi.yaml --output=dist/openapi/index.html",
     "prepare": "husky"
   }
 }

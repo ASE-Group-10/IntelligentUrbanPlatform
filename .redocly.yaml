@@ -1,0 +1,9 @@
+apis:
+  platform:
+    root: contracts/openapi.yaml
+
+extends:
+  - recommended
+
+rules:
+  no-unused-components: off

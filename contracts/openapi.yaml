@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: Intelligent Urban Logistics Platform API
+  version: 1.0.0
+  summary: Aggregated component API contracts.
+  description: |
+    Aggregated HTTP API contract for the platform. Each component owns its
+    source document under `contracts/components/<component>/openapi.yaml`.
+    This document is the single entry point used to build the Redoc site.
+tags:
+  - name: C03 Resource Management
+    description: C03 logistics resource profiles and agent activation
+servers:
+  - url: /
+    description: Relative URL for the deployed platform
+paths:
+  /api/v1/resources:
+    $ref: './components/c03-resource-management/openapi.yaml#/paths/~1api~1v1~1resources'
+  /api/v1/resources/{resource_id}:
+    $ref: './components/c03-resource-management/openapi.yaml#/paths/~1api~1v1~1resources~1%7Bresource_id%7D'
+  /api/v1/resources/{resource_id}/agent-activation:
+    $ref: './components/c03-resource-management/openapi.yaml#/paths/~1api~1v1~1resources~1%7Bresource_id%7D~1agent-activation'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './components/c03-resource-management/openapi.yaml#/components/securitySchemes/bearerAuth'

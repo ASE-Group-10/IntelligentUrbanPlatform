@@ -140,6 +140,23 @@ docker compose run --rm dbmate up
 
 See [database/README.md](database/README.md) for migration conventions.
 
+### API contract documentation
+
+The aggregated OpenAPI entry point is
+[`contracts/openapi.yaml`](contracts/openapi.yaml). Component-owned source
+documents live under `contracts/components/<component>/`. Pull requests lint and
+build the aggregate with Redocly. Pushes to `develop`, feature, release, and
+`main` publish documentation for the integration and stable branches at:
+
+```text
+https://<organization>.github.io/<repository>/develop/openapi/
+https://<organization>.github.io/<repository>/main/openapi/
+```
+
+Pull requests and feature branches only lint/build the documentation and upload
+an artifact; they do not publish public pages. Enable GitHub Pages with the
+`gh-pages` branch as its source before using the published URLs.
+
 ## Suggested repository structure
 
 Create this structure as implementation begins; it is not an inventory of existing files.
