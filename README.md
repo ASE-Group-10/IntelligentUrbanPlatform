@@ -145,12 +145,21 @@ See [database/README.md](database/README.md) for migration conventions.
 The aggregated OpenAPI entry point is
 [`contracts/openapi.yaml`](contracts/openapi.yaml). Component-owned source
 documents live under `contracts/components/<component>/`. Pull requests lint and
-build the aggregate with Redocly. Pushes to `develop`, feature, release, and
+build the aggregate with Redocly. Run the documentation locally with:
+
+```sh
+npm ci
+npm run contracts:lint
+npm run contracts:build
+cd dist && python3 -m http.server 8080
+```
+
+Open <http://localhost:8080/openapi/> in a browser. Pushes to `develop` and
 `main` publish documentation for the integration and stable branches at:
 
 ```text
-https://<organization>.github.io/<repository>/develop/openapi/
-https://<organization>.github.io/<repository>/main/openapi/
+https://ase-group-10.github.io/IntelligentUrbanPlatform/develop/openapi/
+https://ase-group-10.github.io/IntelligentUrbanPlatform/main/openapi/
 ```
 
 Pull requests and feature branches only lint/build the documentation and upload
