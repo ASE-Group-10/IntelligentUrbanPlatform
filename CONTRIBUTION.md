@@ -147,6 +147,31 @@ Contract-shaped test doubles may unblock independent work. They must be labelled
 kept consistent with examples, and replaced by real collaborators for integration
 and demonstration evidence.
 
+### Contract documentation workflow
+
+Keep each component's HTTP contract in
+`contracts/components/<component>/openapi.yaml`. CI discovers every component
+document and generates the aggregate in `.tmp/contracts/openapi.yaml`; do not
+maintain or commit an aggregate file. The generated aggregate is rendered by
+Redoc, while component tags provide the collapsible sections in the
+documentation panel. Event contracts can remain in the component's `events.yaml`
+until an event renderer is added.
+
+Run the same checks locally as CI:
+
+```sh
+npm ci
+npm run contracts:lint
+npm run contracts:build
+```
+
+Pull requests and feature branches validate and build a Redoc artifact without
+publishing it. Pushes to `develop` and `main` publish the generated site under
+`develop/openapi/` and `main/openapi/` on GitHub Pages. Configure the repository's
+Pages source to the `gh-pages` branch before using the published links. Reviewers
+should verify that new paths are tagged with their owning component and that the
+aggregate references the component source rather than duplicating schemas.
+
 ## 5. Daily paired development
 
 Start from a clean working tree and current `develop`:
