@@ -91,5 +91,9 @@ outbox = Table(
 def make_engine(url: str):
     options = {"pool_pre_ping": True, "hide_parameters": True}
     if url.startswith("postgresql"):
-        options["connect_args"] = {"connect_timeout": 10, "prepare_threshold": None}
+        options["connect_args"] = {
+            "connect_timeout": 10,
+            "prepare_threshold": None,
+            "options": "-c search_path=c03_resource_management,public",
+        }
     return create_engine(url, **options)

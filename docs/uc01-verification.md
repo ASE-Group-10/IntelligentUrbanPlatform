@@ -15,14 +15,11 @@ Verification completed:
 
 - 17 isolated API tests passed against SQLite; all four resource types exercised.
 - Python lint/format and JavaScript syntax checks passed.
-- Actual Supabase PostgreSQL connection established through its session pooler.
-- Actual restricted login: row-level security denies unscoped reads and isolates
-  Provider A from Provider B; physical deletion is not granted; denied API writes
-  leave the resource version unchanged.
+- Actual PostgreSQL connection established through the configured database URL.
 - Two concurrent live activation commands with the same key returned one original
   and one replayed response; the already-active agent and resource version stayed unchanged.
-- Both migrations executed successfully in a temporary PostgreSQL schema and were
-  rolled back. Hosted migration history is aligned; push dry-run reports no changes.
+- The dbmate migration has reversible up/down sections; run the documented Docker
+  commands to verify it against a local PostgreSQL database.
 - Browser: registered `DEMO-UC01-VAN`, updated its name, observed version 2, and
   replayed the update with the same key without another resource/version change.
 - Browser: registered `DEMO-UC01-RETRY` with failed activation and saw it remain

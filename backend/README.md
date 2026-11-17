@@ -1,6 +1,6 @@
 # UC01 resource backend
 
-FastAPI application with SQLAlchemy/psycopg persistence in Supabase PostgreSQL.
+FastAPI application with SQLAlchemy/psycopg persistence in PostgreSQL.
 This increment implements UC01 only. UC02 and other component APIs remain future work.
 
 ## Run locally
@@ -19,17 +19,16 @@ The small HTML/JavaScript test desk is a temporary same-origin harness, not the
 planned React product interface. No frontend installation or build is necessary.
 
 The current developer machine is configured in ignored `backend/.env`. For another
-developer, use `backend/.env.example` with a restricted PostgreSQL connection, or:
+developer, start the local database and apply migrations:
 
 ```sh
-supabase link gfjqwlkclokbycdantrl
-uv run --project backend python scripts/configure_local_database.py
+cp .env.example .env
+docker compose up -d db
+docker compose run --rm dbmate up
 ```
 
-The setup script creates a separate login inheriting the restricted `c03_backend`
-role and saves a generated password in `backend/.env` with owner-only permissions.
-It never changes existing passwords or overwrites existing configuration. Coordinate
-shared database changes with the team. Never put the connection URL in browser code.
+For shared environments, migrations are run by the database owner from merged
+`develop`. Never put a database connection URL in browser code.
 
 ## What is real and what is mocked
 
@@ -150,25 +149,17 @@ contract and does not reserve capacity or imply confirmed allocation.
 
 ## Database and migrations
 
-`supabase/migrations/20261116160000_resources.sql` captures the existing table,
-including automatic version/timestamp updates. The next migration adds C03 receipt,
-audit, and outbox tables and a non-login backend role. A transaction-local provider
-setting restricts this role through row-level security. The backend derives that
-setting from authenticated context; it is never accepted from request bodies.
-The login is trusted backend infrastructure and must not be distributed to browsers.
-
-For a new local Supabase environment, run `supabase start` and `supabase db push`.
-For hosted migrations, review the target and pending migrations first:
+`database/migrations/20261116160000_create_c03_resource_management.sql` creates the
+C03-owned schema, resource tables, constraints, indexes, trigger, and outbox
+support. Apply it with dbmate:
 
 ```sh
-supabase migration list --remote
-supabase db push --remote --dry-run
-supabase db push --remote
+docker compose run --rm dbmate status
+docker compose run --rm dbmate up
 ```
 
-Do not replay the baseline against a database where the table already exists;
-reconcile its migration history with the team first. No providers, users, agents,
-or allocations tables are invented by this module.
+Each migration has a reversible `-- migrate:down` section. No providers, users,
+agents, or allocations tables are invented by this module.
 
 ## Verification
 
