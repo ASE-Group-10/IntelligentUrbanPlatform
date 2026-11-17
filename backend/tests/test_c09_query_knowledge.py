@@ -1,0 +1,96 @@
+"""UC09 queryKnowledge acceptance examples (#14), against the in-memory store."""
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+
+from app.components.c09_logistics_knowledge.contracts import (
+    Passage,
+    PolicyQuery,
+    RetrievalStatus,
+)
+from app.components.c09_logistics_knowledge.query import LogisticsKnowledge
+from app.components.c09_logistics_knowledge.store import InMemoryKnowledgeStore
+from app.shared.c09_c10_common import AuthContext
+from app.shared.result import Failure, Ok
+
+EXAMPLES = Path(__file__).resolve().parents[2] / "contracts" / "c09_c10" / "examples"
+NOW = datetime(2026, 11, 20, 6, 55, tzinfo=UTC)
+
+
+def _example(name):
+    return json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
+
+
+def _passages() -> list[Passage]:
+    ok = _example("query_knowledge.ok.response.json")
+    return [Passage.model_validate(p) for p in ok["passages"]]
+
+
+def _ctx(*roles: str) -> AuthContext:
+    return AuthContext(
+        principal_id="service:c05",
+        principal_type="Service",
+        roles=list(roles or ["Service:C05"]),
+        correlation_id=uuid4(),
+    )
+
+
+@pytest.fixture
+def query() -> PolicyQuery:
+    return PolicyQuery.model_validate(_example("query_knowledge.request.json"))
+
+
+def _service(store: InMemoryKnowledgeStore) -> LogisticsKnowledge:
+    return LogisticsKnowledge(store, clock=lambda: NOW)
+
+
+def test_returns_applicable_passages_sorted_with_snapshot(query):
+    store = InMemoryKnowledgeStore({"dublin-D1", "dublin-D2"}, _passages())
+    result = _service(store).query_knowledge(_ctx(), query)
+    assert isinstance(result, Ok)
+    assert result.value.status is RetrievalStatus.OK
+    assert [p.score for p in result.value.passages] == [0.87, 0.74]
+    assert result.value.evidence_snapshot.items == result.value.passages
+
+
+def test_no_applicable_passage_gives_no_applicable():
+    store = InMemoryKnowledgeStore({"dublin-D2", "dublin-D8"}, _passages())
+    data = _example("query_knowledge.request.json")
+    data["area"]["zoneIds"] = ["dublin-D8"]
+    query = PolicyQuery.model_validate(data)
+    result = _service(store).query_knowledge(_ctx(), query)
+    assert isinstance(result, Ok)
+    assert result.value.status is RetrievalStatus.NO_APPLICABLE
+    assert result.value.passages == []
+    assert result.value.limitations
+
+
+def test_weak_best_match_gives_low_confidence(query):
+    weak = [p.model_copy(update={"score": 0.4}) for p in _passages()]
+    store = InMemoryKnowledgeStore({"dublin-D2"}, weak)
+    result = _service(store).query_knowledge(_ctx(), query)
+    assert isinstance(result, Ok)
+    assert result.value.status is RetrievalStatus.LOW_CONFIDENCE
+
+
+def test_unknown_zone_is_invalid(query):
+    store = InMemoryKnowledgeStore({"dublin-D1"}, _passages())
+    result = _service(store).query_knowledge(_ctx(), query)
+    assert result == Failure("Invalid", "C09.UNKNOWN_ZONE: ['dublin-D2']")
+
+
+def test_caller_without_query_role_is_forbidden(query):
+    store = InMemoryKnowledgeStore({"dublin-D2"}, _passages())
+    result = _service(store).query_knowledge(_ctx("KnowledgeCurator"), query)
+    assert result == Failure("Forbidden", "C09.FORBIDDEN")
+
+
+def test_unreachable_store_is_unavailable(query):
+    store = InMemoryKnowledgeStore({"dublin-D2"}, _passages(), available=False)
+    result = _service(store).query_knowledge(_ctx(), query)
+    assert isinstance(result, Failure)
+    assert result.kind == "Unavailable"
