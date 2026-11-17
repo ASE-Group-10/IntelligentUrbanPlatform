@@ -7,18 +7,20 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.components.c11_c12_contracts import (
+from app.components.c11_kpi_analytics.contracts import (
     AnalysisScope,
-    CannotReplay,
     Coverage,
     Indicator,
     KPISet,
+    TimeRange,
+)
+from app.components.c12_simulation_replay.contracts import (
+    CannotReplay,
     RecordingRecord,
     ReplayControl,
     ReplayFrame,
     ReplayRequest,
     RunManifest,
-    TimeRange,
 )
 
 EXAMPLE_PATH = Path(__file__).resolve().parents[2] / "contracts/examples/c11-c12.json"
