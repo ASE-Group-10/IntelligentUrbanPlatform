@@ -1,0 +1,19 @@
+{
+  "snapshotVersion": 42,
+  "previousVersion": 41,
+  "changes": [
+    {
+      "segmentKey": "seg:4471023",
+      "status": "closed",
+      "speedKmh": null,
+      "delaySeconds": null,
+      "cause": "roadworks",
+      "validUntil": "2026-11-20T18:00:00Z",
+      "observedAt": "2026-11-20T08:14:30Z",
+      "quality": "good",
+      "sources": ["sim-traffic"]
+    }
+  ],
+  "degraded": false,
+  "staleSources": []
+}
