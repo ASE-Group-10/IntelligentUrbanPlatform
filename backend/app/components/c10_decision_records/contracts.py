@@ -1,13 +1,14 @@
 """C10 Decision Records and Explanation contracts (contract doc §7.9–7.14)."""
+
 from datetime import datetime
-from enum import Enum
-from typing import Any, Literal, Optional, Union
+from enum import StrEnum
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from .c09 import EvidenceSnapshot, Passage
-from .common import Model, Outcome, RunScope
+from app.components.c09_logistics_knowledge.contracts import EvidenceSnapshot, Passage
+from app.shared.c09_c10_common import Model, Outcome, RunScope
 
 
 # ---- recordOutcome ----
@@ -16,7 +17,7 @@ class AuditOutcome(Model):
     outcome: Outcome
     target_ids: list[str]
     occurred_at: datetime
-    details: Optional[dict[str, Any]] = None  # never secrets or personal data
+    details: dict[str, Any] | None = None  # never secrets or personal data
 
 
 class AuditId(Model):
@@ -24,14 +25,14 @@ class AuditId(Model):
 
 
 # ---- DecisionRecord / recordDecision ----
-class DecisionType(str, Enum):
+class DecisionType(StrEnum):
     PLAN_GENERATED = "PlanGenerated"
     REPLAN = "Replan"
     ALLOCATION = "Allocation"
     NEGOTIATION = "Negotiation"
 
 
-class SubjectType(str, Enum):
+class SubjectType(StrEnum):
     PLAN = "Plan"
     ALLOCATION = "Allocation"
     NEGOTIATION = "Negotiation"
@@ -51,8 +52,8 @@ class EntityVersion(Model):
 class InputVersions(Model):
     deliveries: list[EntityVersion]
     resources: list[EntityVersion]
-    city_snapshot_version: Optional[int]
-    corpus_version: Optional[int]
+    city_snapshot_version: int | None
+    corpus_version: int | None
 
 
 class SelectedOption(Model):
@@ -64,7 +65,7 @@ class SelectedOption(Model):
 class Alternative(Model):
     option_id: str
     summary: str
-    metrics: Optional[dict[str, float]] = None
+    metrics: dict[str, float] | None = None
     rejected_reason: str
     evidence_ref_ids: list[UUID]
 
@@ -76,10 +77,10 @@ class Reason(Model):
 
 
 class PredictedEffects(Model):
-    eta_min: Optional[float] = None
-    distance_km: Optional[float] = None
-    cost_eur: Optional[float] = None
-    co2_kg: Optional[float] = None
+    eta_min: float | None = None
+    distance_km: float | None = None
+    cost_eur: float | None = None
+    co2_kg: float | None = None
 
 
 class DecisionRecord(Model):
@@ -89,12 +90,12 @@ class DecisionRecord(Model):
     producer: Literal["C05", "C08"]
     decided_by: str
     subject: Subject
-    related_decision_id: Optional[UUID]
+    related_decision_id: UUID | None
     input_versions: InputVersions
     selected_option: SelectedOption
     considered_alternatives: list[Alternative]
     reasons: list[Reason] = Field(min_length=1)
-    predicted_effects: Optional[PredictedEffects] = None
+    predicted_effects: PredictedEffects | None = None
     evidence_snapshots: list[EvidenceSnapshot]
     limitations: list[str]
     run_scope: RunScope
@@ -103,11 +104,18 @@ class DecisionRecord(Model):
     @model_validator(mode="after")
     def _refs_resolve(self):
         stored = {p.passage_id for s in self.evidence_snapshots for p in s.items}
-        cited = {r for x in [*self.reasons, *self.considered_alternatives] for r in x.evidence_ref_ids}
+        cited = {
+            r
+            for x in [*self.reasons, *self.considered_alternatives]
+            for r in x.evidence_ref_ids
+        }
         missing = cited - stored
         if missing:
             raise ValueError(f"C10.EVIDENCE_REF_MISSING: {sorted(map(str, missing))}")
-        if self.decision_type is DecisionType.REPLAN and self.related_decision_id is None:
+        if (
+            self.decision_type is DecisionType.REPLAN
+            and self.related_decision_id is None
+        ):
             raise ValueError("Replan requires relatedDecisionId")
         return self
 
@@ -126,14 +134,14 @@ class DecisionIdSelector(Model):
 class SubjectSelector(Model):
     subject_type: SubjectType
     subject_id: UUID
-    subject_version: Optional[int] = None
-    run_id: Optional[UUID] = None
+    subject_version: int | None = None
+    run_id: UUID | None = None
 
 
-DecisionSelector = Union[DecisionIdSelector, SubjectSelector]
+DecisionSelector = DecisionIdSelector | SubjectSelector
 
 
-class EvidenceStatus(str, Enum):
+class EvidenceStatus(StrEnum):
     STORED = "Stored"
     MISSING = "Missing"
 
@@ -143,7 +151,7 @@ class EvidenceStatusEntry(Model):
     status: EvidenceStatus
 
 
-# DecisionRecordView = DecisionRecord fields (+ recordedAt, evidenceStatus); evidence content
+# DecisionRecordView = DecisionRecord + recordedAt, evidenceStatus; evidence content
 # is served by getDecisionEvidence. shortcut: no separate model until C01 needs it.
 
 
@@ -153,12 +161,12 @@ class ExplainRequest(Model):
     language: str = "en"
 
 
-class ExplanationMode(str, Enum):
+class ExplanationMode(StrEnum):
     GENERATED = "Generated"
     STRUCTURED_FALLBACK = "StructuredFallback"
 
 
-class Completeness(str, Enum):
+class Completeness(StrEnum):
     COMPLETE = "Complete"
     PARTIAL = "Partial"
 
@@ -184,7 +192,7 @@ class Citation(Model):
     excerpt: str
 
 
-class EffectKind(str, Enum):
+class EffectKind(StrEnum):
     PREDICTED = "Predicted"
     OBSERVED = "Observed"
 
@@ -196,14 +204,14 @@ class Effect(Model):
     kind: EffectKind
 
 
-class GapKind(str, Enum):
+class GapKind(StrEnum):
     EVIDENCE_MISSING = "EvidenceMissing"
     INCONSISTENT_RECORD = "InconsistentRecord"
 
 
 class Gap(Model):
     kind: GapKind
-    ref_id: Optional[UUID] = None
+    ref_id: UUID | None = None
     message: str
 
 
@@ -218,10 +226,10 @@ class Explanation(Model):
     subject: Subject
     decided_at: datetime
     run_scope: RunScope
-    corpus_version: Optional[int]
+    corpus_version: int | None
     mode: ExplanationMode
     completeness: Completeness
-    summary: Optional[str]
+    summary: str | None
     key_factors: list[KeyFactor]
     alternatives: list[ExplainedAlternative]
     citations: list[Citation]
@@ -229,17 +237,25 @@ class Explanation(Model):
     gaps: list[Gap]
     limitations: list[str]
     generated_at: datetime
-    generator: Optional[Generator]
+    generator: Generator | None
 
     @model_validator(mode="after")
     def _consistent(self):
         if (self.completeness is Completeness.PARTIAL) != bool(self.gaps):
             raise ValueError("completeness Partial if and only if gaps is non-empty")
         generated = self.mode is ExplanationMode.GENERATED
-        if generated != (self.summary is not None) or generated != (self.generator is not None):
-            raise ValueError("Generated needs summary and generator; StructuredFallback has neither")
-        # every citation used must be in citations[] (which come from C10-stored evidence)
-        cited = {r for x in [*self.key_factors, *self.alternatives] for r in x.citation_ref_ids}
+        if generated != (self.summary is not None) or generated != (
+            self.generator is not None
+        ):
+            raise ValueError(
+                "Generated needs summary and generator; StructuredFallback has neither"
+            )
+        # every citation used must be in citations[] (C10-stored evidence)
+        cited = {
+            r
+            for x in [*self.key_factors, *self.alternatives]
+            for r in x.citation_ref_ids
+        }
         if not cited <= {c.ref_id for c in self.citations}:
             raise ValueError("citationRefIds must all appear in citations")
         return self
@@ -251,13 +267,17 @@ class DecisionEvidence(Model):
     reference_id: str
     kind: Literal["Evidence", "Alternative"]
     status: EvidenceStatus
-    evidence: Optional[Passage]
-    alternative: Optional[Alternative]
+    evidence: Passage | None
+    alternative: Alternative | None
 
     @model_validator(mode="after")
     def _one_payload(self):
         payload = self.evidence if self.kind == "Evidence" else self.alternative
         other = self.alternative if self.kind == "Evidence" else self.evidence
-        if other is not None or (self.status is EvidenceStatus.STORED) != (payload is not None):
-            raise ValueError("exactly the payload matching kind, and only when status is Stored")
+        if other is not None or (self.status is EvidenceStatus.STORED) != (
+            payload is not None
+        ):
+            raise ValueError(
+                "exactly the payload matching kind, and only when status is Stored"
+            )
         return self
