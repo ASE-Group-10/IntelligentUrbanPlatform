@@ -1,0 +1,16 @@
+site_name: Intelligent Urban Platform — Internal Contracts
+docs_dir: contracts
+site_dir: dist/internal
+theme:
+  name: material
+plugins:
+  - search
+markdown_extensions:
+  - tables
+  - fenced_code
+  - toc:
+      permalink: true
+nav:
+  - Overview: README.md
+  - C06 City Monitoring: components/c06-city-monitoring/internal.md
+  - C07 Disruption Detection: components/c07-disruption-detection/internal.md

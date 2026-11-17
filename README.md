@@ -150,20 +150,21 @@ See [frontend/README.md](frontend/README.md) for checks, structure and conventio
 
 ### API contract documentation
 
-Component-owned OpenAPI source documents live under
-`contracts/components/<component>/`. CI discovers and aggregates them into a
-temporary file before linting and building the Redoc site. Run the documentation
-locally with:
+Component-owned contract documents live under
+`contracts/components/<component>/`. CI discovers OpenAPI, AsyncAPI, and
+internal Markdown contracts, validates them, and builds them into one
+documentation site. Run the documentation locally with:
 
 ```sh
 npm ci
+python3 -m pip install mkdocs-material
 npm run contracts:lint
 npm run contracts:build
 cd dist && python3 -m http.server 8080
 ```
 
-Open <http://localhost:8080/openapi/> in a browser. Pushes to `develop` and
-`main` publish documentation for the integration and stable branches at:
+Open <http://localhost:8080/> in a browser. Pushes to `develop` and `main`
+publish documentation for the integration and stable branches at:
 
 ```text
 https://ase-group-10.github.io/IntelligentUrbanPlatform/develop/openapi/
