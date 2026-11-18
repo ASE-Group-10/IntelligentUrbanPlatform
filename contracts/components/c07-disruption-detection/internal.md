@@ -40,7 +40,8 @@ C07 requires `findAffectedWork(changeScope)` and the synchronous, idempotent
 `requestReplan(context, planId, trigger, key)`. C05 owns their definitions and
 examples in [C05 internal interfaces](../c05-planning/internal.md).
 C07 uses the returned plan versions and final outcomes to update its disruption
-record and retries discovery once on a version conflict.
+record. The proposed discovery retry on a version conflict is listed in the
+[C05 coordination points](../c05-planning/internal.md#open-coordination-points).
 
 ### C06 getCitySnapshot(scope, freshnessPolicy) → Result\<CitySnapshot\>
 

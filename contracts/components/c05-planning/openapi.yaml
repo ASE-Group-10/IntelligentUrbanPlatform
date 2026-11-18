@@ -49,10 +49,11 @@ paths:
                     distanceMetres: 1200
                     estimatedDurationSeconds: 360
                 resourceNeeds:
-                  - deliveryIds:
-                      - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
-                    resourceId: 44444444-4444-4444-8444-444444444444
-                    requiredCapacityKg: 10
+                  - deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    resourceKind: van
+                    capacity:
+                      amount: 10
+                      unit: kg
                 decisionId: 33333333-3333-4333-8333-333333333333
                 inputVersions:
                   cityState: 41
@@ -154,10 +155,11 @@ paths:
                     distanceMetres: 1200
                     estimatedDurationSeconds: 360
                 resourceNeeds:
-                  - deliveryIds:
-                      - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
-                    resourceId: 44444444-4444-4444-8444-444444444444
-                    requiredCapacityKg: 10
+                  - deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    resourceKind: van
+                    capacity:
+                      amount: 10
+                      unit: kg
                 decisionId: 33333333-3333-4333-8333-333333333333
                 inputVersions:
                   cityState: 41
@@ -252,10 +254,11 @@ paths:
                     distanceMetres: 1200
                     estimatedDurationSeconds: 360
                 resourceNeeds:
-                  - deliveryIds:
-                      - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
-                    resourceId: 44444444-4444-4444-8444-444444444444
-                    requiredCapacityKg: 10
+                  - deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    resourceKind: van
+                    capacity:
+                      amount: 10
+                      unit: kg
                 decisionId: 33333333-3333-4333-8333-333333333333
                 inputVersions:
                   cityState: 41
@@ -392,23 +395,27 @@ components:
       type: object
       additionalProperties: false
       required:
-        - deliveryIds
-        - resourceId
-        - requiredCapacityKg
+        - deliveryId
+        - resourceKind
+        - capacity
       properties:
-        deliveryIds:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            format: uuid
-        resourceId:
+        deliveryId:
           type: string
           format: uuid
-        requiredCapacityKg:
-          type: number
-          exclusiveMinimum: 0
+        resourceKind:
+          type: string
+          enum: [van, cargo_bike, depot, warehouse, locker]
+        capacity:
+          type: object
+          additionalProperties: false
+          required: [amount, unit]
+          properties:
+            amount:
+              type: number
+              exclusiveMinimum: 0
+            unit:
+              type: string
+              enum: [kg, parcels, slots]
     C05Route:
       type: object
       additionalProperties: false
@@ -478,6 +485,7 @@ components:
         resourceNeeds:
           type: array
           minItems: 1
+          description: Resource requirements for this plan version. C08 owns allocation.
           items:
             $ref: '#/components/schemas/C05ResourceNeed'
         decisionId:

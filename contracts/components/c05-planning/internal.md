@@ -88,8 +88,8 @@ Examples [request](examples/request-replan.json),
 | `newPlanVersion` | integer | when saved | Version of the saved revision |
 | `decisionId` | UUID | when saved | C10 decision record |
 
-**Failures:** `Conflict` (plan version moved on; C07 re-runs `findAffectedWork`
-once), `Infeasible`, `Unavailable`, `NotFound`.
+**Failures in the current C07 contract:** `Conflict`, `Infeasible`, `Unavailable`,
+`NotFound`. The proposed discovery retry on `Conflict` still needs agreement.
 
 The idempotency key is what stops the C08 → C07 → C05 loop. The same
 disruption version can never produce a second replan of the same plan; C05
@@ -124,6 +124,16 @@ decision time. Evidence is retained after the C09 corpus changes. An outbox
 publisher retries the saved event ID without rerunning planning. Failure to commit
 any authoritative state, evidence or outbox entry rolls back the operation.
 
+For UC07, `trigger.citySnapshotVersion` records the City State that triggered
+the request when C07 provides it. C05 reads current conditions in the same run
+and records the version it actually uses for the decision.
+
+C08 uses `planId`, `planVersion` and the event's run scope to look up C05's
+current plan. It rechecks that the event version is still current before
+committing resources. The `requirements` list describes all resource needs for
+unfinished deliveries in that plan version. C08 checks which existing
+commitments still satisfy those needs against the revised route and timing.
+
 For mutating HTTP calls, a retry with the same caller, operation, run scope, key
 and request returns the first committed response. Reusing that key with a
 different request gives `Conflict`. Concurrent writes use expected-version checks.
@@ -137,8 +147,10 @@ The [proposal](examples/plan-proposal.json) at version 2 is confirmed with
 1 is outside this excerpt. After C06 records snapshot 42, C07 requests a replan
 based on version 3. The [saved outcome](examples/replan-saved.json) refers to
 [revision 4](examples/revised-plan.json), which avoids `seg:4471023`.
-Its [PlanReady event](examples/plan-ready-event.json) keeps the original closure
-correlation ID and simulation run ID and references the saved decision.
+Versions 3 and 4 have the same van capacity requirement. The
+[PlanReady event](examples/plan-ready-revision-event.json) carries that requirement
+with version 4 and its decision ID. It retains the closure correlation ID and
+simulation run ID and has its own event ID.
 HTTP examples and this event illustrate proposed fields pending consumer review.
 
 ## Open coordination points
@@ -150,14 +162,15 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
   Agree scope propagation with C07 before connecting simulation to real C05
   storage. A simulation must resolve only its run's plans, inputs and receipts.
   Do not silently treat an unspecified simulation run as live.
-- `citySnapshotVersion` is optional in the existing trigger. Agree with C06/C07
-  whether replanning reads that historical version or fresh conditions, and how
-  unavailable history is reported. No exact-version guarantee is added here.
+- Agree with C07 whether one fresh discovery is allowed after a stale-plan
+  `Conflict`, and whether that conflict consumes the key. A refreshed
+  `basedOnPlanVersion` changes the request but leaves the current key unchanged.
 - C07 currently allows `Infeasible` as a failure, while architecture UC07 describes
   an infeasible attempt as `ReviewRequired`. Preserve the caller's vocabulary
   while agreeing that mapping. The current outcome has no reason/details field.
-- Confirm whether `PlanSaved` is needed as an event. It is currently a synchronous
-  outcome. `PlanReady` is the proposed C05 publication for confirmation/revision.
+- Agree with C07 when the synchronous `PlanSaved` outcome is returned and how to
+  report a saved revision while `PlanReady` publication is pending. `PlanReady`
+  is the event for confirmation and saved revisions.
 - Exchange/routing and the canonical shared event envelope are tracked in #28.
   The event draft refers to the existing C06 envelope to avoid another copy.
 - C05 receives replanning through an internal call from C07. No direct subscription
