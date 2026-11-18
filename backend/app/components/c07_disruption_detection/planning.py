@@ -1,7 +1,7 @@
 """Port from C07 to C05 Planning: the two synchronous calls C07 makes.
 
 C07 depends on this interface only. The real C05 adapter replaces the test
-double once C05 exists (see contracts/c06-c07-interface-contracts.md, section 3).
+double once C05 exists (see contracts/components/c07-disruption-detection/internal.md).
 """
 
 from typing import Protocol

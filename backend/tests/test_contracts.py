@@ -23,19 +23,19 @@ from app.components.c07_disruption_detection.contracts import (
 from app.shared.contracts import EventEnvelope
 
 EXAMPLES: list[tuple[type[BaseModel], str]] = [
-    (EventEnvelope, "event_envelope.city_state_updated.json"),
-    (CityStateUpdated, "city_state_updated.payload.json"),
-    (Observation, "observation.closure.json"),
-    (IngestionReceipt, "ingestion_receipt.json"),
-    (CitySnapshotQuery, "city_snapshot.query.json"),
-    (CitySnapshot, "city_snapshot.json"),
-    (ChangeScope, "change_scope.json"),
-    (AffectedWork, "affected_work.json"),
-    (ReplanRequest, "replan_request.json"),
-    (ReplanOutcome, "replan_outcome.plan_saved.json"),
+    (EventEnvelope, "city-state-updated-event.json"),
+    (CityStateUpdated, "city-state-updated-payload.json"),
+    (Observation, "observation-closure.json"),
+    (IngestionReceipt, "ingestion-receipt.json"),
+    (CitySnapshotQuery, "city-snapshot-query.json"),
+    (CitySnapshot, "city-snapshot.json"),
+    (ChangeScope, "find-affected-work-request.json"),
+    (AffectedWork, "find-affected-work-response.json"),
+    (ReplanRequest, "request-replan.json"),
+    (ReplanOutcome, "replan-saved.json"),
     (Disruption, "disruption.json"),
-    (ResourceAvailabilityChanged, "resource_availability_changed.payload.json"),
-    (OperationalDisruption, "operational_disruption.payload.json"),
+    (ResourceAvailabilityChanged, "resource-availability-changed-payload.json"),
+    (OperationalDisruption, "operational-disruption-payload.json"),
 ]
 
 
@@ -47,22 +47,20 @@ def test_example_round_trips(model, name, example):
 
 
 def test_unknown_field_is_rejected(example):
-    data = example("city_state_updated.payload.json") | {"snapshotVerison": 1}
+    data = example("city-state-updated-payload.json") | {"snapshotVerison": 1}
     with pytest.raises(ValidationError):
         CityStateUpdated.model_validate(data)
 
 
 def test_parse_payload_returns_typed_city_state_updated(example):
-    envelope = EventEnvelope.model_validate(
-        example("event_envelope.city_state_updated.json")
-    )
+    envelope = EventEnvelope.model_validate(example("city-state-updated-event.json"))
     payload = parse_payload(envelope)
     assert isinstance(payload, CityStateUpdated)
     assert payload.changes[0].status == "closed"
 
 
 def test_parse_payload_rejects_unknown_event_type(example):
-    data = example("event_envelope.city_state_updated.json")
+    data = example("city-state-updated-event.json")
     envelope = EventEnvelope.model_validate(data | {"eventType": "Unheard"})
     with pytest.raises(ValueError):
         parse_payload(envelope)
@@ -70,17 +68,17 @@ def test_parse_payload_rejects_unknown_event_type(example):
 
 class TestEnvelopeScope:
     def test_simulation_requires_run_id(self, example):
-        data = example("event_envelope.city_state_updated.json") | {"runId": None}
+        data = example("city-state-updated-event.json") | {"runId": None}
         with pytest.raises(ValidationError):
             EventEnvelope.model_validate(data)
 
     def test_live_must_not_carry_run_id(self, example):
-        data = example("event_envelope.city_state_updated.json") | {"scope": "live"}
+        data = example("city-state-updated-event.json") | {"scope": "live"}
         with pytest.raises(ValidationError):
             EventEnvelope.model_validate(data)
 
     def test_live_without_run_id_is_valid(self, example):
-        data = example("event_envelope.city_state_updated.json") | {
+        data = example("city-state-updated-event.json") | {
             "scope": "live",
             "runId": None,
         }
@@ -92,31 +90,31 @@ class TestTimestamps:
         "value", ["2026-11-20T08:14:30", "2026-11-20T09:14:30+01:00"]
     )
     def test_naive_or_non_utc_timestamp_is_rejected(self, value, example):
-        data = example("observation.closure.json") | {"observedAt": value}
+        data = example("observation-closure.json") | {"observedAt": value}
         with pytest.raises(ValidationError):
             Observation.model_validate(data)
 
     def test_utc_timestamp_serialises_with_z_suffix(self, example):
-        observation = Observation.model_validate(example("observation.closure.json"))
+        observation = Observation.model_validate(example("observation-closure.json"))
         dumped = observation.model_dump(mode="json", by_alias=True)
         assert dumped["observedAt"] == "2026-11-20T08:14:30Z"
 
 
 def test_segment_status_outside_enum_is_rejected(example):
-    data = example("city_state_updated.payload.json")
+    data = example("city-state-updated-payload.json")
     data["changes"][0]["status"] = "blocked"
     with pytest.raises(ValidationError):
         CityStateUpdated.model_validate(data)
 
 
 def test_snapshot_version_must_be_positive(example):
-    data = example("city_state_updated.payload.json") | {"snapshotVersion": 0}
+    data = example("city-state-updated-payload.json") | {"snapshotVersion": 0}
     with pytest.raises(ValidationError):
         CityStateUpdated.model_validate(data)
 
 
 def test_first_city_state_update_may_replace_version_zero(example):
-    data = example("city_state_updated.payload.json") | {
+    data = example("city-state-updated-payload.json") | {
         "snapshotVersion": 1,
         "previousVersion": 0,
     }
@@ -136,12 +134,12 @@ class TestCitySnapshotQuery:
 
 class TestObservationTarget:
     def test_requires_a_target(self, example):
-        data = example("observation.closure.json") | {"target": {}}
+        data = example("observation-closure.json") | {"target": {}}
         with pytest.raises(ValidationError):
             Observation.model_validate(data)
 
     def test_accepts_lat_lon_target(self, example):
-        data = example("observation.closure.json") | {
+        data = example("observation-closure.json") | {
             "target": {"lat": 53.3438, "lon": -6.2546}
         }
         assert Observation.model_validate(data).target.lat == 53.3438
@@ -154,13 +152,13 @@ def test_change_scope_must_name_something():
 
 class TestReplanRequest:
     def test_key_must_match_plan_disruption_and_version(self, example):
-        data = example("replan_request.json")
+        data = example("request-replan.json")
         data["trigger"]["disruptionVersion"] = 2
         with pytest.raises(ValidationError):
             ReplanRequest.model_validate(data)
 
     def test_build_derives_idempotency_key(self, example):
-        expected = ReplanRequest.model_validate(example("replan_request.json"))
+        expected = ReplanRequest.model_validate(example("request-replan.json"))
         built = ReplanRequest.build(plan_id=expected.plan_id, trigger=expected.trigger)
         assert built == expected
 
@@ -178,7 +176,7 @@ class TestReplanOutcome:
     "key", ["4471023", "seg:", "seg:abc", "seg:-1", "edge:4471023"]
 )
 def test_segment_key_must_be_seg_osm_way_id(key, example):
-    data = example("change_scope.json") | {"segmentKeys": [key]}
+    data = example("find-affected-work-request.json") | {"segmentKeys": [key]}
     with pytest.raises(ValidationError):
         ChangeScope.model_validate(data)
 

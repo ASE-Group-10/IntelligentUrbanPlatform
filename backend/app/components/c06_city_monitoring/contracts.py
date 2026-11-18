@@ -1,4 +1,4 @@
-"""C06 City Monitoring contract models (see contracts/c06-c07-interface-contracts.md).
+"""C06 City Monitoring contract models (see contracts/components/c06-city-monitoring/).
 
 Covers SegmentCondition, the CityStateUpdated payload, getCitySnapshot request and
 response, and the ingestObservation input/receipt.

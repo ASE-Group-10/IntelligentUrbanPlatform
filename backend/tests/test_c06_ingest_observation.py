@@ -36,7 +36,7 @@ def context(state_scope: StateScope = SIMULATION) -> SourceContext:
 
 @pytest.fixture
 def closure(example) -> Observation:
-    return Observation.model_validate(example("observation.closure.json"))
+    return Observation.model_validate(example("observation-closure.json"))
 
 
 @pytest.fixture
@@ -79,7 +79,7 @@ class TestClosureIsMerged:
 
         (queued,) = store.state(SIMULATION).outbox
         expected = EventEnvelope.model_validate(
-            example("event_envelope.city_state_updated.json")
+            example("city-state-updated-event.json")
         )
         assert queued.model_dump(exclude={"payload"}) == expected.model_dump(
             exclude={"payload"}
@@ -189,7 +189,7 @@ def test_failed_commit_stores_nothing(closure):
 def test_invalid_or_unsupported_observation_is_rejected(
     update, store, closure, example
 ):
-    data = example("observation.closure.json") | update
+    data = example("observation-closure.json") | update
     observation = Observation.model_validate(data)
 
     result = make_service(store).ingest_observation(context(), observation)
