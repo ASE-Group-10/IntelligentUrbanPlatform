@@ -21,8 +21,20 @@ and `C09KnowledgeResult` schemas in `openapi.yaml`, with its examples.
 
 - Read-only; no idempotency key. Roles: `Service:C05`, `Service:C08`.
 - Returns applicable passages of the active corpus, ranked by similarity to
-  `freeText`. Without `freeText` every applicable passage scores 1.0, so set a
-  high `maxPassages` (e.g. 20) or a relevant policy may be cut.
+  `freeText` (all score 1.0 without it).
+- **Every applicable passage that carries constraints is always returned** and
+  checked for conflicts; `maxPassages` only limits rule-free passages.
+  `ruleCoverage: Incomplete` (explained in `limitations`) means not all hard rules
+  could be returned: UC03 returns `DataUnavailable` and UC07 `ReviewRequired`
+  without saving a revision. C10 rejects a `Selected` decision built on it.
+- **Rule scope:** a constraint applies inside its `zoneIds`; when `segmentKeys`
+  is non-empty, only on those C06 segments. C05 matches them against the route
+  and stop segments, so a detour off those segments is not bound by the rule.
+  Required fields per kind: `VehicleBan` value null; `LoadingWindow` needs
+  `timeOfDay`, value null; `MaxGrossWeight` needs `value: {"maxKg": >0}`.
+- Provenance (`corpusVersion`, `indexVersion`, `embeddingModel`, `retrievedAt`,
+  `ruleCoverage`, `conflicts`, `limitations`) is repeated on the result for
+  convenience; it must equal the `evidenceSnapshot`, which is the record.
 - Same request on the same `corpusVersion` gives the same order.
 - `status`: `Ok`, `LowConfidence`, `Conflict` or `NoApplicable`. None of these
   is a failure; record `limitations` in the decision.

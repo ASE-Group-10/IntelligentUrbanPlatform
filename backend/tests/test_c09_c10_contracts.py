@@ -45,6 +45,8 @@ MODELS = {
     "C10RecordOutcomeResponse": c10.AuditId,
     "C10RecordDecisionRequest": c10.DecisionRecord,
     "C10RecordDecisionResponse": c10.RecordDecisionResponse,
+    "C10RecordDecisionDataUnavailableRequest": c10.DecisionRecord,
+    "C10GetDecisionResponse": c10.DecisionRecordView,
     "C10ExplainDecisionRequest": c10.ExplainRequest,
     "C10ExplainDecisionReplayRequest": c10.ExplainRequest,
     "C10ExplainDecisionOkResponse": c10.Explanation,
@@ -146,3 +148,106 @@ def test_replay_selector_carries_the_run_id():
     assert req.selector.run_id is not None
     plain = c10.ExplainRequest.model_validate(load("C10ExplainDecisionRequest"))
     assert plain.selector.run_id is None  # live callers may omit it
+
+
+# ---- C05 review of #21 ----
+
+
+def _constraint(**changes):
+    c = load("C09QueryKnowledgeOkResponse")["passages"][0]["constraints"][0]
+    c.update(changes)
+    return c
+
+
+def test_demo_loading_window_is_scoped_to_its_street_segment():
+    windows = [
+        c
+        for p in load("C09QueryKnowledgeOkResponse")["passages"]
+        for c in p["constraints"]
+        if c["kind"] == "LoadingWindow"
+    ]
+    assert windows and all(c["segmentKeys"] for c in windows)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"kind": "MaxGrossWeight", "value": None},
+        {"kind": "MaxGrossWeight", "value": {"maxKg": 0}},
+        {"kind": "MaxGrossWeight", "value": {"maxTonnes": 18}},
+        {"kind": "LoadingWindow", "timeOfDay": None},
+        {"kind": "VehicleBan", "value": {"maxKg": 18000}},
+        {"segmentKeys": ["Grafton Street"]},
+        {"zoneIds": []},
+    ],
+)
+def test_rejects_constraint_missing_fields_for_its_kind(changes):
+    with pytest.raises(ValidationError):
+        c09.Constraint.model_validate(_constraint(**changes))
+
+
+def test_accepts_max_gross_weight_with_limit():
+    c09.Constraint.model_validate(
+        _constraint(kind="MaxGrossWeight", timeOfDay=None, value={"maxKg": 18000})
+    )
+
+
+def test_rejects_result_and_snapshot_with_different_corpus_versions():
+    bad(
+        "C09QueryKnowledgeOkResponse",
+        lambda d: d.update(corpusVersion=d["corpusVersion"] + 1),
+        c09.KnowledgeResult,
+    )
+
+
+def test_rejects_incomplete_coverage_without_a_limitation():
+    def m(d):
+        for x in (d, d["evidenceSnapshot"]):
+            x.update(ruleCoverage="Incomplete", limitations=[])
+
+    bad("C09QueryKnowledgeOkResponse", m, c09.KnowledgeResult)
+
+
+def test_rejects_snapshots_from_another_corpus_version():
+    bad(
+        "C10RecordDecisionRequest",
+        lambda d: d["inputVersions"].update(corpusVersion=99),
+        c10.DecisionRecord,
+    )
+
+
+def test_rejects_selected_decision_with_incomplete_rule_coverage():
+    bad(
+        "C10RecordDecisionRequest",
+        lambda d: d["evidenceSnapshots"][0].update(
+            ruleCoverage="Incomplete", limitations=["index rebuilding"]
+        ),
+        c10.DecisionRecord,
+    )
+
+
+def test_failed_attempt_has_no_plan_version_or_selected_option():
+    record = c10.DecisionRecord.model_validate(
+        load("C10RecordDecisionDataUnavailableRequest")
+    )
+    assert record.attempt_outcome is c10.AttemptOutcome.DATA_UNAVAILABLE
+    assert record.selected_option is None and record.subject.version is None
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"selectedOption": None},  # Selected needs an option
+        {"attemptOutcome": "NoChange"},  # only Selected has an option
+    ],
+)
+def test_selected_option_matches_the_outcome(changes):
+    bad("C10RecordDecisionRequest", lambda d: d.update(changes), c10.DecisionRecord)
+
+
+def test_planning_attempt_cannot_carry_a_version():
+    bad(
+        "C10RecordDecisionDataUnavailableRequest",
+        lambda d: d["subject"].update(version=1),
+        c10.DecisionRecord,
+    )

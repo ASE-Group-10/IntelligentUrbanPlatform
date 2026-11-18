@@ -27,11 +27,14 @@ paths:
     post:
       operationId: queryKnowledge
       summary: Query applicable policy evidence
-      description: 'Read-only; no idempotency key. Returns passages of the active corpus that
-        apply to the area, time window, vehicle class and activity, ranked by similarity to
-        `freeText`, plus an EvidenceSnapshot that callers pass unchanged to C10 recordDecision.
-        Same request on the same corpusVersion gives the same order. Callers time out after
-        5 s and treat that as Unavailable. Roles: Service:C05, Service:C08, LogisticsOperator.'
+      description: |-
+        Read-only; no idempotency key. Returns passages of the active corpus that apply to the area, time window, vehicle class and activity, ranked by similarity to `freeText`, plus an EvidenceSnapshot that callers pass unchanged to C10 recordDecision. Same request on the same corpusVersion gives the same order.
+
+        **Hard rules are not ranked away.** Every applicable passage that carries constraints is always returned and checked for conflicts; `maxPassages` only limits the rule-free passages. `ruleCoverage` is `Complete` when all applicable hard rules are present; `Incomplete` (explained in `limitations`) means the planner must not rely on them: UC03 returns DataUnavailable and UC07 ReviewRequired without saving a revision.
+
+        **Rule scope.** A constraint applies to route legs and stops inside its `zoneIds`; when `segmentKeys` is non-empty, only on those C06 segments (`seg:<osm_way_id>`). C05 matches them against the segments of the route and stops, so a detour off those segments is not bound by the rule.
+
+        Callers time out after 5 s and treat that as Unavailable. Roles: Service:C05, Service:C08, LogisticsOperator.
       tags:
       - C09 Logistics Knowledge
       security:
@@ -260,6 +263,14 @@ components:
       type: string
     C09Constraint:
       additionalProperties: false
+      description: |-
+        A hard rule the planner applies (C05 #21 review, point 1).
+
+        Scope: the rule applies to a route leg or stop inside ``zoneIds``; when
+        ``segmentKeys`` is non-empty, only on those C06 segments (empty = the whole
+        zones). Fields required per kind: VehicleBan needs ``value`` null;
+        LoadingWindow needs ``timeOfDay`` and ``value`` null; MaxGrossWeight needs
+        ``value`` = ``{"maxKg": <positive number>}``.
       properties:
         constraintId:
           type: string
@@ -267,6 +278,12 @@ components:
           $ref: '#/components/schemas/C09ConstraintKind'
         zoneIds:
           items:
+            type: string
+          minItems: 1
+          type: array
+        segmentKeys:
+          items:
+            pattern: ^seg:[1-9][0-9]*$
             type: string
           type: array
         vehicleClasses:
@@ -294,6 +311,7 @@ components:
       - constraintId
       - kind
       - zoneIds
+      - segmentKeys
       - vehicleClasses
       - timeOfDay
       - daysOfWeek
@@ -343,6 +361,8 @@ components:
     C09EvidenceSnapshot:
       additionalProperties: false
       properties:
+        ruleCoverage:
+          $ref: '#/components/schemas/C09RuleCoverage'
         conflicts:
           items:
             $ref: '#/components/schemas/C09KnowledgeConflict'
@@ -373,6 +393,7 @@ components:
             $ref: '#/components/schemas/C09Passage'
           type: array
       required:
+      - ruleCoverage
       - conflicts
       - limitations
       - corpusVersion
@@ -452,6 +473,8 @@ components:
     C09KnowledgeResult:
       additionalProperties: false
       properties:
+        ruleCoverage:
+          $ref: '#/components/schemas/C09RuleCoverage'
         conflicts:
           items:
             $ref: '#/components/schemas/C09KnowledgeConflict'
@@ -479,6 +502,7 @@ components:
         evidenceSnapshot:
           $ref: '#/components/schemas/C09EvidenceSnapshot'
       required:
+      - ruleCoverage
       - conflicts
       - limitations
       - corpusVersion
@@ -588,6 +612,18 @@ components:
       - Conflict
       - NoApplicable
       type: string
+    C09RuleCoverage:
+      description: |-
+        Whether every applicable hard rule (passage with constraints) is returned.
+
+        ``maxPassages`` never cuts a passage that carries constraints; it only limits
+        the rule-free passages. ``Incomplete`` means C09 could not return them all;
+        C05 must then not rely on the rules (UC03 DataUnavailable, UC07
+        ReviewRequired).
+      enum:
+      - Complete
+      - Incomplete
+      type: string
     C09TimeOfDay:
       additionalProperties: false
       properties:
@@ -628,6 +664,7 @@ components:
     C09QueryKnowledgeOkResponse:
       summary: Applicable evidence found
       value:
+        ruleCoverage: Complete
         status: Ok
         passages:
         - passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
@@ -653,6 +690,7 @@ components:
             zoneIds:
             - dublin-D1
             - dublin-D2
+            segmentKeys: []
             vehicleClasses:
             - HGV
             timeOfDay:
@@ -683,6 +721,8 @@ components:
             kind: LoadingWindow
             zoneIds:
             - dublin-D2
+            segmentKeys:
+            - seg:5508812
             vehicleClasses: []
             timeOfDay:
               from: 06:00
@@ -697,6 +737,7 @@ components:
         embeddingModel: embedding-model-tbd
         retrievedAt: '2026-11-20T06:55:02Z'
         evidenceSnapshot:
+          ruleCoverage: Complete
           snapshotId: e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a05
           query:
             area:
@@ -734,6 +775,7 @@ components:
               zoneIds:
               - dublin-D1
               - dublin-D2
+              segmentKeys: []
               vehicleClasses:
               - HGV
               timeOfDay:
@@ -764,6 +806,8 @@ components:
               kind: LoadingWindow
               zoneIds:
               - dublin-D2
+              segmentKeys:
+              - seg:5508812
               vehicleClasses: []
               timeOfDay:
                 from: 06:00
@@ -780,6 +824,7 @@ components:
     C09QueryKnowledgeLowConfidenceResponse:
       summary: Best match below threshold
       value:
+        ruleCoverage: Complete
         status: LowConfidence
         passages:
         - passageId: 7e215c90-4d3b-4a6f-b0c8-91d2e3f4a503
@@ -804,6 +849,8 @@ components:
             kind: LoadingWindow
             zoneIds:
             - dublin-D2
+            segmentKeys:
+            - seg:5508812
             vehicleClasses: []
             timeOfDay:
               from: 06:00
@@ -819,6 +866,7 @@ components:
         embeddingModel: embedding-model-tbd
         retrievedAt: '2026-11-20T06:55:02Z'
         evidenceSnapshot:
+          ruleCoverage: Complete
           snapshotId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c06
           query:
             area:
@@ -855,6 +903,8 @@ components:
               kind: LoadingWindow
               zoneIds:
               - dublin-D2
+              segmentKeys:
+              - seg:5508812
               vehicleClasses: []
               timeOfDay:
                 from: 06:00
@@ -872,6 +922,7 @@ components:
     C09QueryKnowledgeConflictResponse:
       summary: Two sources contradict
       value:
+        ruleCoverage: Complete
         status: Conflict
         passages:
         - passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
@@ -897,6 +948,7 @@ components:
             zoneIds:
             - dublin-D1
             - dublin-D2
+            segmentKeys: []
             vehicleClasses:
             - HGV
             timeOfDay:
@@ -928,6 +980,7 @@ components:
             zoneIds:
             - dublin-D1
             - dublin-D2
+            segmentKeys: []
             vehicleClasses:
             - HGV
             timeOfDay:
@@ -950,6 +1003,7 @@ components:
         embeddingModel: embedding-model-tbd
         retrievedAt: '2026-11-20T06:55:02Z'
         evidenceSnapshot:
+          ruleCoverage: Complete
           snapshotId: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d07
           query:
             area:
@@ -987,6 +1041,7 @@ components:
               zoneIds:
               - dublin-D1
               - dublin-D2
+              segmentKeys: []
               vehicleClasses:
               - HGV
               timeOfDay:
@@ -1018,6 +1073,7 @@ components:
               zoneIds:
               - dublin-D1
               - dublin-D2
+              segmentKeys: []
               vehicleClasses:
               - HGV
               timeOfDay:
@@ -1070,6 +1126,7 @@ components:
               zoneIds:
               - dublin-D1
               - dublin-D2
+              segmentKeys: []
               vehicleClasses:
               - HGV
               timeOfDay:
