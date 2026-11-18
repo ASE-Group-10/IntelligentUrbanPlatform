@@ -1,5 +1,7 @@
 """UC05 getCitySnapshot: versioned City State with freshness, history and scope."""
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -13,7 +15,7 @@ from app.components.c06_city_monitoring.contracts import (
 from app.components.c06_city_monitoring.ingestion import CityMonitoring, SourceContext
 from app.components.c06_city_monitoring.store import (
     InMemoryCityStateStore,
-    InMemoryTransaction,
+    InMemoryReader,
     StateScope,
     StoreUnavailableError,
 )
@@ -251,15 +253,82 @@ class TestScopeAndFailures:
         assert result.kind == "Invalid"
 
     def test_store_failure_is_unavailable(self, clock, closure):
-        class StoreDown(InMemoryTransaction):
-            def current_version(self) -> int:
+        class StoreDown(InMemoryCityStateStore):
+            @contextmanager
+            def read(self, state_scope: StateScope) -> Iterator[InMemoryReader]:
                 raise StoreUnavailableError("database unreachable")
+                yield  # pragma: no cover - makes this a generator
 
-        service = CityMonitoring(
-            store=InMemoryCityStateStore(transaction_type=StoreDown), clock=clock
-        )
+        service = CityMonitoring(store=StoreDown(), clock=clock)
 
         result = service.get_city_snapshot(SIMULATION, query(SEGMENT))
 
         assert isinstance(result, Failure)
         assert result.kind == "Unavailable"
+
+    @pytest.mark.parametrize("count", [0, 201], ids=["no-keys", "too-many-keys"])
+    def test_segment_key_count_must_match_the_http_contract(
+        self, service, closure, count
+    ):
+        ingest(service, closure)
+        keys = [f"seg:{n}" for n in range(1, count + 1)]
+
+        result = service.get_city_snapshot(SIMULATION, query(*keys))
+
+        assert isinstance(result, Failure)
+        assert result.kind == "Invalid"
+
+
+class TestReadsHaveNoSideEffects:
+    """Regressions from the PR 44 review (C05 and Qodo)."""
+
+    def test_ingestion_committed_during_a_read_is_kept(self, clock, closure):
+        class IngestDuringRead(InMemoryCityStateStore):
+            during_read: Callable[[], None] | None = None
+
+            @contextmanager
+            def read(self, state_scope: StateScope) -> Iterator[InMemoryReader]:
+                with super().read(state_scope) as reader:
+                    if self.during_read:
+                        self.during_read()
+                    yield reader
+
+        store = IngestDuringRead()
+        store.seed_version(SIMULATION, 41)
+        service = CityMonitoring(store=store, clock=clock)
+        ingest(service, closure)
+        reopen = observation_on(
+            SEGMENT,
+            "open",
+            OBSERVED + timedelta(minutes=5),
+            "44444444-4444-4444-8444-444444444444",
+        )
+        store.during_read = lambda: ingest(service, reopen)
+
+        result = service.get_city_snapshot(SIMULATION, query(SEGMENT))
+
+        assert result.value.snapshot_version == 42
+        state = store.state(SIMULATION)
+        assert state.version == 43
+        assert state.segments[SEGMENT].status == "open"
+        assert len(state.history) == 2
+        assert len(state.outbox) == 2
+
+    def test_changing_a_returned_segment_leaves_the_store_intact(
+        self, service, closure
+    ):
+        ingest(service, closure)
+
+        returned = service.get_city_snapshot(SIMULATION, query(SEGMENT)).value
+        returned.segments[0].status = "open"
+        past = service.get_city_snapshot(
+            SIMULATION, query(SEGMENT, at_version=42)
+        ).value
+        past.segments[0].status = "open"
+
+        current = service.get_city_snapshot(SIMULATION, query(SEGMENT)).value
+        recorded = service.get_city_snapshot(
+            SIMULATION, query(SEGMENT, at_version=42)
+        ).value
+        assert current.segments[0].status == "closed"
+        assert recorded.segments[0].status == "closed"

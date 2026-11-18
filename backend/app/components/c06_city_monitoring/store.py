@@ -1,10 +1,12 @@
 """City State persistence port for C06, plus an in-memory test double.
 
 A transaction groups the state change, its history record and its outbox event:
-either all of them are committed or none is (transactional outbox).
+either all of them are committed or none is (transactional outbox). Reads go
+through ``read``, which sees committed state and never writes anything back.
 """
 
-from collections.abc import Iterator
+from bisect import bisect_right
+from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -63,10 +65,6 @@ class CityStateTransaction(Protocol):
         """
         ...
 
-    def segments(self, at_version: int | None = None) -> dict[str, SegmentCondition]:
-        """Return each segment's condition now, or as it was at ``at_version``."""
-        ...
-
     def set_version(self, version: int) -> None:
         """Record the new City State version."""
         ...
@@ -82,8 +80,34 @@ class CityStateTransaction(Protocol):
         ...
 
 
+class CityStateReader(Protocol):
+    """Read-only view of committed City State for one scope."""
+
+    def current_version(self) -> int:
+        """Return the committed City State version (0 before the first change)."""
+        ...
+
+    def conditions(
+        self, segment_keys: Sequence[str], at_version: int | None = None
+    ) -> dict[str, SegmentCondition]:
+        """Return the requested segments' conditions now, or as of ``at_version``.
+
+        Segments without a condition are left out. The returned objects are copies:
+        changing them never changes the store.
+        """
+        ...
+
+
 class CityStateStore(Protocol):
     """Persistence for City State, history and outbox, partitioned by scope."""
+
+    def read(self, state_scope: StateScope) -> AbstractContextManager[CityStateReader]:
+        """Open a consistent, read-only view of committed state; never writes.
+
+        Raises:
+            StoreUnavailableError: if the store cannot be read.
+        """
+        ...
 
     def transaction(
         self, state_scope: StateScope
@@ -102,7 +126,9 @@ class ScopeState:
 
     version: int = 0
     segments: dict[str, SegmentCondition] = field(default_factory=dict)
-    segment_versions: list[tuple[int, SegmentCondition]] = field(default_factory=list)
+    segment_versions: dict[str, list[tuple[int, SegmentCondition]]] = field(
+        default_factory=dict
+    )
     history: list[tuple[Observation, IngestionReceipt]] = field(default_factory=list)
     outbox: list[EventEnvelope] = field(default_factory=list)
 
@@ -127,16 +153,9 @@ class InMemoryTransaction:
 
     def put_segment(self, condition: SegmentCondition, version: int) -> None:
         self._state.segments[condition.segment_key] = condition
-        self._state.segment_versions.append((version, condition))
-
-    def segments(self, at_version: int | None = None) -> dict[str, SegmentCondition]:
-        if at_version is None:
-            return dict(self._state.segments)
-        as_of: dict[str, SegmentCondition] = {}
-        for version, condition in self._state.segment_versions:
-            if version <= at_version:
-                as_of[condition.segment_key] = condition
-        return as_of
+        self._state.segment_versions.setdefault(condition.segment_key, []).append(
+            (version, condition)
+        )
 
     def set_version(self, version: int) -> None:
         self._state.version = version
@@ -150,11 +169,39 @@ class InMemoryTransaction:
         self._state.outbox.append(envelope)
 
 
+class InMemoryReader:
+    """In-memory ``CityStateReader`` over one committed ``ScopeState``."""
+
+    def __init__(self, state: ScopeState) -> None:
+        self._state = state
+
+    def current_version(self) -> int:
+        return self._state.version
+
+    def conditions(
+        self, segment_keys: Sequence[str], at_version: int | None = None
+    ) -> dict[str, SegmentCondition]:
+        found: dict[str, SegmentCondition] = {}
+        for key in segment_keys:
+            condition = self._condition(key, at_version)
+            if condition is not None:
+                found[key] = condition.model_copy(deep=True)
+        return found
+
+    def _condition(self, key: str, at_version: int | None) -> SegmentCondition | None:
+        if at_version is None:
+            return self._state.segments.get(key)
+        versions = self._state.segment_versions.get(key, [])
+        index = bisect_right(versions, at_version, key=lambda entry: entry[0])
+        return versions[index - 1][1] if index else None
+
+
 class InMemoryCityStateStore:
-    """Test double for ``CityStateStore``; replaced by the Postgres store (#5).
+    """Test double for ``CityStateStore``; replaced by the Postgres store (#40).
 
     Each transaction works on a copy that replaces the stored state only when the
-    ``with`` block exits normally, so failures leave nothing behind.
+    ``with`` block exits normally, so failures leave nothing behind. Committed
+    state is never changed in place, so a reader can use it without copying.
     """
 
     def __init__(
@@ -168,6 +215,10 @@ class InMemoryCityStateStore:
         working = deepcopy(self._scopes.get(state_scope, ScopeState()))
         yield self._transaction_type(working)
         self._scopes[state_scope] = working
+
+    @contextmanager
+    def read(self, state_scope: StateScope) -> Iterator[InMemoryReader]:
+        yield InMemoryReader(self._scopes.get(state_scope, ScopeState()))
 
     def seed_version(self, state_scope: StateScope, version: int) -> None:
         """Start a scope at ``version`` (tests use this to mirror the examples)."""

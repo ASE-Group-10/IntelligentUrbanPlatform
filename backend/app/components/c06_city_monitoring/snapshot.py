@@ -19,6 +19,9 @@ from app.shared.result import Failure, Ok, Result
 DEFAULT_MAX_AGE_SECONDS = 900
 """Agreed default: values older than 15 minutes are reported as ``degraded``."""
 
+MAX_SEGMENT_KEYS = 200
+"""Same limit as the HTTP contract (``openapi.yaml``)."""
+
 _QUALITY_RANK: dict[Quality, int] = {"good": 0, "degraded": 1, "unknown": 2}
 
 
@@ -33,11 +36,13 @@ def get_city_snapshot(
     Segments without a recorded condition are omitted (absent means open, good).
     For the current version, a ``good`` value older than the freshness limit is
     returned as ``degraded`` and its sources are listed as stale. Past versions
-    (``atVersion``) are returned as recorded.
+    (``atVersion``) are returned as recorded. Reading never changes the store, and
+    the returned segments are copies.
 
     Returns:
         ``Ok(CitySnapshot)``;
-        ``Failure("Invalid")`` for area (bbox) queries, which need segment geometry;
+        ``Failure("Invalid")`` for area (bbox) queries, which need segment geometry,
+        or for fewer than 1 or more than ``MAX_SEGMENT_KEYS`` segment keys;
         ``Failure("NotFound")`` if ``atVersion`` is newer than the current version;
         ``Failure("Unavailable")`` if no City State exists yet or the store fails.
     """
@@ -48,10 +53,14 @@ def get_city_snapshot(
             "area (bbox) queries need segment geometry, which C06 does not hold yet; "
             "query by segmentKeys",
         )
+    if not 1 <= len(keys) <= MAX_SEGMENT_KEYS:
+        return Failure(
+            "Invalid", f"request between 1 and {MAX_SEGMENT_KEYS} segment keys"
+        )
 
     try:
-        with store.transaction(state_scope) as tx:
-            current = tx.current_version()
+        with store.read(state_scope) as reader:
+            current = reader.current_version()
             if current == 0:
                 return Failure(
                     "Unavailable", "no City State recorded for this scope yet"
@@ -62,11 +71,12 @@ def get_city_snapshot(
                     f"City State version {query.at_version} does not exist "
                     f"(current is {current})",
                 )
-            conditions = tx.segments(at_version=query.at_version)
+            unique_keys = list(dict.fromkeys(keys))
+            conditions = reader.conditions(unique_keys, at_version=query.at_version)
     except StoreUnavailableError as error:
         return Failure("Unavailable", str(error))
 
-    selected = [conditions[key] for key in dict.fromkeys(keys) if key in conditions]
+    selected = [conditions[key] for key in unique_keys if key in conditions]
     stale_sources: set[str] = set()
     if query.at_version is None:
         max_age = _max_age(query)

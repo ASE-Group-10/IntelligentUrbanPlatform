@@ -68,8 +68,11 @@ Behaviour (implemented in `backend/app/components/c06_city_monitoring/snapshot.p
 - `overallQuality` is the worst quality among the returned segments, or `good`
   when none are returned.
 - `scope.bbox` is rejected as `Invalid` until segments have geometry in C06.
+- `scope.segmentKeys` must hold 1 to 200 keys, the same limit as `openapi.yaml`.
+- A read has no side effects: it sees committed City State and never writes, so
+  an ingestion committed during the read is kept. Returned segments are copies.
 
-**Failures:** `Invalid` (bad scope, or `bbox`), `NotFound` (`atVersion` newer
+**Failures:** `Invalid` (bad scope, `bbox`, or 0 or more than 200 segment keys), `NotFound` (`atVersion` newer
 than the current version), `Unavailable` (no City State yet, or store down),
 `Forbidden`.
 
