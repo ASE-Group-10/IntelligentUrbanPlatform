@@ -9,22 +9,43 @@ from pydantic import ValidationError
 
 from app.components.c11_kpi_analytics.contracts import (
     AnalysisScope,
+    Breakdown,
     Coverage,
     Indicator,
+    KPIQuery,
     KPISet,
     TimeRange,
 )
 from app.components.c12_simulation_replay.contracts import (
     CannotReplay,
+    Checkpoint,
     RecordingRecord,
     ReplayControl,
     ReplayFrame,
     ReplayRequest,
     RunManifest,
+    SimulationRequest,
 )
 
-EXAMPLE_PATH = Path(__file__).resolve().parents[2] / "contracts/examples/c11-c12.json"
-EXAMPLES = json.loads(EXAMPLE_PATH.read_text())
+COMPONENT_CONTRACTS = Path(__file__).resolve().parents[2] / "contracts/components"
+EXAMPLE_PATHS = {
+    "partialKpis": "c11-kpi-analytics/examples/kpi-set-partial.json",
+    "staleKpis": "c11-kpi-analytics/examples/kpi-set-stale.json",
+    "manifest": "c12-simulation-replay/examples/run-manifest.json",
+    "record": "c12-simulation-replay/examples/recording-record.json",
+    "replayRequest": "c12-simulation-replay/examples/start-replay-request.json",
+    "pausedFrame": "c12-simulation-replay/examples/replay-frame-paused.json",
+    "cannotReplay": "c12-simulation-replay/examples/cannot-replay.json",
+    "seek": "c12-simulation-replay/examples/control-replay-seek.json",
+    "kpiQuery": "c11-kpi-analytics/examples/query-kpis-request.json",
+    "breakdown": "c11-kpi-analytics/examples/kpi-breakdown.json",
+    "simulationRequest": "c12-simulation-replay/examples/start-simulation-request.json",
+    "checkpoint": "c12-simulation-replay/examples/checkpoint.json",
+}
+EXAMPLES = {
+    key: json.loads((COMPONENT_CONTRACTS / path).read_text())
+    for key, path in EXAMPLE_PATHS.items()
+}
 
 
 class ContractTests(unittest.TestCase):
@@ -38,10 +59,18 @@ class ContractTests(unittest.TestCase):
             "pausedFrame": ReplayFrame,
             "cannotReplay": CannotReplay,
             "seek": ReplayControl,
+            "kpiQuery": KPIQuery,
+            "breakdown": Breakdown,
+            "simulationRequest": SimulationRequest,
+            "checkpoint": Checkpoint,
         }
         for key, model in models.items():
             with self.subTest(key=key):
-                model.model_validate(EXAMPLES[key])
+                result = model.model_validate(EXAMPLES[key])
+                self.assertEqual(
+                    result.model_dump(mode="json", by_alias=True, exclude_unset=True),
+                    EXAMPLES[key],
+                )
 
     def test_missing_is_not_zero(self):
         item = EXAMPLES["partialKpis"]["indicators"][1]
