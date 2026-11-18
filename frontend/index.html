@@ -9,7 +9,9 @@
     <script>
       // Apply the saved theme before first paint to avoid a light flash in dark mode.
       try {
-        const saved = localStorage.getItem("ulop-theme") || "system";
+        // Must read values the same way as readSavedTheme in src/lib/theme.tsx.
+        const raw = localStorage.getItem("ulop-theme");
+        const saved = raw === "light" || raw === "dark" ? raw : "system";
         const dark =
           saved === "dark" ||
           (saved === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
