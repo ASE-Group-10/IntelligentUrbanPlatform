@@ -34,6 +34,12 @@ Some components have only events and internal interfaces (for example C07),
 and others may have only an HTTP API. A component folder can be added as soon
 as one of these files exists.
 
+C01 Web Interface has no folder: it provides no operations, events or
+internal interfaces of its own. It calls the HTTP APIs of the other
+components, so each screen follows the `openapi.yaml` of the component it
+uses. Sign-in, the bearer token and the acting provider are defined by C02
+(`c02-identity-access/`).
+
 ## OpenAPI rules
 
 - Use OpenAPI `3.1.0`.
