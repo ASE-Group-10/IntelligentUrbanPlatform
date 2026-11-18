@@ -163,13 +163,10 @@ npm run contracts:build
 cd dist && python3 -m http.server 8080
 ```
 
-Open <http://localhost:8080/> in a browser. Pushes to `develop` and `main`
-publish documentation for the integration and stable branches at:
+Open <http://localhost:8080/> in a browser. Successful pushes to `develop`
+publish the documentation at:
 
-```text
-https://ase-group-10.github.io/IntelligentUrbanPlatform/develop/openapi/
-https://ase-group-10.github.io/IntelligentUrbanPlatform/main/openapi/
-```
+<https://ase-group-10.github.io/IntelligentUrbanPlatform/>
 
 Pull requests and feature branches only lint/build the documentation and upload
 an artifact; they do not publish public pages. Enable GitHub Pages with the
