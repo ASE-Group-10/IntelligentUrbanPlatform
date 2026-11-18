@@ -1,0 +1,33 @@
+{
+  "eventId": "5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e",
+  "eventType": "CityStateUpdated",
+  "schemaVersion": 1,
+  "producer": "C06",
+  "observedAt": "2026-11-20T08:14:30Z",
+  "emittedAt": "2026-11-20T08:14:31Z",
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+  "causationId": null,
+  "affected": { "planIds": [], "resourceIds": [], "segmentKeys": ["seg:4471023"] },
+  "entityVersions": { "citySnapshot": 42 },
+  "scope": "simulation",
+  "runId": "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+  "payload": {
+    "snapshotVersion": 42,
+    "previousVersion": 41,
+    "changes": [
+      {
+        "segmentKey": "seg:4471023",
+        "status": "closed",
+        "speedKmh": null,
+        "delaySeconds": null,
+        "cause": "roadworks",
+        "validUntil": "2026-11-20T18:00:00Z",
+        "observedAt": "2026-11-20T08:14:30Z",
+        "quality": "good",
+        "sources": ["sim-traffic"]
+      }
+    ],
+    "degraded": false,
+    "staleSources": []
+  }
+}

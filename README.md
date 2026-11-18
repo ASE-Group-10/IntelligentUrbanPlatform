@@ -140,6 +140,14 @@ docker compose run --rm dbmate up
 
 See [database/README.md](database/README.md) for migration conventions.
 
+### Frontend
+
+```sh
+cd frontend && npm ci && npm run dev
+```
+
+See [frontend/README.md](frontend/README.md) for checks, structure and conventions.
+
 ### API contract documentation
 
 Component-owned OpenAPI source documents live under

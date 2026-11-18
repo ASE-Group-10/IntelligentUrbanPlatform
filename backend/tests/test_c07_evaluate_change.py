@@ -48,7 +48,7 @@ def make_service(planning: FakePlanning, store: InMemoryDisruptionStore):
 
 def make_data(example, *, segment=SEGMENT, status="closed", quality="good") -> dict:
     """The contract's CityStateUpdated envelope as JSON, with its change adjusted."""
-    data = example("event_envelope.city_state_updated.json")
+    data = example("city-state-updated-event.json")
     data["payload"]["changes"][0] |= {
         "segmentKey": segment,
         "status": status,
@@ -67,7 +67,7 @@ def make_event(example, *, overrides=None, **change) -> EventEnvelope:
 
 @pytest.fixture
 def affected_work(example) -> AffectedWork:
-    return AffectedWork.model_validate(example("affected_work.json"))
+    return AffectedWork.model_validate(example("find-affected-work-response.json"))
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ def test_closure_on_used_segment_creates_high_disruption_and_one_replan(
     assert len(planning.replan_calls) == 1
     (request, correlation_id) = planning.replan_calls[0]
     assert request.key == f"{PLAN_ID}:{DISRUPTION_ID}:1"
-    assert request == ReplanRequest.model_validate(example("replan_request.json"))
+    assert request == ReplanRequest.model_validate(example("request-replan.json"))
     assert correlation_id == CORRELATION_ID
     assert result.value.replan_requests == [request]
 

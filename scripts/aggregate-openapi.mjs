@@ -1,16 +1,20 @@
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import yaml from "js-yaml";
 
 const root = resolve("contracts/components");
 const output = resolve(".tmp/contracts/openapi.yaml");
+// Every contract file is optional: components without HTTP operations
+// (events or internal interfaces only) have no openapi.yaml and are skipped.
 const componentDirectories = (await readdir(root, { withFileTypes: true }))
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
+  .filter((name) => existsSync(join(root, name, "openapi.yaml")))
   .sort();
 
 if (componentDirectories.length === 0) {
-  throw new Error("No component contract directories found.");
+  throw new Error("No component openapi.yaml documents found.");
 }
 
 const aggregate = {
