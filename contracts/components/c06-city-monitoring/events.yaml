@@ -1,0 +1,231 @@
+asyncapi: 3.0.0
+info:
+  title: C06 City Monitoring Events
+  version: 1.0.0
+  description: |
+    Events published by C06 City Monitoring (UC05).
+
+    C06 owns City State. It writes `CityStateUpdated` to its outbox in the same
+    transaction as the City State change and publishes it afterwards.
+    `CityStateUpdated` carries only what changed. Consumers that need full
+    context call `getCitySnapshot` (see `internal.md`).
+
+    Consumers deduplicate on `eventId`. Examples are in `examples/`:
+    `city-state-updated-event.json` (full envelope) and
+    `city-state-updated-payload.json` (payload only).
+
+    `EventEnvelope` is shared by every component. It is defined here until the
+    team agrees where shared definitions live (#28).
+  contact:
+    name: C06 City Monitoring (Bruno + Alejandro)
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    host: localhost
+    protocol: amqp
+    description: Local RabbitMQ topic exchange (proposed name, see Still open).
+channels:
+  cityStateUpdated:
+    address: ulop.events
+    description: |
+      Proposed: topic exchange `ulop.events`, routing key = `eventType`
+      (`CityStateUpdated`). Exchange naming is still open.
+    messages:
+      cityStateUpdated:
+        $ref: '#/components/messages/CityStateUpdated'
+operations:
+  publishCityStateUpdated:
+    action: send
+    channel:
+      $ref: '#/channels/cityStateUpdated'
+    title: Publish a City State change
+    summary: Sent once per new City State version (ingestion or freshness check).
+    messages:
+      - $ref: '#/channels/cityStateUpdated/messages/cityStateUpdated'
+components:
+  messages:
+    CityStateUpdated:
+      name: CityStateUpdated
+      title: City State updated
+      summary: A new City State version was committed.
+      description: |
+        `affected.segmentKeys` lists the changed segments and
+        `entityVersions.citySnapshot` is the new snapshot version.
+        `degraded: true` means the freshness check (UC05 AF2) published it
+        because sources went stale.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType:
+                const: CityStateUpdated
+              producer:
+                const: C06
+              payload:
+                $ref: '#/components/schemas/CityStateUpdatedPayload'
+  schemas:
+    EventEnvelope:
+      type: object
+      description: |
+        Versioned JSON envelope for every message on the event bus. Shared by
+        all components. Python model: `backend/app/shared/contracts.py`
+        (`EventEnvelope`).
+      additionalProperties: false
+      required:
+        - eventId
+        - eventType
+        - schemaVersion
+        - producer
+        - observedAt
+        - emittedAt
+        - correlationId
+        - affected
+        - scope
+        - payload
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique per event. Retries reuse it; consumers deduplicate on it.
+        eventType:
+          type: string
+          minLength: 1
+          description: For example `CityStateUpdated`, `ResourceAvailabilityChanged`, `OperationalDisruption`, `PlanReady`.
+        schemaVersion:
+          type: integer
+          minimum: 1
+          description: Starts at 1. Bumped on a breaking payload change.
+        producer:
+          type: string
+          minLength: 1
+          description: Component code, for example `C06`.
+        observedAt:
+          type: string
+          format: date-time
+          description: When the underlying thing happened in the world (UTC, `Z` suffix).
+        emittedAt:
+          type: string
+          format: date-time
+          description: When the producer committed the event (UTC, `Z` suffix).
+        correlationId:
+          type: string
+          format: uuid
+          description: Ties a whole chain together (observation → disruption → replan).
+        causationId:
+          type: [string, 'null']
+          format: uuid
+          description: '`eventId` of the event that caused this one.'
+        affected:
+          $ref: '#/components/schemas/Affected'
+        entityVersions:
+          type: [object, 'null']
+          description: Map of entity ID or name → version this event refers to.
+          additionalProperties:
+            type: integer
+            minimum: 1
+        scope:
+          type: string
+          enum: [live, simulation]
+        runId:
+          type: [string, 'null']
+          format: uuid
+          description: Required when `scope` is `simulation`, absent when `live`.
+        payload:
+          type: object
+          description: Type-specific body.
+    Affected:
+      type: object
+      description: Entities an event touches. Empty arrays are allowed.
+      additionalProperties: false
+      required: [planIds, resourceIds, segmentKeys]
+      properties:
+        planIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        resourceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        segmentKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentKey'
+    SegmentKey:
+      type: string
+      pattern: '^seg:[1-9][0-9]*$'
+      description: '`seg:<osm_way_id>` (OpenStreetMap way ID), for example `seg:4471023`.'
+    Quality:
+      type: string
+      enum: [good, degraded, unknown]
+    CityStateUpdatedPayload:
+      type: object
+      description: Python model `CityStateUpdated` in `backend/app/components/c06_city_monitoring/contracts.py`.
+      additionalProperties: false
+      required: [snapshotVersion, previousVersion, changes, degraded, staleSources]
+      properties:
+        snapshotVersion:
+          type: integer
+          minimum: 1
+          description: City State version after this change.
+        previousVersion:
+          type: integer
+          minimum: 0
+          description: Version it replaced.
+        changes:
+          type: array
+          description: Latest state of each changed segment only.
+          items:
+            $ref: '#/components/schemas/SegmentCondition'
+        degraded:
+          type: boolean
+          description: True when published by the freshness check (UC05 AF2).
+        staleSources:
+          type: array
+          description: Empty unless `degraded`.
+          items:
+            type: string
+    SegmentCondition:
+      type: object
+      description: Current condition of one road segment, as held in City State.
+      additionalProperties: false
+      required: [segmentKey, status, observedAt, quality, sources]
+      properties:
+        segmentKey:
+          $ref: '#/components/schemas/SegmentKey'
+        status:
+          type: string
+          enum: [open, slow, closed]
+        speedKmh:
+          type: [number, 'null']
+          minimum: 0
+          description: Current average speed. Null when closed or unknown.
+        delaySeconds:
+          type: [integer, 'null']
+          minimum: 0
+          description: Extra travel time compared with free flow.
+        cause:
+          type: [string, 'null']
+          enum: [traffic, roadworks, event, weather, incident, manual, null]
+        validUntil:
+          type: [string, 'null']
+          format: date-time
+          description: Expected end, for example a manual report's expiry.
+        observedAt:
+          type: string
+          format: date-time
+          description: Time of the latest observation used.
+        quality:
+          $ref: '#/components/schemas/Quality'
+        sources:
+          type: array
+          minItems: 1
+          description: Source IDs that contributed, for example `["sim-traffic"]`.
+          items:
+            type: string
+        conflict:
+          type: [boolean, 'null']
+          description: Not in the thin slice. True when sources disagree (UC05 AF3).

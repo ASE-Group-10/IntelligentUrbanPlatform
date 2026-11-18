@@ -4,12 +4,22 @@ from typing import Any
 
 import pytest
 
-EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "contracts" / "examples"
+COMPONENTS_DIR = Path(__file__).resolve().parents[2] / "contracts" / "components"
 
 
 def read_example(name: str) -> dict[str, Any]:
-    """Return a contract example from ``contracts/examples`` as parsed JSON."""
-    return json.loads((EXAMPLES_DIR / name).read_text(encoding="utf-8"))
+    """Return a contract example as parsed JSON.
+
+    Examples live in ``contracts/components/<component>/examples/``. The file
+    name must be unique across components.
+    """
+    matches = sorted(COMPONENTS_DIR.glob(f"*/examples/{name}"))
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"expected exactly one contract example named {name!r}, "
+            f"found {len(matches)}"
+        )
+    return json.loads(matches[0].read_text(encoding="utf-8"))
 
 
 @pytest.fixture
