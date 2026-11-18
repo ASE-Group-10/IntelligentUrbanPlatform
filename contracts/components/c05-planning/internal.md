@@ -116,8 +116,11 @@ are published. Required operations listed here do not define their fields.
 ## Planning and persistence rules
 
 The proposed C01 HTTP operations are in `openapi.yaml`. Authentication is obtained
-from the bearer token. Authorisation and scope checks use C02. An initial proposal
-awaits operator confirmation. Confirmation checks its expected version, links its
+from the bearer token. HTTP paths use `/api/v1/plans`; HTTP errors use the
+C11/C12-style `error { code, message, correlationId }` envelope proposal, pending
+shared frontend review. This transport mapping does not change the internal
+`Result` contract or C07 models. Authorisation and scope checks use C02.
+An initial proposal awaits operator confirmation. Confirmation checks its expected version, links its
 deliveries and queues `PlanReady` atomically with the confirmed state and decision
 references. A saved revision atomically records its expected-version update,
 C10-owned decision/evidence and `PlanReady` outbox entry.
