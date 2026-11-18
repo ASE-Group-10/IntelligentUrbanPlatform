@@ -1,0 +1,38 @@
+name: Backend checks
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'scripts/**'
+      - '.github/workflows/backend.yml'
+  push:
+    branches:
+      - develop
+    paths:
+      - 'backend/**'
+      - 'scripts/**'
+      - '.github/workflows/backend.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync locked dependencies
+        run: uv sync --project backend --locked --python 3.12
+
+      - name: Run backend tests
+        run: uv run --directory backend pytest
+
+      - name: Check backend formatting
+        run: uv run --project backend ruff format --check --config backend/pyproject.toml backend scripts
