@@ -8,7 +8,10 @@ info:
 
     JSON is camelCase; timestamps are UTC ISO 8601 with `Z`; recurring rule times (`timeOfDay`) are Europe/Dublin local `HH:MM`. Unknown fields are rejected.
 
-    Shared C09/C10 types (prefix `C09C10`) are defined here and referenced by the C10 contract. `notifyKnowledgeConflict` is C09-internal and has no HTTP operation; its payloads are listed under components.
+    Shared C09/C10 types (prefix `C09C10`) are defined here and referenced by the C10 contract.
+
+    This file holds the HTTP operations used by the browser (C01). The in-process
+    `queryKnowledge` call from C05/C08 is described in `internal.md`.
 
     HTTP calls carry a Supabase JWT (`Authorization: Bearer`) and an optional `X-Correlation-Id` header; C10 derives the AuthContext from them.
   contact:
@@ -179,49 +182,6 @@ components:
       - Transit
       - Loading
       type: string
-    C09C10AuthContext:
-      additionalProperties: false
-      properties:
-        principalId:
-          type: string
-        principalType:
-          $ref: '#/components/schemas/C09C10PrincipalType'
-        roles:
-          items:
-            type: string
-          type: array
-        scope:
-          anyOf:
-          - $ref: '#/components/schemas/C09C10AuthScope'
-          - type: 'null'
-          default: null
-        correlationId:
-          format: uuid
-          type: string
-      required:
-      - principalId
-      - principalType
-      - roles
-      - correlationId
-      type: object
-    C09C10AuthScope:
-      additionalProperties: false
-      properties:
-        providerIds:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          default: null
-        zoneIds:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          default: null
-      type: object
     C09C10ErrorBody:
       additionalProperties: false
       properties:
@@ -258,11 +218,6 @@ components:
       - Infeasible
       - Partial
       - Unconfirmed
-      type: string
-    C09C10PrincipalType:
-      enum:
-      - User
-      - Service
       type: string
     C09C10RunMode:
       enum:
@@ -303,30 +258,6 @@ components:
       - LGV
       - HGV
       type: string
-    C09ConflictDetails:
-      additionalProperties: false
-      properties:
-        conflictId:
-          format: uuid
-          type: string
-        passageIds:
-          items:
-            format: uuid
-            type: string
-          minItems: 2
-          type: array
-        documentIds:
-          items:
-            type: string
-          type: array
-        reason:
-          type: string
-      required:
-      - conflictId
-      - passageIds
-      - documentIds
-      - reason
-      type: object
     C09Constraint:
       additionalProperties: false
       properties:
@@ -669,18 +600,6 @@ components:
       required:
       - from
       - to
-      type: object
-    C09WarningReceipt:
-      additionalProperties: false
-      properties:
-        warningId:
-          format: uuid
-          type: string
-        duplicate:
-          type: boolean
-      required:
-      - warningId
-      - duplicate
       type: object
     C09Weekday:
       enum:
