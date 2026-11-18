@@ -5,6 +5,8 @@ info:
   description: >-
     Proposed UC03 HTTP contracts for C01 review under #32. Paths and new fields await
     consumer agreement. Runtime implementation follows separately.
+    Uses the shared /api/v1 resource paths and the C11/C12 camelCase HTTP error
+    envelope proposal. Internal Result failures and event payloads are unchanged.
   contact:
     name: Ye + Zecheng
 servers:
@@ -16,7 +18,7 @@ tags:
 security:
   - C05BearerAuth: []
 paths:
-  /api/c05/plans:
+  /api/v1/plans:
     post:
       operationId: c05GeneratePlan
       tags:
@@ -60,41 +62,17 @@ paths:
                   delivery:7c6b5a49-3827-4165-a0f9-e8d7c6b5a493: 1
                   resource:44444444-4444-4444-8444-444444444444: 1
         '400':
-          description: Invalid input or scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Invalid'
         '401':
-          description: Bearer credentials missing or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Unauthenticated'
         '403':
-          description: Operation forbidden in this scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Forbidden'
         '409':
-          description: Stale version or idempotency key reused with different input.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Conflict'
         '422':
-          description: No feasible plan satisfies the hard constraints.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Infeasible'
         '503':
-          description: A required input or durable store is unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Unavailable'
       parameters:
         - name: Idempotency-Key
           in: header
@@ -122,7 +100,7 @@ paths:
                 runId: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
       security:
         - C05BearerAuth: []
-  /api/c05/plans/{planId}:
+  /api/v1/plans/{planId}:
     get:
       operationId: c05GetPlan
       tags:
@@ -166,35 +144,15 @@ paths:
                   delivery:7c6b5a49-3827-4165-a0f9-e8d7c6b5a493: 1
                   resource:44444444-4444-4444-8444-444444444444: 1
         '400':
-          description: Invalid input or scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Invalid'
         '401':
-          description: Bearer credentials missing or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Unauthenticated'
         '403':
-          description: Operation forbidden in this scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Forbidden'
         '404':
-          description: Plan missing in the authorised scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05NotFound'
         '503':
-          description: A required input or durable store is unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Unavailable'
       parameters:
         - name: planId
           in: path
@@ -220,7 +178,7 @@ paths:
             format: uuid
       security:
         - C05BearerAuth: []
-  /api/c05/plans/{planId}/confirmation:
+  /api/v1/plans/{planId}/confirmation:
     post:
       operationId: c05ConfirmPlan
       tags:
@@ -265,41 +223,17 @@ paths:
                   delivery:7c6b5a49-3827-4165-a0f9-e8d7c6b5a493: 1
                   resource:44444444-4444-4444-8444-444444444444: 1
         '400':
-          description: Invalid input or scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Invalid'
         '401':
-          description: Bearer credentials missing or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Unauthenticated'
         '403':
-          description: Operation forbidden in this scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Forbidden'
         '404':
-          description: Plan missing in the authorised scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05NotFound'
         '409':
-          description: Stale version or idempotency key reused with different input.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Conflict'
         '503':
-          description: A required input or durable store is unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/C05Failure'
+          $ref: '#/components/responses/C05Unavailable'
       parameters:
         - name: planId
           in: path
@@ -336,7 +270,86 @@ components:
     C05BearerAuth:
       type: http
       scheme: bearer
+      bearerFormat: C02-issued token
       description: C02 authenticates identity and authorises actions and scope.
+  responses:
+    C05Invalid:
+      description: Invalid input or scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Invalid
+              message: The requested run scope is invalid.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Unauthenticated:
+      description: Bearer credentials missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Unauthenticated
+              message: Bearer credentials are missing or invalid.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Forbidden:
+      description: Operation forbidden in this scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Forbidden
+              message: This operation is not permitted in the requested scope.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05NotFound:
+      description: Plan missing in the authorised scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: NotFound
+              message: The plan was not found in the authorised scope.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Conflict:
+      description: Stale version or idempotency key reused with different input.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Conflict
+              message: The expected plan version is stale or the idempotency key was reused with different input.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Infeasible:
+      description: No feasible plan satisfies the hard constraints.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Infeasible
+              message: No feasible plan satisfies the hard constraints.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Unavailable:
+      description: A required input or durable store is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Unavailable
+              message: A required input or durable store is unavailable.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
   schemas:
     C05Scope:
       description: >-
@@ -509,24 +522,37 @@ components:
           minimum: 1
         runScope:
           $ref: '#/components/schemas/C05Scope'
-    C05Failure:
+    C05ErrorResponse:
       type: object
       additionalProperties: false
       required:
-        - kind
-        - message
+        - error
+      description: >-
+        HTTP transport proposal aligned with C11/C12. Internal Result<T> remains
+        unchanged. Correlation IDs support tracing; error messages must not expose
+        plans outside the authorised scope.
       properties:
-        kind:
-          type: string
-          enum:
-            - Invalid
-            - Forbidden
-            - NotFound
-            - Conflict
-            - Unavailable
-            - Unconfirmed
-            - Infeasible
-            - Partial
-        message:
-          type: string
-          minLength: 1
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - correlationId
+          properties:
+            code:
+              type: string
+              enum:
+                - Unauthenticated
+                - Invalid
+                - Forbidden
+                - NotFound
+                - Conflict
+                - Unavailable
+                - Infeasible
+            message:
+              type: string
+              minLength: 1
+            correlationId:
+              type: string
+              format: uuid
