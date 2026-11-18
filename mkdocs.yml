@@ -10,7 +10,3 @@ markdown_extensions:
   - fenced_code
   - toc:
       permalink: true
-nav:
-  - Overview: README.md
-  - C06 City Monitoring: components/c06-city-monitoring/internal.md
-  - C07 Disruption Detection: components/c07-disruption-detection/internal.md

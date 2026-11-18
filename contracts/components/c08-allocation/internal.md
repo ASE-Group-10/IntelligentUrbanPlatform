@@ -4,12 +4,24 @@ Contract draft for UC04 and UC08. Óscar Gómez González and Shixian Cai own
 the C08 implementation. Python models and the C08 service protocol live in
 `backend/app/components/c08_allocation/`.
 
+## HTTP boundary
+
+The [UC04 OpenAPI contract](openapi.yaml) defines the operator's assignment
+request and the driver's offer response. The HTTP adapter derives identity from
+authentication and passes the idempotency key to the service. Assignment
+finalisation and UC08 negotiation are internal C08 operations.
+
 ## Event boundaries
 
 - [PlanReady example](examples/plan-ready-event.json). C05 emits this after
   saving a plan version and its outbox record. C08 validates the event as
   `PlanReadyEvent`. The payload fields and capacity vocabulary are proposed
   for C05 review. C05 owns the eventual producer definition.
+- `ResourceAvailabilityChanged` uses [C03's producer contract](../c03-resource-management/events.yaml).
+  UC04 checks whether the change affects the vehicle selected for a pending
+  assignment. See the [C03 availability example](examples/resource-availability-changed-event.json).
+  The C03 producer currently has a component-specific envelope.
+  C03 owns the change to the shared envelope.
 - [OperationalDisruption example](examples/operational-disruption-event.json).
   C08 sends the actual committed state and the unresolved delivery IDs.
   C07 uses `failureId` as the stable trigger identity. Broker redelivery
