@@ -88,8 +88,11 @@ Examples [request](examples/request-replan.json),
 | `newPlanVersion` | integer | when saved | Version of the saved revision |
 | `decisionId` | UUID | when saved | C10 decision record |
 
-**Failures in the current C07 contract:** `Conflict`, `Infeasible`, `Unavailable`,
-`NotFound`. The proposed discovery retry on `Conflict` still needs agreement.
+The inherited logical draft lists `Conflict`, `Infeasible`, `Unavailable` and
+`NotFound`. The current `PlanningPort` returns an unwrapped `ReplanOutcome` or
+raises `PlanningUnavailableError`. C07 catches that exception and otherwise
+records `outcome.status`. Agree the mapping of other logical failures and any
+`Conflict` discovery retry with C07 before connecting the C05 adapter.
 
 The idempotency key is what stops the C08 → C07 → C05 loop. The same
 disruption version can never produce a second replan of the same plan; C05
@@ -165,9 +168,9 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
 - Agree with C07 whether one fresh discovery is allowed after a stale-plan
   `Conflict`, and whether that conflict consumes the key. A refreshed
   `basedOnPlanVersion` changes the request but leaves the current key unchanged.
-- C07 currently allows `Infeasible` as a failure, while architecture UC07 describes
-  an infeasible attempt as `ReviewRequired`. Preserve the caller's vocabulary
-  while agreeing that mapping. The current outcome has no reason/details field.
+- The inherited logical draft lists `Infeasible`, while architecture UC07 returns
+  `ReviewRequired` for an infeasible revision. Agree that mapping with C07. The
+  current `ReplanOutcome` has no reason/details field.
 - Agree with C07 when the synchronous `PlanSaved` outcome is returned and how to
   report a saved revision while `PlanReady` publication is pending. `PlanReady`
   is the event for confirmation and saved revisions.
