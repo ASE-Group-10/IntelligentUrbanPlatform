@@ -3,6 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
+from .events import OperationalDisruptionPayload, PlanReadyEvent
 from .models import (
     AllocationOutcome,
     AllocationProblem,
@@ -10,8 +11,6 @@ from .models import (
     AuthContext,
     CommitAssignmentCommand,
     CommitNegotiationCommand,
-    EventEnvelope,
-    FailureRecord,
     IdempotencyKey,
     OfferResponseCommand,
 )
@@ -24,7 +23,7 @@ class C08Service(Protocol):
     and optimistic concurrency version guards.
     """
 
-    async def handle_plan_ready(self, event: EventEnvelope) -> AllocationOutcome:
+    async def handle_plan_ready(self, event: PlanReadyEvent) -> AllocationOutcome:
         """Deduplicate PlanReady and coordinate only a still-current saved version."""
         ...
 
@@ -57,7 +56,10 @@ class C08Service(Protocol):
         ...
 
     async def publish_operational_disruption(
-        self, context: AuthContext, failure: FailureRecord, key: IdempotencyKey
+        self,
+        context: AuthContext,
+        failure: OperationalDisruptionPayload,
+        key: IdempotencyKey,
     ) -> UUID:
         """Atomically persist failure and pending disruption outbox entry."""
         ...

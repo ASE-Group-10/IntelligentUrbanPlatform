@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import ConfigDict, Field, StringConstraints, model_validator
+
+from app.shared.contracts import ContractModel as SharedContractModel
 
 IdempotencyKey = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 PositiveVersion = Annotated[int, Field(ge=1, strict=True)]
@@ -15,15 +17,10 @@ NonNegativeCapacity = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 PositiveCapacity = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
-class ContractModel(BaseModel):
+class ContractModel(SharedContractModel):
     """Reject unexpected fields and implicit data coercions at trust boundaries."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-
-class ExecutionScope(StrEnum):
-    LIVE = "live"
-    SIMULATION = "simulation"
+    model_config = ConfigDict(strict=True, serialize_by_alias=True)
 
 
 class ResourceKind(StrEnum):
@@ -182,56 +179,16 @@ class DecisionEvidenceSnapshot(ContractModel):
     captured_at: datetime
 
 
-class FailureRecord(ContractModel):
-    failure_id: UUID
-    plan_id: UUID
-    plan_version: PositiveVersion
-    affected_delivery_ids: list[UUID] = Field(min_length=1)
-    affected_resource_ids: list[UUID]
-    failure_type: str = Field(min_length=1)
-    reason: str = Field(min_length=1)
-    decision_id: UUID
-    last_confirmed_state: str
-
-
-class OperationalDisruptionPayload(ContractModel):
-    failure: FailureRecord
-    unresolved_delivery_ids: list[UUID]
-
-
-class EventEnvelope(ContractModel):
-    schema_version: Literal[1]
-    event_id: UUID
-    event_type: Literal[
-        "PlanReady", "OperationalDisruption", "ResourceAvailabilityChanged"
-    ]
-    producer: str = Field(min_length=1)
-    occurred_at: datetime
-    ingested_at: datetime
-    correlation_id: UUID
-    causation_id: UUID | None
-    scope: ExecutionScope
-    run_id: UUID | None = None
-    payload: dict[str, object]
-
-    @model_validator(mode="after")
-    def check_scope_and_timestamp(self) -> EventEnvelope:
-        for value in (self.occurred_at, self.ingested_at):
-            if value.tzinfo is None or value.utcoffset() is None:
-                raise ValueError("event timestamps must have timezone offsets")
-        if self.scope == ExecutionScope.SIMULATION and self.run_id is None:
-            raise ValueError("simulation events require run_id")
-        if self.scope == ExecutionScope.LIVE and self.run_id is not None:
-            raise ValueError("live events must not have run_id")
-        return self
-
-
 class AllocationOutcome(ContractModel):
     code: OutcomeCode
     correlation_id: UUID
     assignment_ref: UUID | None = None
     allocation_id: UUID | None = None
+    resource_id: UUID | None = None
     resulting_plan_version: PositiveVersion | None = None
+    resulting_resource_versions: dict[UUID, PositiveVersion] = Field(
+        default_factory=dict
+    )
     acceptance_status: AcceptanceStatus | None = None
     reason: str | None = None
 
