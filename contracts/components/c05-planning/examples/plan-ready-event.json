@@ -1,0 +1,40 @@
+{
+  "eventId": "55555555-5555-4555-8555-555555555555",
+  "eventType": "PlanReady",
+  "schemaVersion": 1,
+  "producer": "C05",
+  "observedAt": "2026-11-20T08:15:00Z",
+  "emittedAt": "2026-11-20T08:15:01Z",
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+  "affected": {
+    "planIds": [
+      "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c"
+    ],
+    "resourceIds": [
+      "44444444-4444-4444-8444-444444444444"
+    ],
+    "segmentKeys": [
+      "seg:4471024"
+    ]
+  },
+  "entityVersions": {
+    "plan:9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c": 4
+  },
+  "scope": "simulation",
+  "payload": {
+    "planId": "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c",
+    "savedVersion": 4,
+    "resourceNeeds": [
+      {
+        "deliveryIds": [
+          "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"
+        ],
+        "resourceId": "44444444-4444-4444-8444-444444444444",
+        "requiredCapacityKg": 10
+      }
+    ],
+    "decisionId": "e5f6a7b8-c9d0-4e1f-a2b3-c4d5e6f7a8b9"
+  },
+  "runId": "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+  "causationId": "5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e"
+}
