@@ -32,6 +32,15 @@ def _days_overlap(a: Constraint, b: Constraint) -> bool:
     )
 
 
+def _segments_overlap(a: Constraint, b: Constraint) -> bool:
+    """Rules on different street segments of one zone do not contradict."""
+    return (
+        not a.segment_keys
+        or not b.segment_keys
+        or bool(set(a.segment_keys) & set(b.segment_keys))
+    )
+
+
 def _rule(c: Constraint) -> str:
     parts = []
     if c.time_of_day:
@@ -62,6 +71,7 @@ def detect_conflicts(
                 and _applies(a, query)
                 and _applies(b, query)
                 and _days_overlap(a, b)
+                and _segments_overlap(a, b)
                 and _rule(a) != _rule(b)
             ):
                 ids = [p.passage_id, q.passage_id]

@@ -196,3 +196,35 @@ def test_rules_for_other_vehicles_do_not_conflict():
     data["metadata"]["constraintsBySection"]["1.1"][0]["vehicleClasses"] = ["LGV"]
     service.publish_knowledge(CURATOR, PublishKnowledgeRequest.model_validate(data))
     assert service.query_knowledge(PLANNER, _query()).value.status != "Conflict"
+
+
+# ---- C05 review of #21: hard rules are not ranked away ----
+
+
+def test_rule_passages_are_never_cut_by_max_passages():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _request())
+    service.publish_knowledge(CURATOR, _amendment())
+    data = _example("query_knowledge.request.json")
+    data["maxPassages"] = 1
+    result = service.query_knowledge(PLANNER, PolicyQuery.model_validate(data)).value
+    # both contradicting rules are returned and compared despite maxPassages=1
+    assert len(result.passages) == 2
+    assert result.status is RetrievalStatus.CONFLICT
+    assert result.rule_coverage == "Complete"
+    assert result.evidence_snapshot.rule_coverage == "Complete"
+
+
+def test_rules_on_different_segments_do_not_conflict():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _request())
+    data = _amendment().model_dump(mode="json", by_alias=True)
+    data["metadata"]["constraintsBySection"]["1.1"][0]["segmentKeys"] = ["seg:111"]
+    first = _request().model_dump(mode="json", by_alias=True)
+    first["metadata"]["constraintsBySection"]["4.2"][0]["segmentKeys"] = ["seg:222"]
+    first["idempotencyKey"] = "publish:dcc-hgv-cordon:segment"
+    service.publish_knowledge(CURATOR, PublishKnowledgeRequest.model_validate(first))
+    service.publish_knowledge(CURATOR, PublishKnowledgeRequest.model_validate(data))
+    assert service.query_knowledge(PLANNER, _query()).value.status != "Conflict"

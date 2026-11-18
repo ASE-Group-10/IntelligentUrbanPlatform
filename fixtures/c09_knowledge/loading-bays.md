@@ -2,7 +2,7 @@
 
 ## 2.1 Loading hours
 
-On-street loading bays in Dublin 2 may be used for deliveries between 06:00 and 11:00, Monday to Saturday. Outside these hours the bays are short-stay parking.
+On-street loading bays on Grafton Street, Dublin 2, may be used for deliveries between 06:00 and 11:00, Monday to Saturday. Outside these hours the bays are short-stay parking.
 
 ## 2.2 Maximum stay
 

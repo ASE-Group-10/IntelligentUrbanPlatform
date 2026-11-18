@@ -15,6 +15,7 @@ from app.components.c09_logistics_knowledge.contracts import (
     PolicyQuery,
     PublishKnowledgeRequest,
     RetrievalStatus,
+    RuleCoverage,
     WarningReceipt,
 )
 from app.components.c09_logistics_knowledge.embedding import (
@@ -146,10 +147,14 @@ class LogisticsKnowledge:
         except StoreUnavailableError as exc:
             return Failure("Unavailable", f"C09.INDEX_UNAVAILABLE: {exc}")
 
-        passages = sorted(candidates, key=lambda p: (-p.score, str(p.passage_id)))[
-            : query.max_passages
-        ]
-        conflicts = detect_conflicts(passages, query, info.corpus_version)
+        ranked = sorted(candidates, key=lambda p: (-p.score, str(p.passage_id)))
+        # hard rules are never ranked away: maxPassages limits rule-free passages only
+        rules = [p for p in ranked if p.constraints]
+        rule_free = [p for p in ranked if not p.constraints][: query.max_passages]
+        passages = sorted(
+            rules + rule_free, key=lambda p: (-p.score, str(p.passage_id))
+        )
+        conflicts = detect_conflicts(rules, query, info.corpus_version)
         limitations: list[str] = []
         if not passages:
             status = RetrievalStatus.NO_APPLICABLE
@@ -168,6 +173,8 @@ class LogisticsKnowledge:
             status = RetrievalStatus.OK
 
         common = {
+            # the store returns every applicable passage, so all hard rules are here
+            "rule_coverage": RuleCoverage.COMPLETE,
             "conflicts": [
                 KnowledgeConflict(
                     conflict_id=c.conflict_id,

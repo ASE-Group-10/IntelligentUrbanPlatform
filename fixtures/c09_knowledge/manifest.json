@@ -5,7 +5,16 @@
     "metadata": {
       "documentId": "dcc-hgv-cordon",
       "issuer": "City authority (demo data)",
-      "applicability": {"zoneIds": ["dublin-D1", "dublin-D2"], "vehicleClasses": ["HGV"], "activities": []},
+      "applicability": {
+        "zoneIds": [
+          "dublin-D1",
+          "dublin-D2"
+        ],
+        "vehicleClasses": [
+          "HGV"
+        ],
+        "activities": []
+      },
       "validFrom": "2026-01-01T00:00:00Z",
       "validTo": null,
       "constraintsBySection": {
@@ -13,9 +22,18 @@
           {
             "constraintId": "dcc-hgv-cordon:v1:4.2:c1",
             "kind": "VehicleBan",
-            "zoneIds": ["dublin-D1", "dublin-D2"],
-            "vehicleClasses": ["HGV"],
-            "timeOfDay": {"from": "07:00", "to": "19:00"},
+            "zoneIds": [
+              "dublin-D1",
+              "dublin-D2"
+            ],
+            "segmentKeys": [],
+            "vehicleClasses": [
+              "HGV"
+            ],
+            "timeOfDay": {
+              "from": "07:00",
+              "to": "19:00"
+            },
             "daysOfWeek": [],
             "value": null,
             "exemption": "Valid HGV permit"
@@ -30,7 +48,16 @@
     "metadata": {
       "documentId": "dcc-loading-bays",
       "issuer": "City authority (demo data)",
-      "applicability": {"zoneIds": ["dublin-D2"], "vehicleClasses": [], "activities": ["Delivery", "Loading"]},
+      "applicability": {
+        "zoneIds": [
+          "dublin-D2"
+        ],
+        "vehicleClasses": [],
+        "activities": [
+          "Delivery",
+          "Loading"
+        ]
+      },
       "validFrom": "2026-01-01T00:00:00Z",
       "validTo": null,
       "constraintsBySection": {
@@ -38,10 +65,25 @@
           {
             "constraintId": "dcc-loading-bays:v1:2.1:c1",
             "kind": "LoadingWindow",
-            "zoneIds": ["dublin-D2"],
+            "zoneIds": [
+              "dublin-D2"
+            ],
+            "segmentKeys": [
+              "seg:5508812"
+            ],
             "vehicleClasses": [],
-            "timeOfDay": {"from": "06:00", "to": "11:00"},
-            "daysOfWeek": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+            "timeOfDay": {
+              "from": "06:00",
+              "to": "11:00"
+            },
+            "daysOfWeek": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat"
+            ],
             "value": null,
             "exemption": null
           }
@@ -55,7 +97,17 @@
     "metadata": {
       "documentId": "dcc-bridge-weight",
       "issuer": "City authority (demo data)",
-      "applicability": {"zoneIds": ["dublin-D1", "dublin-D2"], "vehicleClasses": ["LGV", "HGV"], "activities": []},
+      "applicability": {
+        "zoneIds": [
+          "dublin-D1",
+          "dublin-D2"
+        ],
+        "vehicleClasses": [
+          "LGV",
+          "HGV"
+        ],
+        "activities": []
+      },
       "validFrom": "2026-01-01T00:00:00Z",
       "validTo": null,
       "constraintsBySection": {
@@ -63,11 +115,20 @@
           {
             "constraintId": "dcc-bridge-weight:v1:3.1:c1",
             "kind": "MaxGrossWeight",
-            "zoneIds": ["dublin-D1", "dublin-D2"],
-            "vehicleClasses": ["LGV", "HGV"],
+            "zoneIds": [
+              "dublin-D1",
+              "dublin-D2"
+            ],
+            "segmentKeys": [],
+            "vehicleClasses": [
+              "LGV",
+              "HGV"
+            ],
             "timeOfDay": null,
             "daysOfWeek": [],
-            "value": {"maxKg": 18000},
+            "value": {
+              "maxKg": 18000
+            },
             "exemption": null
           }
         ]
@@ -80,7 +141,17 @@
     "metadata": {
       "documentId": "dcc-cargo-bikes",
       "issuer": "City authority (demo data)",
-      "applicability": {"zoneIds": ["dublin-D2"], "vehicleClasses": ["CargoBike"], "activities": ["Delivery"]},
+      "applicability": {
+        "zoneIds": [
+          "dublin-D2"
+        ],
+        "vehicleClasses": [
+          "CargoBike"
+        ],
+        "activities": [
+          "Delivery"
+        ]
+      },
       "validFrom": "2026-01-01T00:00:00Z",
       "validTo": null,
       "constraintsBySection": {}
@@ -93,7 +164,16 @@
     "metadata": {
       "documentId": "dcc-hgv-cordon-amendment",
       "issuer": "City authority (demo data)",
-      "applicability": {"zoneIds": ["dublin-D1", "dublin-D2"], "vehicleClasses": ["HGV"], "activities": []},
+      "applicability": {
+        "zoneIds": [
+          "dublin-D1",
+          "dublin-D2"
+        ],
+        "vehicleClasses": [
+          "HGV"
+        ],
+        "activities": []
+      },
       "validFrom": "2026-11-01T00:00:00Z",
       "validTo": null,
       "constraintsBySection": {
@@ -101,9 +181,18 @@
           {
             "constraintId": "dcc-hgv-cordon-amendment:v1:1.1:c1",
             "kind": "VehicleBan",
-            "zoneIds": ["dublin-D1", "dublin-D2"],
-            "vehicleClasses": ["HGV"],
-            "timeOfDay": {"from": "07:00", "to": "10:30"},
+            "zoneIds": [
+              "dublin-D1",
+              "dublin-D2"
+            ],
+            "segmentKeys": [],
+            "vehicleClasses": [
+              "HGV"
+            ],
+            "timeOfDay": {
+              "from": "07:00",
+              "to": "10:30"
+            },
             "daysOfWeek": [],
             "value": null,
             "exemption": null
