@@ -1,5 +1,5 @@
-"""Every example in the C09/C10 openapi.yaml must validate against its model.
-Test doubles return these same examples; a failing test means the contract drifted."""
+"""Every C09/C10 contract example (openapi.yaml and examples/*.json) must validate
+against its model. A failing test means the contract drifted."""
 
 import copy
 import json
@@ -25,6 +25,13 @@ EXAMPLES = {
         "examples"
     ].items()
 }
+# in-process examples live as files: examples/record-decision-request.json is
+# loaded as "C10RecordDecisionRequest"
+for openapi_file in FILES:
+    for path in sorted((openapi_file.parent / "examples").glob("*.json")):
+        prefix = openapi_file.parent.name[:3].upper()  # "c10-…" -> "C10"
+        name = prefix + "".join(w.capitalize() for w in path.stem.split("-"))
+        EXAMPLES[name] = json.loads(path.read_text(encoding="utf-8"))
 
 MODELS = {
     "C09QueryKnowledgeRequest": c09.PolicyQuery,
