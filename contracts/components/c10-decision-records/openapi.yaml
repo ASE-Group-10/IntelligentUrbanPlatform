@@ -35,6 +35,13 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: runId
+        in: query
+        required: false
+        description: Replay run (C12). If given, the decision must be recorded in this run, otherwise NotFound.
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: The decision record.
@@ -121,6 +128,8 @@ paths:
             examples:
               byId:
                 $ref: '#/components/examples/C10ExplainDecisionRequest'
+              replay:
+                $ref: '#/components/examples/C10ExplainDecisionReplayRequest'
       responses:
         '200':
           description: Complete or partial explanation.
@@ -163,6 +172,13 @@ paths:
         required: true
         schema:
           type: string
+      - name: runId
+        in: query
+        required: false
+        description: Replay run (C12). If given, the decision must be recorded in this run, otherwise NotFound.
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: The evidence as saved at decision time.
@@ -343,10 +359,19 @@ components:
       type: object
     C10DecisionIdSelector:
       additionalProperties: false
+      description: |-
+        Select one decision by ID. C12 replay also sends its `runId`; C10 then answers
+        NotFound (`C10.DECISION_NOT_FOUND`) unless the decision was recorded in that run.
       properties:
         decisionId:
           format: uuid
           type: string
+        runId:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          default: null
       required:
       - decisionId
       type: object
@@ -978,10 +1003,18 @@ components:
       value:
         auditId: 2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091
     C10ExplainDecisionRequest:
-      summary: Explain by decision ID
+      summary: Explain by decision ID (live)
       value:
         selector:
           decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+          runId: null
+        language: en
+    C10ExplainDecisionReplayRequest:
+      summary: Explain a decision recorded in a C12 simulation run
+      value:
+        selector:
+          decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+          runId: 6f1e2d3c-4b5a-4968-8776-5544332211aa
         language: en
     C10ExplainDecisionOkResponse:
       summary: Complete explanation

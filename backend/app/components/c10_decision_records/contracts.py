@@ -129,6 +129,9 @@ class RecordDecisionResponse(Model):
 # ---- getDecision ----
 class DecisionIdSelector(Model):
     decision_id: UUID
+    # C12 replay passes its runId; C10 answers NotFound if the decision is not
+    # recorded in that run, so a replay can never read another run's decisions.
+    run_id: UUID | None = None
 
 
 class SubjectSelector(Model):
