@@ -39,6 +39,7 @@ MODELS = {
     "C10RecordDecisionRequest": c10.DecisionRecord,
     "C10RecordDecisionResponse": c10.RecordDecisionResponse,
     "C10ExplainDecisionRequest": c10.ExplainRequest,
+    "C10ExplainDecisionReplayRequest": c10.ExplainRequest,
     "C10ExplainDecisionOkResponse": c10.Explanation,
     "C10ExplainDecisionPartialResponse": c10.Explanation,
     "C10GetDecisionEvidenceResponse": c10.DecisionEvidence,
@@ -129,3 +130,12 @@ def test_rejects_simulation_without_run_id():
         lambda d: d["runScope"].update(mode="Simulation"),
         c10.DecisionRecord,
     )
+
+
+def test_replay_selector_carries_the_run_id():
+    """C12 selects a recorded decision by runId + decisionId (#46)."""
+    req = c10.ExplainRequest.model_validate(load("C10ExplainDecisionReplayRequest"))
+    assert isinstance(req.selector, c10.DecisionIdSelector)
+    assert req.selector.run_id is not None
+    plain = c10.ExplainRequest.model_validate(load("C10ExplainDecisionRequest"))
+    assert plain.selector.run_id is None  # live callers may omit it
