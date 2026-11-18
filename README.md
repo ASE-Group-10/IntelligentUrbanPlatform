@@ -140,6 +140,14 @@ docker compose run --rm dbmate up
 
 See [database/README.md](database/README.md) for migration conventions.
 
+### Frontend
+
+```sh
+cd frontend && npm ci && npm run dev
+```
+
+See [frontend/README.md](frontend/README.md) for checks, structure and conventions.
+
 ### API contract documentation
 
 Component-owned OpenAPI source documents live under
@@ -165,14 +173,6 @@ https://ase-group-10.github.io/IntelligentUrbanPlatform/main/openapi/
 Pull requests and feature branches only lint/build the documentation and upload
 an artifact; they do not publish public pages. Enable GitHub Pages with the
 `gh-pages` branch as its source before using the published URLs.
-
-### Frontend
-
-```sh
-cd frontend && npm ci && npm run dev
-```
-
-See [frontend/README.md](frontend/README.md) for checks, structure and conventions.
 
 ## Suggested repository structure
 
