@@ -1,18 +1,35 @@
 import { Link } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+import { DESKTOP_QUERY } from "./breakpoints";
 import { NAV_ITEMS } from "./nav-items";
 import { ThemeToggle } from "./theme-toggle";
 
-function Brand() {
+/** Open state for the phone menu; it closes itself once the sidebar takes over. */
+function usePhoneMenu() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const desktop = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setOpen(false);
+    };
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
+  }, []);
+
+  return [open, setOpen] as const;
+}
+
+function Brand({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <Link to="/" className="flex items-center gap-2.5 px-2">
+    <Link to="/" onClick={onNavigate} className="flex items-center gap-2.5 px-2">
       <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
         <svg viewBox="0 0 32 32" className="size-5" aria-hidden="true">
           <path
@@ -56,6 +73,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 /** Layout shared by every screen: sidebar on desktop, slide-out menu on phones. */
 export function AppShell({ children }: { children: ReactNode }) {
+  const [menuOpen, setMenuOpen] = usePhoneMenu();
+  const closeMenu = () => setMenuOpen(false);
+
   return (
     <TooltipProvider>
       <div className="flex min-h-dvh">
@@ -71,7 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-4">
-            <Sheet>
+            <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
               <SheetTrigger
                 render={
                   <Button
@@ -87,8 +107,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <SheetContent side="left" className="w-72 bg-sidebar p-3">
                 <SheetTitle className="sr-only">Navigation</SheetTitle>
                 <div className="flex flex-col gap-6 pt-2">
-                  <Brand />
-                  <NavLinks />
+                  <Brand onNavigate={closeMenu} />
+                  <NavLinks onNavigate={closeMenu} />
                 </div>
               </SheetContent>
             </Sheet>

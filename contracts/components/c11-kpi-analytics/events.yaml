@@ -1,0 +1,44 @@
+asyncapi: 3.0.0
+info:
+  title: C11 KPI Analytics Events
+  version: 1.0.0
+  description: |
+    Proposed receive boundary, not an implemented worker or agreed subscription.
+    Preserves the #15/#22 review gate while adopting the component layout (#35).
+    C06 owns CityStateUpdated; this consumer references that definition unchanged.
+    C04/C05/C08 operational event types and C10 access contracts remain pending
+    producer/consumer agreement. No substitute message definitions are invented.
+    See internal.md for service boundaries, limitations and remaining agreements.
+    C11 publishes no event under this proposal.
+  contact:
+    name: C11 (Jolin + Qingyuan)
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    host: localhost
+    protocol: amqp
+    description: Local broker; exchange, queue names and subscriptions still need agreement.
+channels:
+  cityStateInput:
+    address: ulop.events
+    description: |
+      Proposed topic exchange ulop.events, routing key CityStateUpdated, producer C06.
+      Queue name and binding are not agreed. This consumer may mark the relevant projection stale or update agreed congestion inputs.
+      The full producer-owned synthetic example is
+      ../c06-city-monitoring/examples/city-state-updated-event.json.
+    messages:
+      cityStateUpdated:
+        $ref: '../c06-city-monitoring/events.yaml#/components/messages/CityStateUpdated'
+operations:
+  receiveCityStateUpdated:
+    action: receive
+    channel:
+      $ref: '#/channels/cityStateInput'
+    title: Receive a producer-owned City State notification
+    summary: Proposed input; validate producer, schema version and run scope before use.
+    messages:
+      - $ref: '#/channels/cityStateInput/messages/cityStateUpdated'
+    description: |
+      Deduplicate eventId atomically with projection updates. Authorise provider,
+      area and run scope; live and simulation populations are always separate.
+      C06 notifications do not by themselves define a congestion metric/formula.
