@@ -9,6 +9,7 @@
     "id": "9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a",
     "version": 1
   },
+  "attemptOutcome": "Selected",
   "relatedDecisionId": null,
   "inputVersions": {
     "deliveries": [
@@ -95,6 +96,7 @@
   },
   "evidenceSnapshots": [
     {
+      "ruleCoverage": "Complete",
       "snapshotId": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a05",
       "query": {
         "area": {
@@ -141,6 +143,7 @@
                 "dublin-D1",
                 "dublin-D2"
               ],
+              "segmentKeys": [],
               "vehicleClasses": [
                 "HGV"
               ],
@@ -180,6 +183,9 @@
               "kind": "LoadingWindow",
               "zoneIds": [
                 "dublin-D2"
+              ],
+              "segmentKeys": [
+                "seg:5508812"
               ],
               "vehicleClasses": [],
               "timeOfDay": {

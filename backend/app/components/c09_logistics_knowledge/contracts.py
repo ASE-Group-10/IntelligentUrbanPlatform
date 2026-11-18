@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -51,15 +51,45 @@ class Weekday(StrEnum):
     SUN = "Sun"
 
 
-class Constraint(Model):  # pending C05 confirmation (doc §2 item 4)
+SegmentKey = Annotated[str, Field(pattern=r"^seg:[1-9][0-9]*$")]
+"""C06 road segment key ``seg:<osm_way_id>``."""
+
+
+class Constraint(Model):
+    """A hard rule the planner applies (C05 #21 review, point 1).
+
+    Scope: the rule applies to a route leg or stop inside ``zoneIds``; when
+    ``segmentKeys`` is non-empty, only on those C06 segments (empty = the whole
+    zones). Fields required per kind: VehicleBan needs ``value`` null;
+    LoadingWindow needs ``timeOfDay`` and ``value`` null; MaxGrossWeight needs
+    ``value`` = ``{"maxKg": <positive number>}``.
+    """
+
     constraint_id: str
     kind: ConstraintKind
-    zone_ids: list[str]
-    vehicle_classes: list[VehicleClass]
+    zone_ids: list[str] = Field(min_length=1)
+    segment_keys: list[SegmentKey]  # empty = whole zones
+    vehicle_classes: list[VehicleClass]  # empty = all
     time_of_day: TimeOfDay | None
     days_of_week: list[Weekday]  # empty = every day
     value: dict[str, Any] | None
     exemption: str | None
+
+    @model_validator(mode="after")
+    def _fields_for_kind(self):
+        if self.kind is ConstraintKind.MAX_GROSS_WEIGHT:
+            limit = (self.value or {}).get("maxKg")
+            if (
+                set(self.value or {}) != {"maxKg"}
+                or not (isinstance(limit, int | float) and not isinstance(limit, bool))
+                or limit <= 0
+            ):
+                raise ValueError('MaxGrossWeight needs value {"maxKg": <positive>}')
+        elif self.value is not None:
+            raise ValueError(f"{self.kind} must have value null")
+        if self.kind is ConstraintKind.LOADING_WINDOW and self.time_of_day is None:
+            raise ValueError("LoadingWindow needs timeOfDay")
+        return self
 
 
 class Passage(Model):
@@ -89,7 +119,20 @@ class KnowledgeConflict(Model):
     reason: str
 
 
+class RuleCoverage(StrEnum):
+    """Whether every applicable hard rule (passage with constraints) is returned.
+
+    ``maxPassages`` never cuts a passage that carries constraints; it only limits
+    the rule-free passages. ``Incomplete`` means C09 could not return them all;
+    C05 must then not rely on the rules (UC03 DataUnavailable, UC07
+    ReviewRequired)."""
+
+    COMPLETE = "Complete"
+    INCOMPLETE = "Incomplete"
+
+
 class _RetrievalFields(Model):
+    rule_coverage: RuleCoverage
     conflicts: list[KnowledgeConflict]
     limitations: list[str]
     corpus_version: int = Field(ge=1)
@@ -135,13 +178,17 @@ class KnowledgeResult(_RetrievalFields):
             self.passages, key=lambda p: (-p.score, str(p.passage_id))
         ):
             raise ValueError("passages must be sorted by score desc, then passageId")
-        if (
-            self.evidence_snapshot.items != self.passages
-            or self.evidence_snapshot.retrieval_status != self.status
-        ):
+        snap = self.evidence_snapshot
+        if snap.items != self.passages or snap.retrieval_status != self.status:
             raise ValueError(
                 "evidenceSnapshot must exactly copy the returned passages and status"
             )
+        # provenance is duplicated for convenience; the snapshot is the record
+        for name in _RetrievalFields.model_fields:
+            if getattr(snap, name) != getattr(self, name):
+                raise ValueError(f"evidenceSnapshot.{name} differs from the result")
+        if self.rule_coverage is RuleCoverage.INCOMPLETE and not self.limitations:
+            raise ValueError("Incomplete ruleCoverage must be explained in limitations")
         return self
 
 
