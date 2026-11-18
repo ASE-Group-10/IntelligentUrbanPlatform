@@ -140,6 +140,32 @@ docker compose run --rm dbmate up
 
 See [database/README.md](database/README.md) for migration conventions.
 
+### API contract documentation
+
+Component-owned OpenAPI source documents live under
+`contracts/components/<component>/`. CI discovers and aggregates them into a
+temporary file before linting and building the Redoc site. Run the documentation
+locally with:
+
+```sh
+npm ci
+npm run contracts:lint
+npm run contracts:build
+cd dist && python3 -m http.server 8080
+```
+
+Open <http://localhost:8080/openapi/> in a browser. Pushes to `develop` and
+`main` publish documentation for the integration and stable branches at:
+
+```text
+https://ase-group-10.github.io/IntelligentUrbanPlatform/develop/openapi/
+https://ase-group-10.github.io/IntelligentUrbanPlatform/main/openapi/
+```
+
+Pull requests and feature branches only lint/build the documentation and upload
+an artifact; they do not publish public pages. Enable GitHub Pages with the
+`gh-pages` branch as its source before using the published URLs.
+
 ### Frontend
 
 ```sh

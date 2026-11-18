@@ -2,9 +2,14 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
+    "@redocly/cli": "^2.22.0",
+    "js-yaml": "^4.1.0",
     "husky": "^9.1.7"
   },
   "scripts": {
+    "contracts:aggregate": "node scripts/aggregate-openapi.mjs",
+    "contracts:lint": "npm run contracts:aggregate && redocly lint --config=.redocly.yaml .tmp/contracts/openapi.yaml",
+    "contracts:build": "npm run contracts:aggregate && redocly build-docs --config=.redocly.yaml .tmp/contracts/openapi.yaml --output=dist/openapi/index.html",
     "prepare": "husky"
   }
 }
