@@ -56,8 +56,15 @@ class CityStateTransaction(Protocol):
         """Return the current condition of a segment, if one is held."""
         ...
 
-    def put_segment(self, condition: SegmentCondition) -> None:
-        """Replace the current condition of ``condition.segment_key``."""
+    def put_segment(self, condition: SegmentCondition, version: int) -> None:
+        """Make ``condition`` current for its segment from City State ``version``.
+
+        The store keeps every version so past snapshots can be rebuilt.
+        """
+        ...
+
+    def segments(self, at_version: int | None = None) -> dict[str, SegmentCondition]:
+        """Return each segment's condition now, or as it was at ``at_version``."""
         ...
 
     def set_version(self, version: int) -> None:
@@ -95,6 +102,7 @@ class ScopeState:
 
     version: int = 0
     segments: dict[str, SegmentCondition] = field(default_factory=dict)
+    segment_versions: list[tuple[int, SegmentCondition]] = field(default_factory=list)
     history: list[tuple[Observation, IngestionReceipt]] = field(default_factory=list)
     outbox: list[EventEnvelope] = field(default_factory=list)
 
@@ -117,8 +125,18 @@ class InMemoryTransaction:
     def get_segment(self, segment_key: str) -> SegmentCondition | None:
         return self._state.segments.get(segment_key)
 
-    def put_segment(self, condition: SegmentCondition) -> None:
+    def put_segment(self, condition: SegmentCondition, version: int) -> None:
         self._state.segments[condition.segment_key] = condition
+        self._state.segment_versions.append((version, condition))
+
+    def segments(self, at_version: int | None = None) -> dict[str, SegmentCondition]:
+        if at_version is None:
+            return dict(self._state.segments)
+        as_of: dict[str, SegmentCondition] = {}
+        for version, condition in self._state.segment_versions:
+            if version <= at_version:
+                as_of[condition.segment_key] = condition
+        return as_of
 
     def set_version(self, version: int) -> None:
         self._state.version = version
