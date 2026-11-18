@@ -1,0 +1,161 @@
+asyncapi: 3.0.0
+info:
+  title: C08 Allocation and Resource Agents Events
+  version: 1.0.0
+  description: |
+    C08 consumes saved plan versions from C05 and publishes operational failures
+    for C07. PlanReady is a C08 consumer proposal pending C05 producer review.
+defaultContentType: application/json
+channels:
+  allocationEvents:
+    address: ulop.events
+    description: Proposed topic exchange. Use the event type as the routing key.
+    messages:
+      planReady:
+        $ref: '#/components/messages/PlanReady'
+      operationalDisruption:
+        $ref: '#/components/messages/OperationalDisruption'
+operations:
+  receivePlanReady:
+    action: receive
+    channel:
+      $ref: '#/channels/allocationEvents'
+    messages:
+      - $ref: '#/channels/allocationEvents/messages/planReady'
+  sendOperationalDisruption:
+    action: send
+    channel:
+      $ref: '#/channels/allocationEvents'
+    messages:
+      - $ref: '#/channels/allocationEvents/messages/operationalDisruption'
+components:
+  messages:
+    PlanReady:
+      name: PlanReady
+      summary: A saved C05 plan version awaits C08 resource processing.
+      payload:
+        allOf:
+          - $ref: '../c06-city-monitoring/events.yaml#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType:
+                const: PlanReady
+              producer:
+                const: C05
+              schemaVersion:
+                const: 1
+              payload:
+                $ref: '#/components/schemas/PlanReadyPayload'
+    OperationalDisruption:
+      name: OperationalDisruption
+      summary: C08 reports an execution failure and the actual committed state.
+      payload:
+        allOf:
+          - $ref: '../c06-city-monitoring/events.yaml#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType:
+                const: OperationalDisruption
+              producer:
+                const: C08
+              schemaVersion:
+                const: 1
+              payload:
+                $ref: '#/components/schemas/OperationalDisruptionPayload'
+  schemas:
+    PlanReadyPayload:
+      type: object
+      additionalProperties: false
+      required: [planId, planVersion, requirements, decisionId]
+      properties:
+        planId:
+          type: string
+          format: uuid
+        planVersion:
+          type: integer
+          minimum: 1
+        requirements:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ResourceRequirement'
+        decisionId:
+          type: string
+          format: uuid
+    ResourceRequirement:
+      type: object
+      additionalProperties: false
+      required: [deliveryId, resourceKind, capacity]
+      properties:
+        deliveryId:
+          type: string
+          format: uuid
+        resourceKind:
+          type: string
+          enum: [van, cargo_bike, depot, warehouse, locker]
+        capacity:
+          type: object
+          additionalProperties: false
+          required: [amount, unit]
+          properties:
+            amount:
+              type: number
+              exclusiveMinimum: 0
+            unit:
+              type: string
+              enum: [kg, parcels, slots]
+    OperationalDisruptionPayload:
+      type: object
+      description: Python model `OperationalDisruptionPayload` in `backend/app/components/c08_allocation/events.py`.
+      additionalProperties: false
+      required: [failureId, failureKind, planId, planVersion, deliveryIds, resourceIds, committedState]
+      properties:
+        failureId:
+          type: string
+          format: uuid
+          description: C08's stored failed-outcome record. C07 deduplicates on it.
+        failureKind:
+          type: string
+          enum: [commit_conflict, capacity_exceeded, resource_lost, driver_unavailable, agent_timeout]
+        planId:
+          type: string
+          format: uuid
+          description: Plan whose execution failed.
+        planVersion:
+          type: integer
+          minimum: 1
+          description: Version C08 was executing.
+        deliveryIds:
+          type: array
+          description: Deliveries left without a valid commitment.
+          items:
+            type: string
+            format: uuid
+        resourceIds:
+          type: array
+          description: Resources involved in the failure.
+          items:
+            type: string
+            format: uuid
+        committedState:
+          type: object
+          additionalProperties: false
+          required: [stillCommitted, released]
+          properties:
+            stillCommitted:
+              type: array
+              items:
+                type: string
+                format: uuid
+            released:
+              type: array
+              items:
+                type: string
+                format: uuid
+        decisionId:
+          type: [string, 'null']
+          format: uuid
+          description: C10 record of the failed attempt.
+        detail:
+          type: [string, 'null']
+          description: Human-readable reason for logs and the UI.

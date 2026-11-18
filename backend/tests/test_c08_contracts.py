@@ -1,25 +1,34 @@
 """Contract tests: no database, broker, or real agent required."""
 
-from datetime import UTC, datetime
+import json
+from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from contracts.c08.models import (
+from app.components.c07_disruption_detection.contracts import (
+    OperationalDisruption,
+    parse_payload,
+)
+from app.components.c08_allocation.events import (
+    OperationalDisruptionEvent,
+    PlanReadyEvent,
+)
+from app.components.c08_allocation.models import (
     Allocation,
     AllocationProposal,
     Capacity,
     CapacityUnit,
     CommitmentStatus,
-    EventEnvelope,
-    ExecutionScope,
     PlanReadyPayload,
     ReceiptStatus,
     ResourceKind,
     ResourceRequirement,
     ResourceSnapshot,
 )
+from app.shared.contracts import EventEnvelope
 
 
 def requirement() -> ResourceRequirement:
@@ -112,38 +121,58 @@ def test_naive_proposal_expiry_is_rejected() -> None:
         )
 
 
-def event(**overrides: object) -> EventEnvelope:
-    data = dict(
-        schema_version=1,
-        event_id=uuid4(),
-        event_type="PlanReady",
-        producer="c05",
-        occurred_at=datetime.now(UTC),
-        ingested_at=datetime.now(UTC),
-        correlation_id=uuid4(),
-        causation_id=None,
-        scope=ExecutionScope.LIVE,
-        payload={"plan_id": str(uuid4())},
+EXAMPLES = (
+    Path(__file__).resolve().parents[2] / "contracts/components/c08-allocation/examples"
+)
+
+
+def event_fixture(name: str) -> str:
+    return (EXAMPLES / name).read_text(encoding="utf-8")
+
+
+def test_plan_ready_uses_the_shared_envelope_and_typed_requirements() -> None:
+    fixture = event_fixture("plan-ready-event.json")
+    envelope = EventEnvelope.model_validate_json(fixture)
+    ready = PlanReadyEvent.model_validate_json(fixture)
+    assert ready.payload.plan_id in envelope.affected.plan_ids
+    assert envelope.entity_versions is not None
+    assert (
+        ready.payload.plan_version
+        == envelope.entity_versions[str(ready.payload.plan_id)]
     )
-    data.update(overrides)
-    return EventEnvelope(**data)
+    assert json.loads(
+        ready.model_dump_json(by_alias=True, exclude_unset=True)
+    ) == json.loads(fixture)
 
 
-def test_envelope_json_round_trip() -> None:
-    original = event()
-    assert EventEnvelope.model_validate_json(original.model_dump_json()) == original
+def test_c07_accepts_c08_operational_disruption() -> None:
+    fixture = event_fixture("operational-disruption-event.json")
+    disruption = OperationalDisruptionEvent.model_validate_json(fixture)
+    wire = disruption.model_dump_json(by_alias=True, exclude_unset=True)
+    assert json.loads(wire) == json.loads(fixture)
+    received = parse_payload(EventEnvelope.model_validate_json(wire))
+    assert isinstance(received, OperationalDisruption)
+    assert received.failure_id == disruption.payload.failure_id
+    assert (
+        received.committed_state.released == disruption.payload.committed_state.released
+    )
 
 
-def test_unsupported_event_schema_is_rejected() -> None:
-    with pytest.raises(ValidationError):
-        event(schema_version=2)
-
-
-def test_simulation_event_requires_run_id() -> None:
-    with pytest.raises(ValidationError):
-        event(scope=ExecutionScope.SIMULATION)
-
-
-def test_live_event_disallows_run_id() -> None:
-    with pytest.raises(ValidationError):
-        event(run_id=uuid4())
+@pytest.mark.parametrize(
+    ("overrides", "field"),
+    [
+        ({"schemaVersion": 2}, "schemaVersion"),
+        ({"producer": "C08"}, "producer"),
+        ({"eventType": "OperationalDisruption"}, "eventType"),
+        ({"payload": {}}, "payload"),
+        ({"scope": "simulation"}, "runId"),
+        ({"runId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e"}, "runId"),
+    ],
+)
+def test_plan_ready_rejects_invalid_event(
+    overrides: dict[str, object], field: str
+) -> None:
+    wire = json.loads(event_fixture("plan-ready-event.json"))
+    wire.update(overrides)
+    with pytest.raises(ValidationError, match=field):
+        PlanReadyEvent.model_validate_json(json.dumps(wire))

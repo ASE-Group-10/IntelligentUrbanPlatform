@@ -10,11 +10,9 @@ info:
     impact. For actionable new conditions it requests a separate C05 replan
     (see `internal.md`). C07 publishes no events yet.
 
-    `CityStateUpdated` refers to the C06 definition. `ResourceAvailabilityChanged`
-    and `OperationalDisruption` are defined below as the shape C07 expects:
-    the C03 and C08 contracts currently publish a different envelope and
-    payload. Aligning them is tracked in #28, #31 and #33. Until then these
-    are consumer expectations, not the producers' definitions.
+    `CityStateUpdated` and `OperationalDisruption` refer to the C06 and C08
+    producer definitions. `ResourceAvailabilityChanged` is the shape C07
+    expects pending alignment with C03.
 
     Examples are in `examples/`: `resource-availability-changed-payload.json`
     and `operational-disruption-payload.json`.
@@ -39,7 +37,7 @@ channels:
       resourceAvailabilityChanged:
         $ref: '#/components/messages/ResourceAvailabilityChanged'
       operationalDisruption:
-        $ref: '#/components/messages/OperationalDisruption'
+        $ref: '../c08-allocation/events.yaml#/components/messages/OperationalDisruption'
 operations:
   receiveCityStateUpdated:
     action: receive
@@ -92,24 +90,6 @@ components:
                 const: C03
               payload:
                 $ref: '#/components/schemas/ResourceAvailabilityChangedPayload'
-    OperationalDisruption:
-      name: OperationalDisruption
-      title: Operational disruption (expected by C07)
-      summary: Published by C08 when an allocation commit fails or a resource becomes invalid during execution.
-      description: |
-        Reports the actual committed state after the failure, so C07 never
-        has to guess what is still allocated. C08 does not wait for C07.
-      payload:
-        allOf:
-          - $ref: '../c06-city-monitoring/events.yaml#/components/schemas/EventEnvelope'
-          - type: object
-            properties:
-              eventType:
-                const: OperationalDisruption
-              producer:
-                const: C08
-              payload:
-                $ref: '#/components/schemas/OperationalDisruptionPayload'
   schemas:
     ResourceAvailabilityChangedPayload:
       type: object
@@ -162,58 +142,3 @@ components:
     ResourceStatus:
       type: string
       enum: [available, limited, unavailable, unknown]
-    OperationalDisruptionPayload:
-      type: object
-      description: Python model `OperationalDisruption` in `backend/app/components/c07_disruption_detection/contracts.py`.
-      additionalProperties: false
-      required: [failureId, failureKind, planId, planVersion, deliveryIds, resourceIds, committedState]
-      properties:
-        failureId:
-          type: string
-          format: uuid
-          description: C08's stored failed-outcome record. C07 deduplicates on it.
-        failureKind:
-          type: string
-          enum: [commit_conflict, capacity_exceeded, resource_lost, driver_unavailable, agent_timeout]
-        planId:
-          type: string
-          format: uuid
-          description: Plan whose execution failed.
-        planVersion:
-          type: integer
-          minimum: 1
-          description: Version C08 was executing.
-        deliveryIds:
-          type: array
-          description: Deliveries left without a valid commitment.
-          items:
-            type: string
-            format: uuid
-        resourceIds:
-          type: array
-          description: Resources involved in the failure.
-          items:
-            type: string
-            format: uuid
-        committedState:
-          type: object
-          additionalProperties: false
-          required: [stillCommitted, released]
-          properties:
-            stillCommitted:
-              type: array
-              items:
-                type: string
-                format: uuid
-            released:
-              type: array
-              items:
-                type: string
-                format: uuid
-        decisionId:
-          type: [string, 'null']
-          format: uuid
-          description: C10 record of the failed attempt.
-        detail:
-          type: [string, 'null']
-          description: Human-readable reason for logs and the UI.
