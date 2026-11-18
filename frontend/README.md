@@ -63,7 +63,7 @@ matching route, which currently shows a placeholder naming the owner.
 Once the FastAPI app is running, regenerate the API types:
 
 ```sh
-npm run api:types   # reads http://127.0.0.1:8000/openapi.json
+npm run api:types   # reads http://127.0.0.1:8000/openapi.json (set API_SCHEMA_URL to change)
 ```
 
 Then call it with full type checking:
