@@ -1,9 +1,9 @@
 # C06 City Monitoring: internal interfaces
 
 C06 owns City State (UC05). This file covers the calls other components make to
-C06 inside the backend process. Events are in `events.yaml`. C06 has no HTTP
-operations agreed yet: `submitManualCondition` and the map views for C01 will
-go in an `openapi.yaml` once they are agreed.
+C06 inside the backend process. Events are in `events.yaml`. HTTP operations
+for C01 and other clients are in `openapi.yaml` (`getCitySnapshot` so far;
+`submitManualCondition` will follow).
 
 Typed models: `backend/app/components/c06_city_monitoring/contracts.py` and
 `backend/app/shared/contracts.py`. Examples: `examples/`.
@@ -56,8 +56,25 @@ Examples: `examples/city-snapshot-query.json`, `examples/city-snapshot.json`.
 
 `SegmentCondition` is defined in `events.yaml` (`components.schemas.SegmentCondition`).
 
-**Failures:** `Invalid` (bad scope), `Unavailable` (no City State yet, or store
-down), `Forbidden`.
+Behaviour (implemented in `backend/app/components/c06_city_monitoring/snapshot.py`):
+
+- The caller also passes the City State scope: live, or one simulation `runId`.
+  A run's state is never mixed with live state.
+- Requested segments without a recorded condition are omitted (absent means
+  `open`, `good`).
+- In a current snapshot, a `good` value older than `maxAgeSeconds` (default
+  900) is returned as `degraded` and its sources are listed in `staleSources`.
+  Past versions (`atVersion`) are returned as they were recorded.
+- `overallQuality` is the worst quality among the returned segments, or `good`
+  when none are returned.
+- `scope.bbox` is rejected as `Invalid` until segments have geometry in C06.
+- `scope.segmentKeys` must hold 1 to 200 keys, the same limit as `openapi.yaml`.
+- A read has no side effects: it sees committed City State and never writes, so
+  an ingestion committed during the read is kept. Returned segments are copies.
+
+**Failures:** `Invalid` (bad scope, `bbox`, or 0 or more than 200 segment keys), `NotFound` (`atVersion` newer
+than the current version), `Unavailable` (no City State yet, or store down),
+`Forbidden`.
 
 ### ingestObservation(sourceContext, observation) → Result\<IngestionReceipt\>
 
@@ -104,4 +121,6 @@ None yet. Source authentication will use C02 once its contract exists.
 - [ ] Where the shared `EventEnvelope` and conventions live (#28).
 - [ ] Zones: fixed grid or postal districts? Only needed for weather, so this can wait.
 - [ ] Per-source freshness overrides.
-- [ ] HTTP operations for C01 (`submitManualCondition`, City State map view).
+- [x] City State read for C01: `getCitySnapshot` in `openapi.yaml`.
+- [ ] `submitManualCondition` over HTTP (UC05 AF5).
+- [ ] Segment geometry for area (`bbox`) queries and the C01 map (#43): from C05's routing graph or a demo fixture.
