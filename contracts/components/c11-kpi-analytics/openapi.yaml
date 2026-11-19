@@ -8,9 +8,9 @@ info:
     filters, not authorisation. Every operation enforces roles, provider scope and session ownership
     server-side. Success responses contain the domain value directly; Failure kinds map to HTTP error
     responses. All examples are synthetic. Errors/auth details and transport-only paging/idempotency
-    conventions require consumer approval. Cross-field constraints documented in x-domain-constraints,
-    comparisons and lifecycle rules require server validation; structural schema checks alone do not
-    prove them.'
+    conventions require consumer approval. Cross-field shape conditions use standard JSON Schema if/then/else
+    validation. Numeric comparisons across fields/requests and lifecycle transitions still require
+    service validation.'
   contact:
     name: Jolin + Qingyuan
 servers:
@@ -161,7 +161,12 @@ paths:
         The cursor is opaque, integrity-protected and bound to principal, metric and every filter/version.
         A cursor cannot widen access; changed filters with an existing cursor are Invalid. nextCursor
         null/absent means the final page. Detailed record fields are still proposals; expose only
-        scoped allowlisted information. No cross-provider records or operational writes.
+        scoped allowlisted information. No cross-provider records or operational writes. Each response
+        contains at most the requested limit records (default 20; hard cap 100) and at most 1000 unique
+        sourceEventIds for those records only. The server must enforce the request-relative record
+        limit. If complete provenance for a single aggregate cannot fit, return 422 Invalid asking
+        the caller to narrow the scope; never truncate IDs or return an oversized page. Continue other
+        bounded pages using nextCursor.
       responses:
         '200':
           description: A bounded page of supporting records and source event IDs.
@@ -229,7 +234,7 @@ paths:
         in: path
         required: true
         description: Metric key returned by queryKPIs; response metricId must match.
-        schema: &id001
+        schema:
           type: string
           minLength: 1
           maxLength: 200
@@ -247,7 +252,10 @@ paths:
         required: false
         description: Opaque continuation cursor bound to the authenticated principal and unchanged
           filters; never an access grant.
-        schema: *id001
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
 components:
   securitySchemes:
     c11BearerAuth:
@@ -303,36 +311,17 @@ components:
       - scope
       title: C11AnalysisScope
       type: object
-      x-domain-constraints:
-      - if:
-          properties:
-            scope:
-              const: simulation
-          required:
-          - scope
-        then:
-          required:
-          - runId
-          properties:
-            runId: &id002
-              type: string
-              format: uuid
-              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
-        else:
-          properties:
-            runId:
-              type: 'null'
       oneOf:
       - type: object
         properties:
-          period: &id003
+          period:
             $ref: '#/components/schemas/C11TimeRange'
-          providerId: &id004
+          providerId:
             format: uuid
             title: Providerid
             type: string
             pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
-          areaId: &id005
+          areaId:
             anyOf:
             - maxLength: 200
               minLength: 1
@@ -340,7 +329,7 @@ components:
             - type: 'null'
             default: null
             title: Areaid
-          resourceIds: &id006
+          resourceIds:
             items:
               format: uuid
               type: string
@@ -349,22 +338,77 @@ components:
             type: array
           scope:
             const: simulation
-          runId: *id002
+          runId:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
         required:
         - scope
         - runId
       - type: object
         properties:
-          period: *id003
-          providerId: *id004
-          areaId: *id005
-          resourceIds: *id006
+          period:
+            $ref: '#/components/schemas/C11TimeRange'
+          providerId:
+            format: uuid
+            title: Providerid
+            type: string
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          areaId:
+            anyOf:
+            - maxLength: 200
+              minLength: 1
+              type: string
+            - type: 'null'
+            default: null
+            title: Areaid
+          resourceIds:
+            items:
+              format: uuid
+              type: string
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+            title: Resourceids
+            type: array
           scope:
             const: live
           runId:
             type: 'null'
         required:
         - scope
+      allOf:
+      - if:
+          properties:
+            period: {}
+            providerId: {}
+            areaId: {}
+            resourceIds: {}
+            scope:
+              const: simulation
+            runId: {}
+          required:
+          - scope
+        then:
+          required:
+          - runId
+          properties:
+            period: {}
+            providerId: {}
+            areaId: {}
+            resourceIds: {}
+            scope: {}
+            runId:
+              type: string
+              format: uuid
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        else:
+          properties:
+            period: {}
+            providerId: {}
+            areaId: {}
+            resourceIds: {}
+            scope: {}
+            runId:
+              type: 'null'
     C11TimeRange:
       additionalProperties: false
       description: Half-open [start, end); server must check start < end. JSON Schema does not compare
@@ -490,43 +534,88 @@ components:
       - estimated
       title: C11Indicator
       type: object
-      x-domain-constraints:
+      allOf:
       - if:
           properties:
+            metricId: {}
+            value: {}
+            unit: {}
             status:
               const: unavailable
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis: {}
+            reason: {}
           required:
           - status
         then:
           required:
           - reason
           properties:
+            metricId: {}
             value:
               type: 'null'
-            reason: *id001
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis: {}
+            reason:
+              type: string
+              minLength: 1
+              maxLength: 200
         else:
           properties:
+            metricId: {}
             value:
               type: number
+            unit: {}
+            status: {}
+            coverage:
+              properties:
+                eligible: {}
+                observed:
+                  minimum: 1
+                excluded: {}
             lastUpdated:
               type: string
               format: date-time
               pattern: Z$
-            coverage:
-              properties:
-                observed:
-                  minimum: 1
+            estimated: {}
+            estimationBasis: {}
+            reason: {}
       - if:
           properties:
+            metricId: {}
+            value: {}
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
             estimated:
               const: true
+            estimationBasis: {}
+            reason: {}
           required:
           - estimated
         then:
           required:
           - estimationBasis
           properties:
-            estimationBasis: *id001
+            metricId: {}
+            value: {}
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis:
+              type: string
+              minLength: 1
+              maxLength: 200
+            reason: {}
     C11TrendPoint:
       additionalProperties: false
       properties:
@@ -595,37 +684,83 @@ components:
       title: C11KPISet
       type: object
       x-python-model: app.components.c11_kpi_analytics.contracts.KPISet
-      x-domain-constraints:
+      description: metricId is unique per set. Units and definition version remain consistent across
+        trend points. Missing values are null, never invented zero.
+      allOf:
       - if:
           properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
             status:
               const: stale
+            indicators: {}
+            trends: {}
+            failure: {}
           required:
           - status
         then:
           required:
           - failure
           properties:
-            failure: *id001
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status: {}
+            indicators: {}
+            trends: {}
+            failure:
+              type: string
+              minLength: 1
+              maxLength: 200
         else:
           properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status: {}
+            indicators: {}
+            trends: {}
             failure:
               type: 'null'
       - if:
           properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
             status:
               const: current
+            indicators: {}
+            trends: {}
+            failure: {}
           required:
           - status
         then:
           properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status: {}
             indicators:
               items:
                 properties:
+                  metricId: {}
+                  value: {}
+                  unit: {}
                   status:
                     const: available
-      description: metricId is unique per set. Units and definition version remain consistent across
-        trend points. Missing values are null, never invented zero.
+                  coverage: {}
+                  lastUpdated: {}
+                  estimated: {}
+                  estimationBasis: {}
+                  reason: {}
+            trends: {}
+            failure: {}
     C11Breakdown:
       additionalProperties: false
       properties:
@@ -647,8 +782,10 @@ components:
             type: object
           title: Records
           type: array
-          description: Server-bounded, provider-scoped allowlisted supporting records; detailed metric-specific
-            fields need producer agreement.
+          description: At most 100 page-local supporting records, and never more than the requested
+            limit (default 20). The HTTP service enforces the request-relative limit; a response schema
+            alone cannot compare it to a query parameter.
+          maxItems: 100
         sourceEventIds:
           items:
             format: uuid
@@ -656,6 +793,10 @@ components:
             pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
           title: Sourceeventids
           type: array
+          maxItems: 1000
+          uniqueItems: true
+          description: Unique source event IDs referenced by this page's records only, never the full
+            metric population. Hard cap 1000 per page. Do not silently truncate provenance.
         nextCursor:
           anyOf:
           - maxLength: 200
