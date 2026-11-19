@@ -140,6 +140,9 @@ finite pacing, UTC/ranges, seek and cursor boundaries, not persistent sequencing
 authorisation, recovery or broker ACLs. Run repository-root
 `npm run contracts:lint`, `npm run contracts:build`, then backend `uv run pytest`,
 `uv run ruff check .` and `uv run ruff format --check .`.
+Run `npm run contracts:test:c11-c12` for HTTP schema regression checks including
+recorded Indicator values and replay interruption states. CI runs these checks;
+they do not replace the runtime ownership, ordering and transition checks.
 OpenAPI checks do not validate events/internal Markdown. Follow-up runtime work is
 #17; simulation creation/full recording still needs its own agreed increment.
 Prepared with AI assistance for Jolin; no handover, producer agreement, deployment

@@ -8,9 +8,9 @@ info:
     filters, not authorisation. Every operation enforces roles, provider scope and session ownership
     server-side. Success responses contain the domain value directly; Failure kinds map to HTTP error
     responses. All examples are synthetic. Errors/auth details and transport-only paging/idempotency
-    conventions require consumer approval. Cross-field constraints documented in x-domain-constraints,
-    comparisons and lifecycle rules require server validation; structural schema checks alone do not
-    prove them.'
+    conventions require consumer approval. Cross-field shape conditions use standard JSON Schema if/then/else
+    validation. Numeric comparisons across fields/requests and lifecycle transitions still require
+    service validation.'
   contact:
     name: Jolin + Qingyuan
 servers:
@@ -191,7 +191,7 @@ paths:
         in: query
         required: true
         description: Provider to list; enforce authenticated provider permission.
-        schema: &id003
+        schema:
           type: string
           format: uuid
           pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
@@ -199,7 +199,7 @@ paths:
         in: query
         required: false
         description: Optional exact scenario ID.
-        schema: &id002
+        schema:
           type: string
           minLength: 1
           maxLength: 200
@@ -217,7 +217,7 @@ paths:
         in: query
         required: false
         description: Inclusive available-range overlap filter; requires end.
-        schema: &id001
+        schema:
           type: string
           format: date-time
           pattern: Z$
@@ -225,7 +225,10 @@ paths:
         in: query
         required: false
         description: Exclusive available-range overlap filter; requires start.
-        schema: *id001
+        schema:
+          type: string
+          format: date-time
+          pattern: Z$
       - name: limit
         in: query
         required: false
@@ -240,7 +243,10 @@ paths:
         required: false
         description: Opaque continuation cursor bound to the authenticated principal and unchanged
           filters; never an access grant.
-        schema: *id002
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
   /api/v1/replay-sessions:
     post:
       operationId: c12StartReplay
@@ -361,14 +367,16 @@ paths:
                     end: '2026-11-17T11:00:00Z'
                   speed: 1
       parameters:
-      - &id005
-        name: Idempotency-Key
+      - name: Idempotency-Key
         in: header
         required: true
         description: Scoped to principal/provider, operation and target. Same key/body returns original
           response; changed input conflicts. Recheck access before replaying a receipt. Required for
           safe create/control retries.
-        schema: *id002
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
   /api/v1/replay-sessions/{sessionId}:
     get:
       operationId: c12GetReplayFrame
@@ -443,12 +451,14 @@ paths:
       security:
       - c12BearerAuth: []
       parameters:
-      - &id004
-        name: sessionId
+      - name: sessionId
         in: path
         required: true
         description: Private session ID; server checks owner and run/provider scope on every request.
-        schema: *id003
+        schema:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
   /api/v1/replay-sessions/{sessionId}/controls:
     post:
       operationId: c12ControlReplay
@@ -549,8 +559,24 @@ paths:
                   expectedCursor: 1
                   targetCursor: 0
       parameters:
-      - *id004
-      - *id005
+      - name: sessionId
+        in: path
+        required: true
+        description: Private session ID; server checks owner and run/provider scope on every request.
+        schema:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: Scoped to principal/provider, operation and target. Same key/body returns original
+          response; changed input conflicts. Recheck access before replaying a receipt. Required for
+          safe create/control retries.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
 components:
   securitySchemes:
     c12BearerAuth:
@@ -798,46 +824,88 @@ components:
       title: C12Indicator
       type: object
       description: Recorded C11 Indicator value, exported from the same Python model; no new KPI definition.
-      x-domain-constraints:
+      allOf:
       - if:
           properties:
+            metricId: {}
+            value: {}
+            unit: {}
             status:
               const: unavailable
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis: {}
+            reason: {}
           required:
           - status
         then:
           required:
           - reason
           properties:
+            metricId: {}
             value:
               type: 'null'
-            reason: &id006
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis: {}
+            reason:
               type: string
               minLength: 1
               maxLength: 200
         else:
           properties:
+            metricId: {}
             value:
               type: number
+            unit: {}
+            status: {}
+            coverage:
+              properties:
+                eligible: {}
+                observed:
+                  minimum: 1
+                excluded: {}
             lastUpdated:
               type: string
               format: date-time
               pattern: Z$
-            coverage:
-              properties:
-                observed:
-                  minimum: 1
+            estimated: {}
+            estimationBasis: {}
+            reason: {}
       - if:
           properties:
+            metricId: {}
+            value: {}
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
             estimated:
               const: true
+            estimationBasis: {}
+            reason: {}
           required:
           - estimated
         then:
           required:
           - estimationBasis
           properties:
-            estimationBasis: *id006
+            metricId: {}
+            value: {}
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis:
+              type: string
+              minLength: 1
+              maxLength: 200
+            reason: {}
     C12ReplayFrame:
       additionalProperties: false
       properties:
@@ -911,16 +979,34 @@ components:
       title: C12ReplayFrame
       type: object
       x-python-model: app.components.c12_simulation_replay.contracts.ReplayFrame
-      x-domain-constraints:
+      allOf:
       - if:
           properties:
+            schemaVersion: {}
+            sessionId: {}
+            runId: {}
+            cursor: {}
             status:
               const: paused
+            simulationTime: {}
+            state: {}
+            decisionIds: {}
+            recordedKpis: {}
+            interruption: {}
           required:
           - status
         then: {}
         else:
           properties:
+            schemaVersion: {}
+            sessionId: {}
+            runId: {}
+            cursor: {}
+            status: {}
+            simulationTime: {}
+            state: {}
+            decisionIds: {}
+            recordedKpis: {}
             interruption:
               type: 'null'
     C12CannotReplay:
@@ -979,30 +1065,12 @@ components:
       x-python-model: app.components.c12_simulation_replay.contracts.ReplayControl
       description: 'HTTP body excludes sessionId: the path supplies it when adapting to existing ReplayControl.
         expectedCursor is a strict nonnegative integer; targetCursor is non-null only for seek.'
-      x-domain-constraints:
-      - if:
-          properties:
-            command:
-              const: seek
-          required:
-          - command
-        then:
-          required:
-          - targetCursor
-          properties:
-            targetCursor:
-              type: integer
-              minimum: 0
-        else:
-          properties:
-            targetCursor:
-              type: 'null'
       oneOf:
       - type: object
         properties:
           command:
             const: seek
-          expectedCursor: &id007
+          expectedCursor:
             minimum: 0
             title: Expectedcursor
             type: integer
@@ -1020,11 +1088,38 @@ components:
             - pause
             - resume
             - stop
-          expectedCursor: *id007
+          expectedCursor:
+            minimum: 0
+            title: Expectedcursor
+            type: integer
           targetCursor:
             type: 'null'
         required:
         - command
+      allOf:
+      - if:
+          properties:
+            command:
+              const: seek
+            expectedCursor: {}
+            targetCursor: {}
+          required:
+          - command
+        then:
+          required:
+          - targetCursor
+          properties:
+            command: {}
+            expectedCursor: {}
+            targetCursor:
+              type: integer
+              minimum: 0
+        else:
+          properties:
+            command: {}
+            expectedCursor: {}
+            targetCursor:
+              type: 'null'
     C12RunPage:
       type: object
       additionalProperties: false
@@ -1041,7 +1136,9 @@ components:
             $ref: '#/components/schemas/C12RunManifest'
         nextCursor:
           anyOf:
-          - *id002
+          - type: string
+            minLength: 1
+            maxLength: 200
           - type: 'null'
     C12ErrorResponse:
       type: object
