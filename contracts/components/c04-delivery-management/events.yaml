@@ -1,0 +1,108 @@
+asyncapi: 3.0.0
+info:
+  title: C04 Delivery Management Events
+  version: 1.0.0
+  description: >-
+    Events emitted when C04 commits a delivery request or progress change.
+    State and the outbox entry are committed atomically. Consumers deduplicate
+    by eventId and use deliveryVersion for ordering. These events do not imply
+    that a delivery has a feasible plan or confirmed resource allocation.
+  contact:
+    name: C04 Delivery Management
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    host: localhost
+    protocol: amqp
+    description: Local RabbitMQ topic exchange
+channels:
+  c04Events:
+    address: ulop.events
+    messages:
+      deliverySubmitted:
+        $ref: '#/components/messages/DeliverySubmitted'
+      deliveryUpdated:
+        $ref: '#/components/messages/DeliveryUpdated'
+      deliveryProgressChanged:
+        $ref: '#/components/messages/DeliveryProgressChanged'
+operations:
+  publishDeliverySubmitted:
+    action: send
+    channel:
+      $ref: '#/channels/c04Events'
+    title: Publish a delivery submission
+    messages:
+      - $ref: '#/channels/c04Events/messages/deliverySubmitted'
+  publishDeliveryUpdated:
+    action: send
+    channel:
+      $ref: '#/channels/c04Events'
+    title: Publish a delivery request update
+    messages:
+      - $ref: '#/channels/c04Events/messages/deliveryUpdated'
+  publishDeliveryProgressChanged:
+    action: send
+    channel:
+      $ref: '#/channels/c04Events'
+    title: Publish delivery progress
+    messages:
+      - $ref: '#/channels/c04Events/messages/deliveryProgressChanged'
+components:
+  messages:
+    DeliverySubmitted:
+      name: DeliverySubmitted
+      title: Delivery submitted
+      summary: A validated delivery request was committed.
+      payload:
+        $ref: '#/components/schemas/DeliveryEvent'
+    DeliveryUpdated:
+      name: DeliveryUpdated
+      title: Delivery request updated
+      summary: Pending delivery request facts were changed.
+      payload:
+        $ref: '#/components/schemas/DeliveryEvent'
+    DeliveryProgressChanged:
+      name: DeliveryProgressChanged
+      title: Delivery progress changed
+      summary: The authoritative progress status changed.
+      payload:
+        $ref: '#/components/schemas/DeliveryEvent'
+  schemas:
+    DeliveryEvent:
+      allOf:
+        - $ref: ../c06-city-monitoring/events.yaml#/components/schemas/EventEnvelope
+        - type: object
+          required: [eventType, producer, entityVersions, payload]
+          properties:
+            eventType:
+              type: string
+              enum: [DeliverySubmitted, DeliveryUpdated, DeliveryProgressChanged]
+            producer:
+              const: C04
+            entityVersions:
+              type: object
+              additionalProperties:
+                type: integer
+                minimum: 1
+            payload:
+              $ref: '#/components/schemas/DeliveryEventPayload'
+    DeliveryEventPayload:
+      type: object
+      additionalProperties: false
+      required: [deliveryId, deliveryVersion, status, delivery]
+      properties:
+        deliveryId:
+          type: string
+          format: uuid
+        deliveryVersion:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [pending, planned, in_progress, delivered, cancelled]
+        delivery:
+          type: object
+          description: Complete C04 delivery representation at this version.
+        progress:
+          type: [object, 'null']
+          additionalProperties: true

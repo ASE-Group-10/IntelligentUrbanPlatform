@@ -1,0 +1,456 @@
+openapi: 3.1.0
+info:
+  title: C04 Delivery Management API
+  version: 1.0.0
+  description: >-
+    HTTP contracts for submitting and viewing validated delivery requests.
+    C04 owns request facts and progress; a recorded request is not a feasible
+    plan, allocation, or dispatch instruction. Authentication and scope
+    authorisation are provided by C02.
+  contact:
+    name: C04 Delivery Management
+servers:
+  - url: /
+    description: Platform backend
+tags:
+  - name: C04 Delivery Management
+    description: Submit and inspect delivery requests.
+security:
+  - C04BearerAuth: []
+paths:
+  /api/v1/deliveries:
+    post:
+      operationId: c04SubmitDelivery
+      tags:
+        - C04 Delivery Management
+      security:
+        - C04BearerAuth: []
+      summary: Submit a delivery request
+      description: >-
+        Validate both locations, cargo and constraints before persisting the
+        request. The idempotency key is part of the request so a retry after an
+        uncertain response returns the original result without creating a
+        second delivery.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C04SubmitDeliveryRequest'
+            example:
+              pickup:
+                address: Dublin Port
+                latitude: 53.3478
+                longitude: -6.2297
+              destination:
+                address: Trinity College Dublin
+                latitude: 53.3438
+                longitude: -6.2546
+              cargo:
+                description: Office supplies
+                weightKg: 4.5
+                parcelCount: 2
+              timeWindow:
+                start: '2026-11-20T09:00:00Z'
+                end: '2026-11-20T12:00:00Z'
+              constraints:
+                vehicleKinds: [van, cargo_bike]
+                fragile: false
+              idempotencyKey: delivery-request-001
+      responses:
+        '201':
+          description: Delivery request persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C04Delivery'
+              examples:
+                submitted:
+                  $ref: '#/components/examples/DeliverySubmitted'
+        '200':
+          description: Original result returned for an identical idempotent retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C04Delivery'
+        '400':
+          $ref: '#/components/responses/C04Invalid'
+        '401':
+          $ref: '#/components/responses/C04Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C04Forbidden'
+        '409':
+          $ref: '#/components/responses/C04Conflict'
+        '422':
+          $ref: '#/components/responses/C04Invalid'
+        '503':
+          $ref: '#/components/responses/C04Unavailable'
+    get:
+      operationId: c04GetRequests
+      tags:
+        - C04 Delivery Management
+      security:
+        - C04BearerAuth: []
+      summary: List delivery requests
+      description: >-
+        Return only requests within the authenticated principal's C02 scope.
+        Filters are optional for the browser; C05 uses the equivalent internal
+        interface defined in internal.md.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/C04DeliveryStatus'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Bounded page of authorised delivery requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C04DeliveryPage'
+        '401':
+          $ref: '#/components/responses/C04Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C04Forbidden'
+        '422':
+          $ref: '#/components/responses/C04Invalid'
+        '503':
+          $ref: '#/components/responses/C04Unavailable'
+  /api/v1/deliveries/{deliveryId}:
+    get:
+      operationId: c04GetDelivery
+      tags:
+        - C04 Delivery Management
+      security:
+        - C04BearerAuth: []
+      summary: Get a delivery request
+      parameters:
+        - $ref: '#/components/parameters/DeliveryId'
+      responses:
+        '200':
+          description: Authorised delivery request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C04Delivery'
+        '401':
+          $ref: '#/components/responses/C04Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C04Forbidden'
+        '404':
+          $ref: '#/components/responses/C04NotFound'
+        '503':
+          $ref: '#/components/responses/C04Unavailable'
+    post:
+      operationId: c04UpdateDelivery
+      tags:
+        - C04 Delivery Management
+      security:
+        - C04BearerAuth: []
+      summary: Update an unplanned delivery request
+      description: >-
+        Update request facts only while the request is pending. The expected
+        version prevents stale writes. Planned or completed requests cannot be
+        changed through this operation.
+      parameters:
+        - $ref: '#/components/parameters/DeliveryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C04UpdateDeliveryRequest'
+      responses:
+        '200':
+          description: Updated delivery request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C04Delivery'
+        '400':
+          $ref: '#/components/responses/C04Invalid'
+        '401':
+          $ref: '#/components/responses/C04Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C04Forbidden'
+        '404':
+          $ref: '#/components/responses/C04NotFound'
+        '409':
+          $ref: '#/components/responses/C04Conflict'
+        '422':
+          $ref: '#/components/responses/C04Invalid'
+        '503':
+          $ref: '#/components/responses/C04Unavailable'
+components:
+  securitySchemes:
+    C04BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    DeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    C04SubmitDeliveryRequest:
+      allOf:
+        - $ref: '#/components/schemas/C04DeliveryFields'
+        - type: object
+          required: [idempotencyKey]
+          properties:
+            idempotencyKey:
+              type: string
+              minLength: 1
+              maxLength: 200
+    C04UpdateDeliveryRequest:
+      allOf:
+        - $ref: '#/components/schemas/C04DeliveryFields'
+        - type: object
+          required: [expectedVersion, idempotencyKey]
+          properties:
+            expectedVersion:
+              type: integer
+              minimum: 1
+            idempotencyKey:
+              type: string
+              minLength: 1
+              maxLength: 200
+    C04DeliveryFields:
+      type: object
+      required: [pickup, destination, cargo, timeWindow, constraints]
+      properties:
+        pickup:
+          $ref: '#/components/schemas/C04Location'
+        destination:
+          $ref: '#/components/schemas/C04Location'
+        cargo:
+          $ref: '#/components/schemas/C04Cargo'
+        timeWindow:
+          $ref: '#/components/schemas/C04TimeWindow'
+        constraints:
+          $ref: '#/components/schemas/C04Constraints'
+    C04Delivery:
+      allOf:
+        - $ref: '#/components/schemas/C04DeliveryFields'
+        - type: object
+          required: [deliveryId, version, status, createdAt, updatedAt]
+          properties:
+            deliveryId:
+              type: string
+              format: uuid
+            version:
+              type: integer
+              minimum: 1
+            status:
+              $ref: '#/components/schemas/C04DeliveryStatus'
+            plannedAt:
+              type: [string, 'null']
+              format: date-time
+            progress:
+              $ref: '#/components/schemas/C04Progress'
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    C04DeliveryPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/C04Delivery'
+        nextCursor:
+          type: [string, 'null']
+    C04Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, correlationId]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlationId:
+              type: string
+              format: uuid
+    C04Location:
+      type: object
+      additionalProperties: false
+      required: [address, latitude, longitude]
+      properties:
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        instructions:
+          type: [string, 'null']
+          maxLength: 1000
+    C04Cargo:
+      type: object
+      additionalProperties: false
+      required: [description, weightKg, parcelCount]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        weightKg:
+          type: number
+          exclusiveMinimum: 0
+        parcelCount:
+          type: integer
+          minimum: 1
+    C04TimeWindow:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+    C04Constraints:
+      type: object
+      additionalProperties: false
+      required: [vehicleKinds, fragile]
+      properties:
+        vehicleKinds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [van, truck, cargo_bike, autonomous_vehicle]
+        fragile:
+          type: boolean
+        temperatureRangeC:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [minimum, maximum]
+          properties:
+            minimum:
+              type: number
+            maximum:
+              type: number
+    C04Progress:
+      type: object
+      additionalProperties: false
+      required: [status, updatedAt]
+      properties:
+        status:
+          type: string
+          enum: [pending, picked_up, in_transit, delivered, failed]
+        updatedAt:
+          type: string
+          format: date-time
+        note:
+          type: [string, 'null']
+    C04DeliveryStatus:
+      type: string
+      enum: [pending, planned, in_progress, delivered, cancelled]
+  examples:
+    DeliverySubmitted:
+      value:
+        deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+        version: 1
+        status: pending
+        pickup:
+          address: Dublin Port
+          latitude: 53.3478
+          longitude: -6.2297
+        destination:
+          address: Trinity College Dublin
+          latitude: 53.3438
+          longitude: -6.2546
+        cargo:
+          description: Office supplies
+          weightKg: 4.5
+          parcelCount: 2
+        timeWindow:
+          start: '2026-11-20T09:00:00Z'
+          end: '2026-11-20T12:00:00Z'
+        constraints:
+          vehicleKinds: [van, cargo_bike]
+          fragile: false
+        plannedAt: null
+        progress:
+          status: pending
+          updatedAt: '2026-11-19T22:00:00Z'
+          note: null
+        createdAt: '2026-11-19T22:00:00Z'
+        updatedAt: '2026-11-19T22:00:00Z'
+  responses:
+    C04Invalid:
+      description: Request fields or cross-field constraints are invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C04Error'
+    C04Unauthenticated:
+      description: Authentication is required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C04Error'
+    C04Forbidden:
+      description: Authenticated principal is outside the requested scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C04Error'
+    C04NotFound:
+      description: Delivery request was not found in the authorised scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C04Error'
+    C04Conflict:
+      description: Idempotency or expected-version conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C04Error'
+    C04Unavailable:
+      description: Delivery state could not be read or committed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C04Error'
