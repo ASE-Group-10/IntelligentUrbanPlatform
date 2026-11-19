@@ -144,8 +144,9 @@ class _RetrievalFields(Model):
 def _check_status(
     status: RetrievalStatus, passages: list[Passage], conflicts: list[KnowledgeConflict]
 ) -> None:
-    if status is RetrievalStatus.CONFLICT and not conflicts:
-        raise ValueError("status Conflict requires at least one conflict")
+    # conflicts are reported if and only if the status says Conflict
+    if (status is RetrievalStatus.CONFLICT) != bool(conflicts):
+        raise ValueError("status must be Conflict exactly when conflicts is non-empty")
     if status is RetrievalStatus.NO_APPLICABLE and passages:
         raise ValueError("status NoApplicable must have no passages")
     ids = {p.passage_id for p in passages}
