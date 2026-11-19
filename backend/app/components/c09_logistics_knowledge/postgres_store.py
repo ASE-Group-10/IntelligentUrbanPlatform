@@ -19,6 +19,7 @@ from app.components.c09_logistics_knowledge.contracts import (
 from app.components.c09_logistics_knowledge.store import (
     UNRANKED_SCORE,
     CorpusInfo,
+    IdempotencyMismatchError,
     NewPublication,
     Receipt,
     StoreUnavailableError,
@@ -74,17 +75,24 @@ class PostgresKnowledgeStore:
     def known_zone_ids(self) -> set[str]:
         return set(self._zone_ids)
 
+    @staticmethod
+    def _corpus_info(conn: psycopg.Connection) -> CorpusInfo | None:
+        row = conn.execute(
+            f"select corpus_version, index_version, embedding_model "
+            f"from {S}.corpus_versions order by corpus_version desc limit 1"
+        ).fetchone()
+        return CorpusInfo(**row) if row else None
+
     def corpus_info(self) -> CorpusInfo | None:
         with self._connect() as conn:
-            row = conn.execute(
-                f"select corpus_version, index_version, embedding_model "
-                f"from {S}.corpus_versions order by corpus_version desc limit 1"
-            ).fetchone()
-        return CorpusInfo(**row) if row else None
+            return self._corpus_info(conn)
+
+    def _between_reads(self, conn: psycopg.Connection) -> None:
+        """Test seam: runs between the corpus and passage reads of ``search``."""
 
     def search(
         self, query: PolicyQuery, query_vector: list[float] | None
-    ) -> list[Passage]:
+    ) -> tuple[CorpusInfo | None, list[Passage]]:
         params = {
             "qv": _vector(query_vector),
             "unranked": UNRANKED_SCORE,
@@ -95,8 +103,14 @@ class PostgresKnowledgeStore:
             "end": query.time_window.end,
         }
         with self._connect() as conn:
-            rows = conn.execute(_SEARCH, params).fetchall()
-        return [
+            # one REPEATABLE READ snapshot: a publish committed between the two
+            # reads is invisible to both, so version and passages always match
+            conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+            with conn.transaction():
+                info = self._corpus_info(conn)
+                self._between_reads(conn)
+                rows = conn.execute(_SEARCH, params).fetchall()
+        return info, [
             Passage.model_validate({**r, "score": round(float(r["score"]), 4)})
             for r in rows
         ]
@@ -121,11 +135,13 @@ class PostgresKnowledgeStore:
             # serialise publishes so version numbers cannot collide
             conn.execute("select pg_advisory_xact_lock(hashtext('c09.publish'))")
             receipt = conn.execute(
-                f"select publication from {S}.publish_receipts "
+                f"select request_hash, publication from {S}.publish_receipts "
                 f"where idempotency_key = %s",
                 (new.idempotency_key,),
             ).fetchone()
-            if receipt:  # a concurrent retry won the race
+            if receipt:  # a concurrent request with this key committed first
+                if receipt["request_hash"] != new.request_hash:
+                    raise IdempotencyMismatchError(new.idempotency_key)
                 return KnowledgePublication.model_validate(
                     {**receipt["publication"], "duplicate": True}
                 )

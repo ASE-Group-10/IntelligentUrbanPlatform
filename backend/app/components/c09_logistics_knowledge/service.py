@@ -28,6 +28,7 @@ from app.components.c09_logistics_knowledge.sections import (
     split_sections,
 )
 from app.components.c09_logistics_knowledge.store import (
+    IdempotencyMismatchError,
     KnowledgeStore,
     NewChunk,
     NewPublication,
@@ -115,6 +116,9 @@ class LogisticsKnowledge:
                     published_at=self._clock(),
                 )
             )
+        except IdempotencyMismatchError:
+            # a concurrent request with this key but another body committed first
+            return Failure("Conflict", "C09.IDEMPOTENCY_MISMATCH")
         except (EmbeddingUnavailableError, StoreUnavailableError) as exc:
             # nothing was stored, so the previous corpus stays searchable
             return Failure("Unavailable", f"C09.INDEXING_FAILED: {exc}")
@@ -138,12 +142,11 @@ class LogisticsKnowledge:
             unknown = set(query.area.zone_ids) - self._store.known_zone_ids()
             if unknown:
                 return Failure("Invalid", f"C09.UNKNOWN_ZONE: {sorted(unknown)}")
-            info = self._store.corpus_info()
+            info, candidates = self._store.search(query, query_vector)
             if info is None:
                 return Failure(
                     "Unavailable", "C09.INDEX_UNAVAILABLE: no corpus published yet"
                 )
-            candidates = self._store.search(query, query_vector)
         except StoreUnavailableError as exc:
             return Failure("Unavailable", f"C09.INDEX_UNAVAILABLE: {exc}")
 

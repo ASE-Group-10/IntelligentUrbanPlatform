@@ -26,6 +26,10 @@ class StoreUnavailableError(Exception):
     """The corpus or vector index cannot be reached; callers report Unavailable."""
 
 
+class IdempotencyMismatchError(Exception):
+    """The idempotency key was already used with a different request."""
+
+
 @dataclass(frozen=True)
 class CorpusInfo:
     """Version metadata of the currently active corpus."""
@@ -91,16 +95,20 @@ class KnowledgeStore(Protocol):
 
     def search(
         self, query: PolicyQuery, query_vector: list[float] | None
-    ) -> list[Passage]:
-        """Applicable passages of the active corpus, scored against
-        ``query_vector`` (``UNRANKED_SCORE`` when it is ``None``). Unsorted."""
+    ) -> tuple[CorpusInfo | None, list[Passage]]:
+        """The active corpus version and its applicable passages, read from one
+        consistent snapshot so a concurrent publish cannot mix versions. Passages
+        are scored against ``query_vector`` (``UNRANKED_SCORE`` when ``None``),
+        unsorted. ``None`` info means nothing is published yet."""
         ...
 
     def find_receipt(self, idempotency_key: str) -> Receipt | None: ...
 
     def publish(self, new: NewPublication) -> KnowledgePublication:
         """Atomically store a new document version, its chunks, a new corpus
-        version and the idempotency receipt; supersede the previous version."""
+        version and the idempotency receipt; supersede the previous version.
+        A key already stored returns that publication as ``duplicate`` if the
+        request hash matches, else raises ``IdempotencyMismatchError``."""
         ...
 
     def save_warning(self, details: ConflictDetails, at: datetime) -> WarningReceipt:
@@ -146,7 +154,7 @@ class InMemoryKnowledgeStore:
 
     def search(
         self, query: PolicyQuery, query_vector: list[float] | None
-    ) -> list[Passage]:
+    ) -> tuple[CorpusInfo | None, list[Passage]]:
         self._check()
         found = []
         for stored in self._chunks:
@@ -158,7 +166,7 @@ class InMemoryKnowledgeStore:
                     update={"score": cosine_score(query_vector, stored.vector)}
                 )
             found.append(p)
-        return found
+        return self.info, found
 
     def find_receipt(self, idempotency_key: str) -> Receipt | None:
         self._check()
@@ -166,6 +174,10 @@ class InMemoryKnowledgeStore:
 
     def publish(self, new: NewPublication) -> KnowledgePublication:
         self._check()
+        if (receipt := self._receipts.get(new.idempotency_key)) is not None:
+            if receipt.request_hash != new.request_hash:
+                raise IdempotencyMismatchError(new.idempotency_key)
+            return receipt.publication.model_copy(update={"duplicate": True})
         meta = new.metadata
         version = self._versions.get(meta.document_id, 0) + 1
         corpus = (self.info.corpus_version if self.info else 0) + 1

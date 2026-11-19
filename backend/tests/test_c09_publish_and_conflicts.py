@@ -228,3 +228,28 @@ def test_rules_on_different_segments_do_not_conflict():
     service.publish_knowledge(CURATOR, PublishKnowledgeRequest.model_validate(first))
     service.publish_knowledge(CURATOR, PublishKnowledgeRequest.model_validate(data))
     assert service.query_knowledge(PLANNER, _query()).value.status != "Conflict"
+
+
+# ---- TseGong's review of #24: idempotency race in publish ----
+
+
+class _MissedLookupStore(InMemoryKnowledgeStore):
+    """Simulates the race: the early receipt lookup misses a concurrent publish."""
+
+    def find_receipt(self, idempotency_key):
+        return None
+
+
+def test_same_key_different_body_is_conflict_even_when_lookup_races():
+    service = _service(_MissedLookupStore(ZONES, info=None))
+    service.publish_knowledge(CURATOR, _request())
+    result = service.publish_knowledge(CURATOR, _request(metadata__issuer="Someone"))
+    assert result == Failure("Conflict", "C09.IDEMPOTENCY_MISMATCH")
+
+
+def test_same_key_same_body_stays_a_duplicate_when_lookup_races():
+    service = _service(_MissedLookupStore(ZONES, info=None))
+    first = service.publish_knowledge(CURATOR, _request()).value
+    again = service.publish_knowledge(CURATOR, _request()).value
+    assert again.duplicate is True
+    assert again.corpus_version == first.corpus_version
