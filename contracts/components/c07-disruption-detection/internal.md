@@ -61,6 +61,7 @@ slice.
 ## Still open
 
 - [x] `findAffectedWork` and `requestReplan` definitions and examples are owned by C05 (#32).
-- [ ] `ResourceAvailabilityChanged` (C03, #31) and `OperationalDisruption` (C08, #33) use a different envelope and payload from what C07 expects (#28).
+- [ ] Align the C03 producer envelope and payload for `ResourceAvailabilityChanged` with the C07 consumer (#31).
+- [ ] Review the C08 `OperationalDisruption` contract and failure kinds with C07 (#33). The C08 fixture passes C07 consumer validation.
 - [ ] Events C07 publishes for C01 alerts and C10/C11/C12, if any.
 - [ ] If C06/C07 take over UC12: does C12 replay read events from a C06/C07 history table or from a separate run log?

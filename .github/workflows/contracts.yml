@@ -6,7 +6,6 @@ on:
       - '.redocly.yaml'
       - 'mkdocs.yml'
       - 'contracts/**'
-      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/contracts.yml'
@@ -18,7 +17,6 @@ on:
       - '.redocly.yaml'
       - 'mkdocs.yml'
       - 'contracts/**'
-      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/contracts.yml'
@@ -59,7 +57,7 @@ jobs:
       - name: Lint OpenAPI contract
         run: npm run contracts:lint
 
-      - name: Build contract documentation
+      - name: Build Redoc site
         run: npm run contracts:build
 
       - name: Upload documentation preview
