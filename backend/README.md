@@ -51,8 +51,9 @@ RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
 uv run python -m app.components.c06_city_monitoring.publisher
 ```
 
-Stop it with Ctrl+C. Events stay in the outbox while the broker is down and go
-out once it is back.
+Stop it with Ctrl+C. Events stay in the outbox while the broker is down, or
+while no consumer queue is bound for their event type yet (for example C06
+started before C07 on a fresh broker), and go out once that changes.
 
 ## C07 worker
 

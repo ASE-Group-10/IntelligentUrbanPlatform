@@ -16,6 +16,7 @@ from app.components.c06_city_monitoring.publisher import (
 )
 from app.components.c06_city_monitoring.store import StateScope
 from app.components.c07_disruption_detection.detection import DisruptionDetection
+from app.components.c07_disruption_detection.planning import PlanningUnavailableError
 from app.components.c07_disruption_detection.planning_stub import (
     DEMO_PLAN_ID,
     DEMO_SEGMENT,
@@ -92,16 +93,74 @@ def test_store_failure_is_retried(planning, closure_event):
     assert planning.replan_calls == []
 
 
+class FlakyPlanning(DemoPlanningStub):
+    """The demo stub, but C05 can be switched off."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+
+    def find_affected_work(self, scope):
+        if self.down:
+            raise PlanningUnavailableError("C05 is down")
+        return super().find_affected_work(scope)
+
+
+def test_closure_is_retried_while_c05_is_down_and_handled_once_it_is_back(
+    closure_event,
+):
+    planning = FlakyPlanning()
+    detection = DisruptionDetection(
+        planning=planning, store=InMemoryDisruptionStore(), clock=lambda: NOW
+    )
+    handle = c07_handler(detection)
+
+    assert handle(closure_event) == "retry"
+    planning.down = False
+    assert handle(closure_event) == "ack"
+    assert len(planning.replan_calls) == 1
+
+
+def test_unknown_outcome_that_a_retry_cannot_fix_is_acked(handler, closure_event):
+    other_type = closure_event.model_copy(update={"event_type": "PlanReady"})
+
+    assert handler(other_type) == "ack"
+
+
 def test_payload_that_breaks_the_contract_is_rejected(handler, closure_event):
     broken = closure_event.model_copy(update={"payload": {"snapshotVersion": "x"}})
 
     assert handler(broken) == "reject"
 
 
-@pytest.mark.skipif(
+needs_db_and_broker = pytest.mark.skipif(
     not (os.environ.get("TEST_DATABASE_URL") and os.environ.get("TEST_RABBITMQ_URL")),
     reason="needs TEST_DATABASE_URL and TEST_RABBITMQ_URL",
 )
+
+
+def closure_observation() -> Observation:
+    return Observation.model_validate(
+        {
+            "observationId": str(uuid4()),
+            "sourceId": "sim-traffic",
+            "kind": "closure",
+            "target": {"segmentKey": DEMO_SEGMENT},
+            "values": {"status": "closed", "cause": "roadworks"},
+            "observedAt": "2026-11-20T08:14:30Z",
+        }
+    )
+
+
+def delete_broker_objects(rabbit: str, exchange: str, queue: str) -> None:
+    connection = pika.BlockingConnection(pika.URLParameters(rabbit))
+    channel = connection.channel()
+    channel.queue_delete(queue)
+    channel.exchange_delete(exchange)
+    connection.close()
+
+
+@needs_db_and_broker
 def test_closure_travels_from_c06_through_rabbitmq_to_c07(c06_database, planning):
     """Walking-skeleton hops 7 and 8 with real Postgres and RabbitMQ."""
     rabbit = os.environ["TEST_RABBITMQ_URL"]
@@ -115,16 +174,7 @@ def test_closure_travels_from_c06_through_rabbitmq_to_c07(c06_database, planning
     c06_store = PostgresCityStateStore(c06_database)
     run = StateScope(scope="simulation", run_id=uuid4())
     correlation_id = uuid4()
-    observation = Observation.model_validate(
-        {
-            "observationId": str(uuid4()),
-            "sourceId": "sim-traffic",
-            "kind": "closure",
-            "target": {"segmentKey": DEMO_SEGMENT},
-            "values": {"status": "closed", "cause": "roadworks"},
-            "observedAt": "2026-11-20T08:14:30Z",
-        }
-    )
+    observation = closure_observation()
 
     try:
         CityMonitoring(store=c06_store, clock=lambda: NOW).ingest_observation(
@@ -134,13 +184,43 @@ def test_closure_travels_from_c06_through_rabbitmq_to_c07(c06_database, planning
         consumer.consume_available()
     finally:
         consumer.close()
-        connection = pika.BlockingConnection(pika.URLParameters(rabbit))
-        channel = connection.channel()
-        channel.queue_delete(queue)
-        channel.exchange_delete(exchange)
-        connection.close()
+        delete_broker_objects(rabbit, exchange, queue)
 
     assert len(planning.replan_calls) == 1
     request, received_correlation = planning.replan_calls[0]
     assert received_correlation == correlation_id
     assert request.plan_id == DEMO_PLAN_ID
+
+
+@needs_db_and_broker
+def test_closure_published_before_c07_starts_still_reaches_c07(c06_database, planning):
+    """Fresh broker, C06 first: the closure waits in the outbox until C07 binds."""
+    rabbit = os.environ["TEST_RABBITMQ_URL"]
+    exchange = f"ulop.events.test-{uuid4()}"
+    queue = f"{QUEUE}.test-{uuid4()}"
+    c06_store = PostgresCityStateStore(c06_database)
+    run = StateScope(scope="simulation", run_id=uuid4())
+    publisher = RabbitMQPublisher(rabbit, exchange)
+    detection = DisruptionDetection(
+        planning=planning, store=InMemoryDisruptionStore(), clock=lambda: NOW
+    )
+    consumer = make_consumer(detection, rabbit, exchange=exchange, queue=queue)
+
+    try:
+        CityMonitoring(store=c06_store, clock=lambda: NOW).ingest_observation(
+            SourceContext(state_scope=run, correlation_id=uuid4()),
+            closure_observation(),
+        )
+        before_c07 = drain_outbox(c06_store, publisher).value
+        consumer.declare()  # C07 starts and binds its queue
+        after_c07 = drain_outbox(c06_store, publisher).value
+        consumer.consume_available()
+    finally:
+        publisher.close()
+        consumer.close()
+        delete_broker_objects(rabbit, exchange, queue)
+
+    assert before_c07.published == 0
+    assert "no queue is bound" in before_c07.stopped_by
+    assert after_c07.published == 1
+    assert len(planning.replan_calls) == 1
