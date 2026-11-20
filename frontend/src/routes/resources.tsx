@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Boxes, RefreshCw } from "lucide-react";
@@ -103,27 +103,45 @@ function ResourcesPage() {
     [identity],
   );
 
+  const refreshAbort = useRef<AbortController | null>(null);
+
   const refresh = useCallback(async () => {
+    refreshAbort.current?.abort();
+    const controller = new AbortController();
+    refreshAbort.current = controller;
     setLoading(true);
     setError("");
     try {
-      const data = await request("/api/v1/resources?limit=100");
+      const data = await request("/api/v1/resources?limit=100", { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setResources(data.items);
     } catch (caught) {
+      if (controller.signal.aborted) return;
       setError(caught instanceof Error ? caught.message : "Unable to load resources");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [request]);
 
   useEffect(() => {
-    request("/api/v1/development/config")
-      .then((data) => setLocations(data.locations))
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load config"));
+    const controller = new AbortController();
+    request("/api/v1/development/config", { signal: controller.signal })
+      .then((data) => {
+        if (!controller.signal.aborted) setLocations(data.locations);
+      })
+      .catch((caught) => {
+        if (controller.signal.aborted) return;
+        setError(caught instanceof Error ? caught.message : "Unable to load config");
+      });
+    return () => controller.abort();
   }, [request]);
 
   useEffect(() => {
+    // Identity changed: drop the previous provider's data before loading the new one.
+    setResources([]);
+    setMessage("");
     void refresh();
+    return () => refreshAbort.current?.abort();
   }, [refresh]);
 
   useEffect(() => {
