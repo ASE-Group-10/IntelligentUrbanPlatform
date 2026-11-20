@@ -79,8 +79,10 @@ then grant the user a provider role in `c02_identity_access.provider_memberships
 These tables are maintained by the database owner. The API needs read access.
 
 Use the account's access token as `Authorization: Bearer <token>`.
-`GET /api/v1/identity/me` lists its memberships before a provider is selected.
-For a multi-provider account, send the selected UUID as `X-Acting-Provider` on
+`GET /api/v1/identity/me` returns explicit memberships and the list of
+`availableProviders`. A profile with `platform_admin = true` can select any
+existing provider, including providers for which it has no membership.
+For an admin or multi-provider account, send the selected UUID as `X-Acting-Provider` on
 resource calls. To verify UC01, register the synthetic van fixture as a manager,
 repeat with a provider outside the user's memberships and check for a 403.
 Expired or invalid credentials return 401. Cross-provider resource lookups

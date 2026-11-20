@@ -10,9 +10,12 @@ ProviderRole = Literal["manager", "operator", "driver", "analyst", "curator"]
 PlatformRole = Literal["admin"]
 
 
-class ProviderMembership(ContractModel):
+class ProviderSummary(ContractModel):
     provider_id: UUID
     provider_name: str
+
+
+class ProviderMembership(ProviderSummary):
     roles: tuple[ProviderRole, ...]
 
 
@@ -23,6 +26,7 @@ class CurrentIdentity(ContractModel):
     principal_type: Literal["user"] = "user"
     display_name: str
     memberships: tuple[ProviderMembership, ...]
+    available_providers: tuple[ProviderSummary, ...]
     platform_roles: tuple[PlatformRole, ...]
 
 
@@ -42,25 +46,34 @@ def resolve_user_context(
     acting_provider_id: UUID | None,
     correlation_id: UUID,
 ) -> Result[AuthContext]:
-    """Resolve a requested provider against C02's verified memberships."""
-    memberships = {entry.provider_id: entry for entry in identity.memberships}
-    if not memberships:
+    """Resolve one acting provider from the caller's C02-authorised choices."""
+    provider_ids = tuple(
+        provider.provider_id for provider in identity.available_providers
+    )
+    if not provider_ids:
         return Failure("Forbidden", "The caller has no provider access.")
     if acting_provider_id is None:
-        if len(memberships) != 1:
+        if "admin" in identity.platform_roles or len(provider_ids) != 1:
             return Failure("Invalid", "X-Acting-Provider is required.")
-        acting_provider_id = next(iter(memberships))
-    membership = memberships.get(acting_provider_id)
-    if membership is None:
+        acting_provider_id = provider_ids[0]
+    if acting_provider_id not in provider_ids:
         return Failure("Forbidden", "The caller cannot act for this provider.")
 
+    roles = next(
+        (
+            entry.roles
+            for entry in identity.memberships
+            if entry.provider_id == acting_provider_id
+        ),
+        (),
+    )
     return Ok(
         AuthContext(
             principal_id=identity.principal_id,
             principal_type="user",
             acting_provider_id=acting_provider_id,
-            roles=membership.roles,
-            provider_ids=tuple(memberships),
+            roles=roles,
+            provider_ids=provider_ids,
             platform_roles=identity.platform_roles,
             correlation_id=correlation_id,
         )
@@ -74,13 +87,11 @@ def require_role(
     target_provider = (
         provider_id if provider_id is not None else context.acting_provider_id
     )
-    if context.principal_type == "user" and (
-        "admin" in context.platform_roles
-        or (
-            target_provider is not None
-            and target_provider == context.acting_provider_id
-            and role in context.roles
-        )
+    if (
+        context.principal_type == "user"
+        and target_provider is not None
+        and target_provider == context.acting_provider_id
+        and ("admin" in context.platform_roles or role in context.roles)
     ):
         return Ok(None)
     return Failure("Forbidden", "The caller lacks the required permission.")

@@ -361,6 +361,51 @@ def test_filters_pagination_and_openapi(setup):
     assert BASE + "/{resource_id}/agent-activation" in paths
 
 
+def test_admin_selects_existing_provider_without_membership(setup):
+    client, engine = setup
+    admin = uuid4()
+    with engine.begin() as conn:
+        conn.execute(
+            records.profiles.insert().values(
+                principal_id=admin, display_name="Platform admin", platform_admin=True
+            )
+        )
+    admin_headers = headers(Authorization="Bearer " + access_token(sub=str(admin)))
+    profile = client.get("/api/v1/identity/me", headers=admin_headers).json()
+    assert profile["memberships"] == []
+    assert profile["platformRoles"] == ["admin"]
+    assert {
+        p["providerId"]: p["providerName"] for p in profile["availableProviders"]
+    } == {
+        str(PROVIDER_A): "A",
+        str(PROVIDER_B): "B",
+    }
+    assert client.post(BASE, headers=admin_headers, json=PAYLOAD).status_code == 422
+    missing = {**admin_headers, "X-Acting-Provider": str(uuid4())}
+    assert client.post(BASE, headers=missing, json=PAYLOAD).status_code == 403
+
+    manager = client.get("/api/v1/identity/me", headers=headers()).json()
+    assert [p["providerId"] for p in manager["availableProviders"]] == [str(PROVIDER_A)]
+    wrong_provider = headers(**{"X-Acting-Provider": str(PROVIDER_B)})
+    assert client.post(BASE, headers=wrong_provider, json=PAYLOAD).status_code == 403
+    for table in [resources, audit, receipts, outbox]:
+        assert count(engine, table) == 0
+
+    for pid in (PROVIDER_A, PROVIDER_B):
+        selected = {
+            **admin_headers,
+            "X-Acting-Provider": str(pid),
+            "Idempotency-Key": str(uuid4()),
+        }
+        assert client.post(BASE, headers=selected, json=PAYLOAD).status_code == 201
+        assert len(client.get(BASE, headers=selected).json()["items"]) == 1
+    with engine.connect() as conn:
+        assert set(conn.execute(select(audit.c.principal_id, audit.c.provider_id))) == {
+            (admin, PROVIDER_A),
+            (admin, PROVIDER_B),
+        }
+
+
 def test_multi_provider_registration_and_recorded_actor(setup):
     client, engine = setup
     actor = PRINCIPALS["dev-manager"]

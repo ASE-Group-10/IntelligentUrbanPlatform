@@ -29,7 +29,10 @@ Callers: every protected HTTP route (as a FastAPI dependency).
 Examples: `examples/auth-context-user.json`.
 
 Verifies the bearer token with Supabase Auth, loads the caller's memberships,
-and resolves the acting provider:
+and resolves the acting provider. A platform admin explicitly selects any
+existing provider using `X-Acting-Provider`. An unknown provider or an empty
+provider directory returns `Forbidden`. If providers exist, omitting the
+header returns `Invalid`. For all other users the following rules apply.
 
 | Caller's memberships | `X-Acting-Provider` header | Result |
 | --- | --- | --- |
@@ -53,7 +56,7 @@ reported by the route as `401 UNAUTHENTICATED`.
 | `serviceId` | string | service only | Component code of a calling service, for example `C07` |
 | `actingProviderId` | UUID | users: yes | Provider resolved from the table above; null for services |
 | `roles` | array of enum | yes | The caller's roles **in the acting provider** (`manager`, `operator`, `driver`, `analyst`, `curator`), or `["service"]` |
-| `providerIds` | array of UUID | yes | Every provider the caller belongs to, for read filters that span providers |
+| `providerIds` | array of UUID | yes | Every provider the caller may select, including all existing providers for a platform admin |
 | `platformRoles` | array of enum | yes | `admin`, or empty |
 | `correlationId` | UUID | yes | Ties the request to logs, events and decision records |
 
@@ -71,8 +74,8 @@ request.
 
 Callers: any component operation that needs a role.
 
-`Ok` when the context has `role` in `provider_id` (default: the acting
-provider), or has the `admin` platform role. Otherwise `Forbidden`.
+The target must match the acting provider. Within it, either the required
+provider role or the `admin` platform role grants access.
 
 ## Required interfaces
 

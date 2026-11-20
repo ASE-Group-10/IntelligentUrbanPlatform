@@ -14,5 +14,15 @@
       "roles": ["operator"]
     }
   ],
-  "platformRoles": []
+  "platformRoles": [],
+  "availableProviders": [
+    {
+      "providerId": "10000000-0000-4000-8000-000000000001",
+      "providerName": "Provider A (synthetic)"
+    },
+    {
+      "providerId": "10000000-0000-4000-8000-000000000002",
+      "providerName": "Provider B (synthetic)"
+    }
+  ]
 }

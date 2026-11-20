@@ -12,9 +12,10 @@ info:
     come from C02's own records, never from the token or the request.
 
     Provider IDs in other components' requests are filters, not permission:
-    every protected operation checks them against the caller's memberships.
-    When a caller belongs to more than one provider, the provider they act for
-    is named in the `X-Acting-Provider` header (see `internal.md`).
+    every protected operation checks them against the caller's available providers.
+    Platform admins can select any existing provider. Other users can select
+    providers they belong to. Admins and multi-provider users select the acting
+    provider with the `X-Acting-Provider` header (see `internal.md`).
 
     Error bodies use the same format as C03 so one C01 error handler works for
     every API: `401` means not signed in (missing, invalid or expired token),
@@ -33,9 +34,8 @@ paths:
       operationId: getCurrentIdentity
       summary: Get the signed-in caller's identity
       description: |
-        Returns the verified caller and every provider they belong to, with
-        their roles there. C01 calls it after sign-in to decide which screens
-        and providers to offer. It reveals nothing about other users.
+        Returns the verified caller, their explicit memberships and roles, and
+        the available providers C01 can offer for selection after sign-in.
       tags: [C02 Identity and Access]
       security:
         - c02BearerAuth: []
@@ -58,6 +58,11 @@ paths:
                     providerName: Provider B (synthetic)
                     roles: [operator]
                 platformRoles: []
+                availableProviders:
+                  - providerId: 10000000-0000-4000-8000-000000000001
+                    providerName: Provider A (synthetic)
+                  - providerId: 10000000-0000-4000-8000-000000000002
+                    providerName: Provider B (synthetic)
         '401':
           $ref: '#/components/responses/C02Unauthenticated'
         '503':
@@ -77,9 +82,9 @@ components:
       in: header
       required: false
       description: |
-        Provider the caller acts for. Required when the caller has more than
-        one membership; optional when they have exactly one. Must be one of
-        the caller's memberships, otherwise the request is denied with `403`.
+        Required for platform admins and users with multiple providers.
+        A regular user with one membership may omit it. A provider outside
+        availableProviders is denied with `403`.
       schema:
         type: string
         format: uuid
@@ -117,7 +122,7 @@ components:
       enum: [manager, operator, driver, analyst, curator]
     C02PlatformRole:
       type: string
-      description: Role across all providers. `admin` manages platform settings.
+      description: The admin role grants provider permissions for any selected existing provider.
       enum: [admin]
     C02Membership:
       type: object
@@ -138,7 +143,7 @@ components:
     C02Identity:
       type: object
       additionalProperties: false
-      required: [principalId, principalType, displayName, memberships, platformRoles]
+      required: [principalId, principalType, displayName, memberships, platformRoles, availableProviders]
       properties:
         principalId:
           type: string
@@ -152,9 +157,22 @@ components:
           type: string
         memberships:
           type: array
-          description: Providers the caller belongs to. Empty means no access yet.
+          description: Explicit provider memberships and their assigned roles.
           items:
             $ref: '#/components/schemas/C02Membership'
+        availableProviders:
+          type: array
+          description: All existing providers for a platform admin, or the caller's member providers otherwise.
+          items:
+            type: object
+            additionalProperties: false
+            required: [providerId, providerName]
+            properties:
+              providerId:
+                type: string
+                format: uuid
+              providerName:
+                type: string
         platformRoles:
           type: array
           uniqueItems: true
