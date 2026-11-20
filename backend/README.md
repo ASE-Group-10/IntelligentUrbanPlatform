@@ -36,13 +36,13 @@ For shared environments, migrations are run by the database owner from merged
 | --- | --- |
 | Resources | Real records in the configured database; typed validation for all four resource types |
 | Transactions | Resource state, successful audit outcome, idempotency receipt, and outbox commit together |
-| C02 | Synthetic bearer identities, provider scope, and role checks; no real sign-in |
+| C02 | Supabase ES256/RS256 access tokens verified against project signing keys. Roles and provider scope come from C02 database records. |
 | Mapping | Only three documented synthetic location fixtures; no external map API |
 | C08 | Deterministic in-process result; no real agents, negotiation, or allocation |
 | C10 | Append-only `c03_audit_outcomes` development stand-in; C10 integration pending |
 | Messaging | Unpublished `c03_outbox`; no RabbitMQ consumer/publisher in this increment |
 
-Bind to localhost. This mock-authenticated application is not ready for public
+Bind to localhost. This development application is not ready for public
 deployment. Setting `MOCK_DEPENDENCIES=false` fails closed until real adapters exist.
 The development endpoints and scenario headers must be removed or gated when those
 adapters are connected. Existing development outbox records must never be published
@@ -50,7 +50,7 @@ as live commands.
 
 ## Test the page
 
-1. Keep **Provider A · Manager**, choose a resource type, and inspect its example details.
+1. Enter your development account’s Supabase access token and acting provider UUID, choose a resource type, and inspect its example details.
 2. Register a resource with a unique identifier, then change its name and save.
 3. Click **Repeat last mutation (same key)**. The response is replayed without a write.
 4. Create another resource with **Agent activation → Fails**. It remains stored and ineligible.
@@ -69,11 +69,20 @@ Synthetic fixtures:
 
 ## API contracts
 
-All resource endpoints require `Authorization: Bearer <development-token>`.
-The tokens are `dev-manager`, `dev-operator`, and `dev-other-provider`; these are
-public synthetic test identities, not real authentication credentials. The manager
-tokens may write only their own provider's resources. Operators may read Provider A.
-Cross-provider lookups return 404.
+Set `SUPABASE_URL` in the backend environment to the project's HTTPS origin.
+Apply the C02 migration and provision a synthetic development user by inserting
+their Supabase user UUID and display name into `c02_identity_access.profiles`.
+Insert the C03 provider UUID and name into `c02_identity_access.providers`,
+then grant the user a provider role in `c02_identity_access.provider_memberships`.
+These tables are maintained by the database owner. The API needs read access.
+
+Use the account's access token as `Authorization: Bearer <token>`.
+`GET /api/v1/identity/me` lists its memberships before a provider is selected.
+For a multi-provider account, send the selected UUID as `X-Acting-Provider` on
+resource calls. To verify UC01, register the synthetic van fixture as a manager,
+repeat with a provider outside the user's memberships and check for a 403.
+Expired or invalid credentials return 401. Cross-provider resource lookups
+under a valid acting context return 404.
 
 All mutations require `Idempotency-Key` (1–200 characters: letters, digits, `. _ : -`).
 Keep the same key and body on transport retries. A completed retry returns the
