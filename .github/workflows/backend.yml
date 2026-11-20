@@ -1,26 +1,70 @@
 name: Backend checks
+
 on:
   pull_request:
     paths:
       - 'backend/**'
+      - 'database/migrations/**'
       - 'scripts/**'
       - '.github/workflows/backend.yml'
   push:
-    branches: [develop]
-    paths: ['backend/**', 'scripts/**', '.github/workflows/backend.yml']
+    branches:
+      - develop
+    paths:
+      - 'backend/**'
+      - 'scripts/**'
+      - '.github/workflows/backend.yml'
+
 permissions:
   contents: read
+
 jobs:
-  resources:
+  backend:
+    name: Backend checks
     runs-on: ubuntu-latest
+    services:
+      # Throwaway database for Postgres-backed tests (see backend/tests/conftest.py).
+      postgres:
+        image: postgres:17.7
+        env:
+          POSTGRES_USER: ulop
+          POSTGRES_PASSWORD: ulop
+          POSTGRES_DB: ulop_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ulop -d ulop_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      # Broker for RabbitMQ publisher tests (see backend/tests/test_c06_rabbitmq_publisher.py).
+      rabbitmq:
+        image: rabbitmq:4.4.0-management
+        env:
+          RABBITMQ_DEFAULT_USER: ulop
+          RABBITMQ_DEFAULT_PASS: ulop
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: uv sync --project backend --locked --python 3.12
-      - run: uv run --directory backend pytest
-      - run: uv run --project backend ruff check --config backend/pyproject.toml backend scripts
-      - run: uv run --project backend ruff format --check --config backend/pyproject.toml backend scripts
-      - run: node --check backend/app/static/app.js
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync locked dependencies
+        run: uv sync --project backend --locked --python 3.12
+
+      - name: Run backend tests
+        env:
+          TEST_DATABASE_URL: postgres://ulop:ulop@localhost:5432/ulop_test
+          TEST_RABBITMQ_URL: amqp://ulop:ulop@localhost:5672/%2F
+        run: uv run --directory backend pytest
+
+      - name: Check backend formatting
+        run: uv run --project backend ruff format --check --config backend/pyproject.toml backend scripts

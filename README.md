@@ -143,6 +143,50 @@ The first implementation issue must add and verify:
 Add executable setup commands here when they have been verified from a clean clone.
 Keep local secrets out of Git; privileged database keys never belong in the browser.
 
+### Local database
+
+Start Postgres and apply migrations with Docker Compose and dbmate:
+
+```sh
+cp .env.example .env
+docker compose up -d db
+docker compose run --rm dbmate up
+```
+
+See [database/README.md](database/README.md) for migration conventions.
+
+### Frontend
+
+```sh
+cd frontend && npm ci && npm run dev
+```
+
+See [frontend/README.md](frontend/README.md) for checks, structure and conventions.
+
+### API contract documentation
+
+Component-owned contract documents live under
+`contracts/components/<component>/`. CI discovers OpenAPI, AsyncAPI, and
+internal Markdown contracts, validates them, and builds them into one
+documentation site. Run the documentation locally with:
+
+```sh
+npm ci
+python3 -m pip install mkdocs-material
+npm run contracts:lint
+npm run contracts:build
+cd dist && python3 -m http.server 8080
+```
+
+Open <http://localhost:8080/> in a browser. Successful pushes to `develop`
+publish the documentation at:
+
+<https://ase-group-10.github.io/IntelligentUrbanPlatform/>
+
+Pull requests and feature branches only lint/build the documentation and upload
+an artifact; they do not publish public pages. Enable GitHub Pages with the
+`gh-pages` branch as its source before using the published URLs.
+
 ## Suggested repository structure
 
 Create this structure as implementation begins; it is not an inventory of existing files.

@@ -1,0 +1,144 @@
+asyncapi: 3.0.0
+info:
+  title: C07 Disruption Detection Events
+  version: 1.0.0
+  description: |
+    Events consumed by C07 Disruption Detection (UC06).
+
+    C07 consumes city, resource and operational-exception events
+    (`evaluateChange`), deduplicates them by `eventId` and evaluates their
+    impact. For actionable new conditions it requests a separate C05 replan
+    (see `internal.md`). C07 publishes no events yet.
+
+    `CityStateUpdated` and `OperationalDisruption` refer to the C06 and C08
+    producer definitions. `ResourceAvailabilityChanged` is the shape C07
+    expects pending alignment with C03.
+
+    Examples are in `examples/`: `resource-availability-changed-payload.json`
+    and `operational-disruption-payload.json`.
+  contact:
+    name: C07 Disruption Detection (Bruno + Alejandro)
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    host: localhost
+    protocol: amqp
+    description: Local RabbitMQ topic exchange (proposed name, still open).
+channels:
+  c07Inbox:
+    address: ulop.events
+    description: |
+      Proposed: C07 binds one queue to the topic exchange `ulop.events` with
+      routing keys `CityStateUpdated`, `ResourceAvailabilityChanged` and
+      `OperationalDisruption`. Exchange and queue naming are still open.
+    messages:
+      cityStateUpdated:
+        $ref: '../c06-city-monitoring/events.yaml#/components/messages/CityStateUpdated'
+      resourceAvailabilityChanged:
+        $ref: '#/components/messages/ResourceAvailabilityChanged'
+      operationalDisruption:
+        $ref: '../c08-allocation/events.yaml#/components/messages/OperationalDisruption'
+operations:
+  receiveCityStateUpdated:
+    action: receive
+    channel:
+      $ref: '#/channels/c07Inbox'
+    title: Evaluate a City State change
+    summary: |
+      Thin slice: a `closed` segment used by planned work creates one
+      disruption (severity `high`) and one replan request per affected plan.
+      Non-`good` quality or C05 unavailable gives `unknown`, never
+      `no_disruption`.
+    messages:
+      - $ref: '#/channels/c07Inbox/messages/cityStateUpdated'
+  receiveResourceAvailabilityChanged:
+    action: receive
+    channel:
+      $ref: '#/channels/c07Inbox'
+    title: Evaluate a resource availability change
+    summary: Not used by the thin slice. The queue binding and fixtures exist.
+    messages:
+      - $ref: '#/channels/c07Inbox/messages/resourceAvailabilityChanged'
+  receiveOperationalDisruption:
+    action: receive
+    channel:
+      $ref: '#/channels/c07Inbox'
+    title: Evaluate an operational failure reported by C08
+    summary: |
+      `failureId` is the trigger identity. A repeated event with the same
+      `failureId` creates no new disruption version and no new replan.
+    messages:
+      - $ref: '#/channels/c07Inbox/messages/operationalDisruption'
+components:
+  messages:
+    ResourceAvailabilityChanged:
+      name: ResourceAvailabilityChanged
+      title: Resource availability changed (expected by C07)
+      summary: Published by C03 when a resource's observed availability changes.
+      description: |
+        C07 only needs which resource, what changed and how reliable it is.
+        When the event is incomplete it falls back to C03 `getResource`.
+        Committed capacity stays with C08 and is not in this event.
+      payload:
+        allOf:
+          - $ref: '../c06-city-monitoring/events.yaml#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType:
+                const: ResourceAvailabilityChanged
+              producer:
+                const: C03
+              payload:
+                $ref: '#/components/schemas/ResourceAvailabilityChangedPayload'
+  schemas:
+    ResourceAvailabilityChangedPayload:
+      type: object
+      description: Python model `ResourceAvailabilityChanged` in `backend/app/components/c07_disruption_detection/contracts.py`.
+      additionalProperties: false
+      required: [resourceId, resourceType, resourceVersion, previousStatus, newStatus, quality]
+      properties:
+        resourceId:
+          type: string
+          format: uuid
+        resourceType:
+          type: string
+          enum: [vehicle, depot, warehouse, locker]
+        resourceVersion:
+          type: integer
+          minimum: 1
+          description: C03 version after the change.
+        previousStatus:
+          $ref: '#/components/schemas/ResourceStatus'
+        newStatus:
+          $ref: '#/components/schemas/ResourceStatus'
+        reason:
+          type: [string, 'null']
+          description: Free text, for example `breakdown` or `depot closed`.
+        location:
+          type: [object, 'null']
+          description: Last known position (vehicles).
+          additionalProperties: false
+          required: [lat, lon]
+          properties:
+            lat:
+              type: number
+              minimum: -90
+              maximum: 90
+            lon:
+              type: number
+              minimum: -180
+              maximum: 180
+        capacityChange:
+          type: [object, 'null']
+          description: 'Not in the thin slice. For example `{ "lockerSlots": -12 }` for a partial loss.'
+          additionalProperties:
+            type: integer
+        expectedBackAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the resource should be available again.
+        quality:
+          $ref: '../c06-city-monitoring/events.yaml#/components/schemas/Quality'
+    ResourceStatus:
+      type: string
+      enum: [available, limited, unavailable, unknown]

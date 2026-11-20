@@ -41,6 +41,7 @@ node_modules/
 .eslintcache
 .stylelintcache
 dist/
+.tmp/
 build/
 coverage/
 .nyc_output/

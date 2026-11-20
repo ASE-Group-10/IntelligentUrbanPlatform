@@ -8,6 +8,7 @@ import pytest
 from app.components.c06_city_monitoring.contracts import CityStateUpdated, Observation
 from app.components.c06_city_monitoring.ingestion import CityMonitoring, SourceContext
 from app.components.c06_city_monitoring.store import (
+    CityStateStore,
     InMemoryCityStateStore,
     InMemoryTransaction,
     StateScope,
@@ -26,7 +27,7 @@ SIMULATION = StateScope(scope="simulation", run_id=RUN_ID)
 LIVE = StateScope(scope="live")
 
 
-def make_service(store: InMemoryCityStateStore) -> CityMonitoring:
+def make_service(store: CityStateStore) -> CityMonitoring:
     return CityMonitoring(store=store, clock=lambda: NOW, new_id=lambda: EVENT_ID)
 
 
@@ -36,12 +37,12 @@ def context(state_scope: StateScope = SIMULATION) -> SourceContext:
 
 @pytest.fixture
 def closure(example) -> Observation:
-    return Observation.model_validate(example("observation.closure.json"))
+    return Observation.model_validate(example("observation-closure.json"))
 
 
 @pytest.fixture
-def store() -> InMemoryCityStateStore:
-    store = InMemoryCityStateStore()
+def store(new_store):
+    store = new_store()
     store.seed_version(SIMULATION, 41)
     return store
 
@@ -79,7 +80,7 @@ class TestClosureIsMerged:
 
         (queued,) = store.state(SIMULATION).outbox
         expected = EventEnvelope.model_validate(
-            example("event_envelope.city_state_updated.json")
+            example("city-state-updated-event.json")
         )
         assert queued.model_dump(exclude={"payload"}) == expected.model_dump(
             exclude={"payload"}
@@ -88,8 +89,10 @@ class TestClosureIsMerged:
             queued.payload
         ) == CityStateUpdated.model_validate(expected.payload)
 
-    def test_first_observation_moves_city_state_from_zero_to_one(self, closure):
-        store = InMemoryCityStateStore()
+    def test_first_observation_moves_city_state_from_zero_to_one(
+        self, closure, new_store
+    ):
+        store = new_store()
 
         result = make_service(store).ingest_observation(context(), closure)
 
@@ -146,8 +149,8 @@ def test_simulation_observation_does_not_touch_live_state(store, closure):
     assert live.outbox == []
 
 
-def test_live_observation_emits_live_event_without_run_id(closure):
-    store = InMemoryCityStateStore()
+def test_live_observation_emits_live_event_without_run_id(closure, new_store):
+    store = new_store()
 
     make_service(store).ingest_observation(context(LIVE), closure)
 
@@ -189,7 +192,7 @@ def test_failed_commit_stores_nothing(closure):
 def test_invalid_or_unsupported_observation_is_rejected(
     update, store, closure, example
 ):
-    data = example("observation.closure.json") | update
+    data = example("observation-closure.json") | update
     observation = Observation.model_validate(data)
 
     result = make_service(store).ingest_observation(context(), observation)

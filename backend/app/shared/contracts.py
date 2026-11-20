@@ -56,8 +56,8 @@ class Affected(ContractModel):
     segment_keys: list[SegmentKey]
 
 
-class EventEnvelope(ContractModel):
-    """Versioned JSON envelope for every RabbitMQ message.
+class EventMetadata(ContractModel):
+    """Common metadata for every RabbitMQ message.
 
     Consumers deduplicate on ``event_id``. ``run_id`` is required for
     ``simulation`` scope and forbidden for ``live`` so replayed events can
@@ -79,7 +79,6 @@ class EventEnvelope(ContractModel):
     entity_versions: dict[str, Version] | None = None
     scope: RunScope
     run_id: UUID4 | None = None
-    payload: dict[str, Any]
 
     @model_validator(mode="after")
     def _check_run_scope(self) -> Self:
@@ -88,3 +87,9 @@ class EventEnvelope(ContractModel):
         if self.scope == "live" and self.run_id is not None:
             raise ValueError("runId must be absent when scope is 'live'")
         return self
+
+
+class EventEnvelope(EventMetadata):
+    """Shared event envelope before event-specific payload validation."""
+
+    payload: dict[str, Any]

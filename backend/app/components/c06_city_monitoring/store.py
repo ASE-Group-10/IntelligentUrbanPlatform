@@ -1,13 +1,15 @@
 """City State persistence port for C06, plus an in-memory test double.
 
 A transaction groups the state change, its history record and its outbox event:
-either all of them are committed or none is (transactional outbox).
+either all of them are committed or none is (transactional outbox). Reads go
+through ``read``, which sees committed state and never writes anything back.
 """
 
-from collections.abc import Iterator
+from bisect import bisect_right
+from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 from uuid import UUID
 
@@ -56,8 +58,11 @@ class CityStateTransaction(Protocol):
         """Return the current condition of a segment, if one is held."""
         ...
 
-    def put_segment(self, condition: SegmentCondition) -> None:
-        """Replace the current condition of ``condition.segment_key``."""
+    def put_segment(self, condition: SegmentCondition, version: int) -> None:
+        """Make ``condition`` current for its segment from City State ``version``.
+
+        The store keeps every version so past snapshots can be rebuilt.
+        """
         ...
 
     def set_version(self, version: int) -> None:
@@ -75,8 +80,56 @@ class CityStateTransaction(Protocol):
         ...
 
 
+class CityStateReader(Protocol):
+    """Read-only view of committed City State for one scope."""
+
+    def current_version(self) -> int:
+        """Return the committed City State version (0 before the first change)."""
+        ...
+
+    def conditions(
+        self, segment_keys: Sequence[str], at_version: int | None = None
+    ) -> dict[str, SegmentCondition]:
+        """Return the requested segments' conditions now, or as of ``at_version``.
+
+        Segments without a condition are left out. The returned objects are copies:
+        changing them never changes the store.
+        """
+        ...
+
+
+class OutboxBatch(Protocol):
+    """Oldest unpublished outbox events, claimed for one publishing pass."""
+
+    events: list[EventEnvelope]
+    """Events in the order they were written (oldest first)."""
+
+    def mark_published(self, event_id: UUID) -> None:
+        """Record that the event bus confirmed ``event_id``; kept on normal exit."""
+        ...
+
+
 class CityStateStore(Protocol):
     """Persistence for City State, history and outbox, partitioned by scope."""
+
+    def outbox_batch(self, limit: int) -> AbstractContextManager[OutboxBatch]:
+        """Claim up to ``limit`` unpublished events across all scopes.
+
+        Marks made inside the ``with`` block are saved when it exits normally and
+        discarded on error, so a lost mark means the event is sent again.
+
+        Raises:
+            StoreUnavailableError: if the store cannot be read or updated.
+        """
+        ...
+
+    def read(self, state_scope: StateScope) -> AbstractContextManager[CityStateReader]:
+        """Open a consistent, read-only view of committed state; never writes.
+
+        Raises:
+            StoreUnavailableError: if the store cannot be read.
+        """
+        ...
 
     def transaction(
         self, state_scope: StateScope
@@ -95,8 +148,12 @@ class ScopeState:
 
     version: int = 0
     segments: dict[str, SegmentCondition] = field(default_factory=dict)
+    segment_versions: dict[str, list[tuple[int, SegmentCondition]]] = field(
+        default_factory=dict
+    )
     history: list[tuple[Observation, IngestionReceipt]] = field(default_factory=list)
     outbox: list[EventEnvelope] = field(default_factory=list)
+    published: set[UUID] = field(default_factory=set)
 
 
 class InMemoryTransaction:
@@ -117,8 +174,11 @@ class InMemoryTransaction:
     def get_segment(self, segment_key: str) -> SegmentCondition | None:
         return self._state.segments.get(segment_key)
 
-    def put_segment(self, condition: SegmentCondition) -> None:
+    def put_segment(self, condition: SegmentCondition, version: int) -> None:
         self._state.segments[condition.segment_key] = condition
+        self._state.segment_versions.setdefault(condition.segment_key, []).append(
+            (version, condition)
+        )
 
     def set_version(self, version: int) -> None:
         self._state.version = version
@@ -132,11 +192,50 @@ class InMemoryTransaction:
         self._state.outbox.append(envelope)
 
 
+class InMemoryReader:
+    """In-memory ``CityStateReader`` over one committed ``ScopeState``."""
+
+    def __init__(self, state: ScopeState) -> None:
+        self._state = state
+
+    def current_version(self) -> int:
+        return self._state.version
+
+    def conditions(
+        self, segment_keys: Sequence[str], at_version: int | None = None
+    ) -> dict[str, SegmentCondition]:
+        found: dict[str, SegmentCondition] = {}
+        for key in segment_keys:
+            condition = self._condition(key, at_version)
+            if condition is not None:
+                found[key] = condition.model_copy(deep=True)
+        return found
+
+    def _condition(self, key: str, at_version: int | None) -> SegmentCondition | None:
+        if at_version is None:
+            return self._state.segments.get(key)
+        versions = self._state.segment_versions.get(key, [])
+        index = bisect_right(versions, at_version, key=lambda entry: entry[0])
+        return versions[index - 1][1] if index else None
+
+
+class InMemoryOutboxBatch:
+    """In-memory ``OutboxBatch``: collects marks until the batch is saved."""
+
+    def __init__(self, events: list[EventEnvelope]) -> None:
+        self.events = events
+        self.marked: set[UUID] = set()
+
+    def mark_published(self, event_id: UUID) -> None:
+        self.marked.add(event_id)
+
+
 class InMemoryCityStateStore:
-    """Test double for ``CityStateStore``; replaced by the Postgres store (#5).
+    """Test double for ``CityStateStore``; replaced by the Postgres store (#40).
 
     Each transaction works on a copy that replaces the stored state only when the
-    ``with`` block exits normally, so failures leave nothing behind.
+    ``with`` block exits normally, so failures leave nothing behind. Committed
+    state is never changed in place, so a reader can use it without copying.
     """
 
     def __init__(
@@ -150,6 +249,26 @@ class InMemoryCityStateStore:
         working = deepcopy(self._scopes.get(state_scope, ScopeState()))
         yield self._transaction_type(working)
         self._scopes[state_scope] = working
+
+    @contextmanager
+    def read(self, state_scope: StateScope) -> Iterator[InMemoryReader]:
+        yield InMemoryReader(self._scopes.get(state_scope, ScopeState()))
+
+    @contextmanager
+    def outbox_batch(self, limit: int) -> Iterator[InMemoryOutboxBatch]:
+        pending = [
+            (scope, envelope)
+            for scope, state in self._scopes.items()
+            for envelope in state.outbox
+            if envelope.event_id not in state.published
+        ][:limit]
+        batch = InMemoryOutboxBatch([envelope for _, envelope in pending])
+        yield batch
+        for scope in {scope for scope, _ in pending}:
+            state = self._scopes[scope]
+            newly = {e.event_id for s, e in pending if s == scope} & batch.marked
+            if newly:
+                self._scopes[scope] = replace(state, published=state.published | newly)
 
     def seed_version(self, state_scope: StateScope, version: int) -> None:
         """Start a scope at ``version`` (tests use this to mirror the examples)."""
