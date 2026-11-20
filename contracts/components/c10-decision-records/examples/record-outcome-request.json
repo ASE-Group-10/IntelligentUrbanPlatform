@@ -1,0 +1,11 @@
+{
+  "operation": "C04.submitDeliveryRequest",
+  "outcome": "Forbidden",
+  "targetIds": [
+    "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d"
+  ],
+  "occurredAt": "2026-11-19T10:15:00Z",
+  "details": {
+    "reason": "provider scope mismatch"
+  }
+}
