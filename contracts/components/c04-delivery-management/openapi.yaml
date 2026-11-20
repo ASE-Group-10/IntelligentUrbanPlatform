@@ -252,7 +252,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/C04DeliveryFields'
         - type: object
-          required: [deliveryId, version, status, createdAt, updatedAt]
+          required: [deliveryId, version, status, progress, createdAt, updatedAt]
           properties:
             deliveryId:
               type: string
@@ -356,9 +356,12 @@ components:
         vehicleKinds:
           type: array
           minItems: 1
+          description: >-
+            Permitted vehicle types for the delivery request. Agreed platform
+            set: van, truck, cargo_bike.
           items:
             type: string
-            enum: [van, truck, cargo_bike, autonomous_vehicle]
+            enum: [van, truck, cargo_bike]
         fragile:
           type: boolean
         temperatureRangeC:
@@ -374,6 +377,8 @@ components:
       type: object
       additionalProperties: false
       required: [status, updatedAt]
+      description: >-
+        Authoritative delivery execution progress owned by C04.
       properties:
         status:
           type: string
@@ -381,6 +386,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+          description: >-
+            Actual business occurrence time (UTC RFC 3339) when this progress
+            state took effect (for example, actual delivery completion time when
+            status is delivered), not database write time or event emittedAt.
         note:
           type: [string, 'null']
     C04DeliveryStatus:

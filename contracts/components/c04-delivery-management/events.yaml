@@ -7,6 +7,9 @@ info:
     State and the outbox entry are committed atomically. Consumers deduplicate
     by eventId and use deliveryVersion for ordering. These events do not imply
     that a delivery has a feasible plan or confirmed resource allocation.
+    Delivery snapshot and progress schemas mirror the C04-owned C04Delivery and
+    C04Progress definitions in openapi.yaml (kept in-document because AsyncAPI
+    aggregation resolves events.yaml references only).
   contact:
     name: C04 Delivery Management
 defaultContentType: application/json
@@ -89,6 +92,9 @@ components:
     DeliveryEventPayload:
       type: object
       additionalProperties: false
+      description: >-
+        Typed payload for all C04 delivery events. Authoritative progress lives
+        exclusively at payload.delivery.progress (never duplicated at top level).
       required: [deliveryId, deliveryVersion, status, delivery]
       properties:
         deliveryId:
@@ -98,11 +104,150 @@ components:
           type: integer
           minimum: 1
         status:
-          type: string
-          enum: [pending, planned, in_progress, delivered, cancelled]
+          $ref: '#/components/schemas/DeliveryStatus'
         delivery:
-          type: object
-          description: Complete C04 delivery representation at this version.
+          $ref: '#/components/schemas/DeliverySnapshot'
+    DeliverySnapshot:
+      type: object
+      additionalProperties: false
+      description: >-
+        Complete typed C04 delivery representation at this version. Mirrors
+        C04Delivery in openapi.yaml so C11 and C12 receive authoritative request
+        facts (timeWindow, cargo, constraints, status, progress) without
+        free-form objects.
+      required:
+        - deliveryId
+        - version
+        - status
+        - pickup
+        - destination
+        - cargo
+        - timeWindow
+        - constraints
+        - progress
+        - createdAt
+        - updatedAt
+      properties:
+        deliveryId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        pickup:
+          $ref: '#/components/schemas/DeliveryLocation'
+        destination:
+          $ref: '#/components/schemas/DeliveryLocation'
+        cargo:
+          $ref: '#/components/schemas/DeliveryCargo'
+        timeWindow:
+          $ref: '#/components/schemas/DeliveryTimeWindow'
+        constraints:
+          $ref: '#/components/schemas/DeliveryConstraints'
+        plannedAt:
+          type: [string, 'null']
+          format: date-time
         progress:
+          $ref: '#/components/schemas/DeliveryProgress'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DeliveryStatus:
+      type: string
+      enum: [pending, planned, in_progress, delivered, cancelled]
+    DeliveryLocation:
+      type: object
+      additionalProperties: false
+      required: [address, latitude, longitude]
+      properties:
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        instructions:
+          type: [string, 'null']
+          maxLength: 1000
+    DeliveryCargo:
+      type: object
+      additionalProperties: false
+      required: [description, weightKg, parcelCount]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        weightKg:
+          type: number
+          exclusiveMinimum: 0
+        parcelCount:
+          type: integer
+          minimum: 1
+    DeliveryTimeWindow:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+    DeliveryConstraints:
+      type: object
+      additionalProperties: false
+      required: [vehicleKinds, fragile]
+      properties:
+        vehicleKinds:
+          type: array
+          minItems: 1
+          description: Agreed platform vehicle types (van, truck, cargo_bike).
+          items:
+            type: string
+            enum: [van, truck, cargo_bike]
+        fragile:
+          type: boolean
+        temperatureRangeC:
           type: [object, 'null']
-          additionalProperties: true
+          additionalProperties: false
+          required: [minimum, maximum]
+          properties:
+            minimum:
+              type: number
+            maximum:
+              type: number
+    DeliveryProgress:
+      type: object
+      additionalProperties: false
+      description: >-
+        Single authoritative progress representation on C04 events. Mirrors
+        C04Progress in openapi.yaml.
+      required: [status, updatedAt]
+      properties:
+        status:
+          type: string
+          enum: [pending, picked_up, in_transit, delivered, failed]
+        updatedAt:
+          type: string
+          format: date-time
+          description: >-
+            Actual business occurrence time (UTC RFC 3339) when this progress
+            state took effect (for example, actual delivery completion time when
+            status is delivered), not database write time or event emittedAt.
+            Consumers must use this timestamp rather than emittedAt for
+            delivery-time KPIs.
+        note:
+          type: [string, 'null']
