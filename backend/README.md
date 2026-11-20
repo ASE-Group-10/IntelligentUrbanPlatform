@@ -28,3 +28,28 @@ TEST_DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop_test uv run pytest
 
 CI starts its own Postgres service and sets `TEST_DATABASE_URL` (see
 `.github/workflows/backend.yml`).
+
+## RabbitMQ tests
+
+Publisher tests that need a real broker are skipped unless `TEST_RABBITMQ_URL`
+is set. They use a throwaway exchange, never the shared `ulop.events`:
+
+```sh
+docker compose up -d rabbitmq
+TEST_RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F uv run pytest
+```
+
+## C06 outbox publisher
+
+Sends queued `CityStateUpdated` events from the C06 outbox to the `ulop.events`
+topic exchange (routing key = event type), at least once. Run it as a worker
+next to the database and broker:
+
+```sh
+DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop \
+RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
+uv run python -m app.components.c06_city_monitoring.publisher
+```
+
+Stop it with Ctrl+C. Events stay in the outbox while the broker is down and go
+out once it is back.
