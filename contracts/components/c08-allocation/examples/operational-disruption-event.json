@@ -1,0 +1,43 @@
+{
+  "eventId": "7047b467-6f1c-481b-9d75-20a3f0b77b4e",
+  "eventType": "OperationalDisruption",
+  "schemaVersion": 1,
+  "producer": "C08",
+  "observedAt": "2026-11-20T08:15:00Z",
+  "emittedAt": "2026-11-20T08:15:01Z",
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+  "affected": {
+    "planIds": [
+      "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c"
+    ],
+    "resourceIds": [
+      "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+    ],
+    "segmentKeys": []
+  },
+  "entityVersions": {
+    "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c": 3
+  },
+  "scope": "live",
+  "payload": {
+    "failureId": "f0e1d2c3-b4a5-4968-8776-655443322110",
+    "failureKind": "resource_lost",
+    "planId": "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c",
+    "planVersion": 3,
+    "deliveryIds": [
+      "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"
+    ],
+    "resourceIds": [
+      "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+    ],
+    "committedState": {
+      "stillCommitted": [],
+      "released": [
+        "2b3c4d5e-6f70-4819-9a0b-1c2d3e4f5a6b"
+      ]
+    },
+    "decisionId": "c004a177-1f83-42af-8ed6-feef1906c6a9",
+    "detail": "Vehicle reported breakdown before pickup"
+  },
+  "causationId": "5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e"
+}
