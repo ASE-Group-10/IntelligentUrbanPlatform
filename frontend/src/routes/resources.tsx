@@ -65,9 +65,7 @@ const detailsTemplate: Record<ResourceType, Record<string, unknown>> = {
     restrictions: [],
     public_access: true,
     max_parcel_weight_kg: 20,
-    compartments: [
-      { size: "small", count: 12, length_cm: 40, width_cm: 30, height_cm: 20 },
-    ],
+    compartments: [{ size: "small", count: 12, length_cm: 40, width_cm: 30, height_cm: 20 }],
   },
 };
 
@@ -84,6 +82,9 @@ function ResourcesPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  // Aborted whenever the identity changes, so work started as a previous identity is ignored.
+  const sessionRef = useRef(new AbortController());
 
   const request = useCallback(
     async (path: string, init: RequestInit = {}) => {
@@ -102,6 +103,25 @@ function ResourcesPage() {
     },
     [identity],
   );
+
+  useEffect(() => {
+    const session = sessionRef.current;
+    return () => session.abort();
+  }, []);
+
+  function changeIdentity(next: string) {
+    if (next === identity) return;
+    // Invalidate work started as the previous identity and drop its data.
+    sessionRef.current.abort();
+    sessionRef.current = new AbortController();
+    setResources([]);
+    setIdentifier("");
+    setName("");
+    setMessage("");
+    setError("");
+    setSubmitting(false);
+    setIdentity(next);
+  }
 
   const refreshAbort = useRef<AbortController | null>(null);
 
@@ -138,8 +158,6 @@ function ResourcesPage() {
 
   useEffect(() => {
     // Identity changed: drop the previous provider's data before loading the new one.
-    setResources([]);
-    setMessage("");
     void refresh();
     return () => refreshAbort.current?.abort();
   }, [refresh]);
@@ -150,14 +168,19 @@ function ResourcesPage() {
 
   async function registerResource(event: FormEvent) {
     event.preventDefault();
+    const session = sessionRef.current;
+    if (submitting) return;
+    const isCurrent = () => !session.signal.aborted;
     setError("");
     setMessage("");
+    setSubmitting(true);
     try {
       const location = locations[locationIndex];
       if (!location) throw new Error("Choose a location");
       const parsedDetails = JSON.parse(details);
       const resource = await request("/api/v1/resources", {
         method: "POST",
+        signal: session.signal,
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
@@ -174,12 +197,22 @@ function ResourcesPage() {
           details: parsedDetails,
         }),
       });
+      if (!isCurrent()) return;
       setMessage(`${resource.name} registered successfully`);
       setIdentifier("");
       setName("");
       await refresh();
     } catch (caught) {
-      setError(caught instanceof SyntaxError ? "Details must be valid JSON" : caught instanceof Error ? caught.message : "Unable to register resource");
+      if (!isCurrent()) return;
+      setError(
+        caught instanceof SyntaxError
+          ? "Details must be valid JSON"
+          : caught instanceof Error
+            ? caught.message
+            : "Unable to register resource",
+      );
+    } finally {
+      if (isCurrent()) setSubmitting(false);
     }
   }
 
@@ -194,7 +227,7 @@ function ResourcesPage() {
               Identity
               <select
                 value={identity}
-                onChange={(event) => setIdentity(event.target.value)}
+                onChange={(event) => changeIdentity(event.target.value)}
                 className="h-8 rounded-lg border bg-background px-2 text-foreground"
               >
                 <option value="dev-manager">Provider A · Manager</option>
@@ -202,15 +235,28 @@ function ResourcesPage() {
                 <option value="dev-other-provider">Provider B · Manager</option>
               </select>
             </label>
-            <Button variant="outline" size="icon" onClick={() => void refresh()} aria-label="Refresh resources">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => void refresh()}
+              aria-label="Refresh resources"
+            >
               <RefreshCw className={loading ? "animate-spin" : ""} />
             </Button>
           </div>
         }
       />
 
-      {message ? <div className="rounded-lg border border-status-open/30 bg-status-open/10 px-4 py-3 text-sm">{message}</div> : null}
-      {error ? <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div> : null}
+      {message ? (
+        <div className="rounded-lg border border-status-open/30 bg-status-open/10 px-4 py-3 text-sm">
+          {message}
+        </div>
+      ) : null}
+      {error ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
         <Card>
@@ -220,7 +266,10 @@ function ResourcesPage() {
           <CardContent>
             <form className="space-y-4" onSubmit={registerResource}>
               <Field label="Resource type">
-                <select value={resourceType} onChange={(event) => setResourceType(event.target.value as ResourceType)}>
+                <select
+                  value={resourceType}
+                  onChange={(event) => setResourceType(event.target.value as ResourceType)}
+                >
                   <option value="vehicle">Vehicle</option>
                   <option value="depot">Depot</option>
                   <option value="warehouse">Warehouse</option>
@@ -228,29 +277,53 @@ function ResourcesPage() {
                 </select>
               </Field>
               <Field label="Identifier">
-                <input required value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="VAN-001" />
+                <input
+                  required
+                  value={identifier}
+                  onChange={(event) => setIdentifier(event.target.value)}
+                  placeholder="VAN-001"
+                />
               </Field>
               <Field label="Name">
-                <input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Dublin electric van" />
+                <input
+                  required
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Dublin electric van"
+                />
               </Field>
               <Field label="Location">
-                <select value={locationIndex} onChange={(event) => setLocationIndex(Number(event.target.value))}>
+                <select
+                  value={locationIndex}
+                  onChange={(event) => setLocationIndex(Number(event.target.value))}
+                >
                   {locations.map((location, index) => (
-                    <option key={location.address} value={index}>{location.address}</option>
+                    <option key={location.address} value={index}>
+                      {location.address}
+                    </option>
                   ))}
                 </select>
               </Field>
               <Field label="Observed availability">
-                <select value={availability} onChange={(event) => setAvailability(event.target.value)}>
+                <select
+                  value={availability}
+                  onChange={(event) => setAvailability(event.target.value)}
+                >
                   <option value="available">Available</option>
                   <option value="unavailable">Unavailable</option>
                   <option value="unknown">Unknown</option>
                 </select>
               </Field>
               <Field label="Type-specific details (JSON)">
-                <textarea value={details} onChange={(event) => setDetails(event.target.value)} rows={12} />
+                <textarea
+                  value={details}
+                  onChange={(event) => setDetails(event.target.value)}
+                  rows={12}
+                />
               </Field>
-              <Button type="submit" className="w-full">Register resource</Button>
+              <Button type="submit" className="w-full" disabled={submitting}>
+                Register resource
+              </Button>
             </form>
           </CardContent>
         </Card>
@@ -277,7 +350,10 @@ function ResourcesPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-medium">{resource.name}</p>
-                    <p className="text-sm text-muted-foreground">{resource.external_identifier} · {resource.resource_type} · v{resource.version}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {resource.external_identifier} · {resource.resource_type} · v
+                      {resource.version}
+                    </p>
                   </div>
                   <Badge variant={resource.planning_eligible ? "default" : "secondary"}>
                     {resource.planning_eligible ? "Planning eligible" : "Not eligible"}
