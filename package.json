@@ -10,8 +10,14 @@
   },
   "scripts": {
     "contracts:aggregate": "node scripts/aggregate-openapi.mjs",
-    "contracts:lint": "npm run contracts:aggregate && redocly lint --config=.redocly.yaml .tmp/contracts/openapi.yaml",
-    "contracts:build": "npm run contracts:aggregate && redocly build-docs --config=.redocly.yaml .tmp/contracts/openapi.yaml --output=dist/openapi/index.html",
+    "contracts:aggregate:asyncapi": "node scripts/aggregate-asyncapi.mjs",
+    "contracts:lint:openapi": "npm run contracts:aggregate && redocly lint --config=.redocly.yaml .tmp/contracts/openapi.yaml",
+    "contracts:lint:asyncapi": "npm run contracts:aggregate:asyncapi && asyncapi validate .tmp/contracts/asyncapi.yaml",
+    "contracts:lint": "npm run contracts:lint:openapi && npm run contracts:lint:asyncapi",
+    "contracts:build:openapi": "npm run contracts:aggregate && redocly build-docs --config=.redocly.yaml .tmp/contracts/openapi.yaml --output=dist/openapi/index.html",
+    "contracts:build:asyncapi": "npm run contracts:aggregate:asyncapi && asyncapi generate fromTemplate .tmp/contracts/asyncapi.yaml @asyncapi/html-template --param singleFile=true --output dist/asyncapi --force-write --no-interactive",
+    "contracts:build:internal": "mkdocs build --clean --config-file mkdocs.yml",
+    "contracts:build": "npm run contracts:build:openapi && npm run contracts:build:asyncapi && npm run contracts:build:internal && node scripts/build-contract-index.mjs",
     "prepare": "husky"
   }
 }
