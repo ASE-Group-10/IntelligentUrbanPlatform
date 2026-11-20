@@ -11,7 +11,7 @@
           "dublin-D2"
         ],
         "vehicleClasses": [
-          "HGV"
+          "truck"
         ],
         "activities": []
       },
@@ -28,7 +28,7 @@
             ],
             "segmentKeys": [],
             "vehicleClasses": [
-              "HGV"
+              "truck"
             ],
             "timeOfDay": {
               "from": "07:00",
@@ -103,8 +103,7 @@
           "dublin-D2"
         ],
         "vehicleClasses": [
-          "LGV",
-          "HGV"
+          "truck"
         ],
         "activities": []
       },
@@ -121,8 +120,7 @@
             ],
             "segmentKeys": [],
             "vehicleClasses": [
-              "LGV",
-              "HGV"
+              "truck"
             ],
             "timeOfDay": null,
             "daysOfWeek": [],
@@ -146,7 +144,7 @@
           "dublin-D2"
         ],
         "vehicleClasses": [
-          "CargoBike"
+          "cargo_bike"
         ],
         "activities": [
           "Delivery"
@@ -170,7 +168,7 @@
           "dublin-D2"
         ],
         "vehicleClasses": [
-          "HGV"
+          "truck"
         ],
         "activities": []
       },
@@ -187,7 +185,7 @@
             ],
             "segmentKeys": [],
             "vehicleClasses": [
-              "HGV"
+              "truck"
             ],
             "timeOfDay": {
               "from": "07:00",

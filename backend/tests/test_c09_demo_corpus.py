@@ -51,7 +51,7 @@ def _documents(result) -> set[str]:
 
 
 def test_hgv_delivery_in_d2_finds_cordon_loading_and_weight_rules():
-    result = _service().query_knowledge(PLANNER, _query("HGV"))
+    result = _service().query_knowledge(PLANNER, _query("truck"))
     assert result.value.status is RetrievalStatus.OK
     assert _documents(result) == {
         "dcc-hgv-cordon",
@@ -61,17 +61,17 @@ def test_hgv_delivery_in_d2_finds_cordon_loading_and_weight_rules():
 
 
 def test_cargo_bike_gets_bike_guidance_not_hgv_rules():
-    result = _service().query_knowledge(PLANNER, _query("CargoBike"))
+    result = _service().query_knowledge(PLANNER, _query("cargo_bike"))
     assert _documents(result) == {"dcc-cargo-bikes", "dcc-loading-bays"}
 
 
 def test_zone_without_policies_is_no_applicable():
-    result = _service().query_knowledge(PLANNER, _query("Van", zone="dublin-D8"))
+    result = _service().query_knowledge(PLANNER, _query("van", zone="dublin-D8"))
     assert result.value.status is RetrievalStatus.NO_APPLICABLE
 
 
 def test_conflict_scenario_flags_the_amendment():
-    result = _service(include_conflict=True).query_knowledge(PLANNER, _query("HGV"))
+    result = _service(include_conflict=True).query_knowledge(PLANNER, _query("truck"))
     assert result.value.status is RetrievalStatus.CONFLICT
     [conflict] = result.value.conflicts
     assert "07:00-19:00" in conflict.reason and "07:00-10:30" in conflict.reason

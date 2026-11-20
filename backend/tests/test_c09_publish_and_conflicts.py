@@ -193,7 +193,7 @@ def test_rules_for_other_vehicles_do_not_conflict():
     service = _service(store)
     service.publish_knowledge(CURATOR, _request())
     data = _amendment().model_dump(mode="json", by_alias=True)
-    data["metadata"]["constraintsBySection"]["1.1"][0]["vehicleClasses"] = ["LGV"]
+    data["metadata"]["constraintsBySection"]["1.1"][0]["vehicleClasses"] = ["van"]
     service.publish_knowledge(CURATOR, PublishKnowledgeRequest.model_validate(data))
     assert service.query_knowledge(PLANNER, _query()).value.status != "Conflict"
 
