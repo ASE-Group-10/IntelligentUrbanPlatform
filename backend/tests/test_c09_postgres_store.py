@@ -1,9 +1,8 @@
 """C09 against a real PostgreSQL + pgvector database (integration).
 
-Runs only when ``C09_TEST_DATABASE_URL`` points at a migrated database, e.g.
-``postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable`` after
-``docker compose up -d db`` and ``docker compose run --rm dbmate up``.
-It deletes all C09 rows first, so never point it at a shared database.
+Uses the shared ``TEST_DATABASE_URL`` test database (see ``conftest.py``): it
+is rebuilt from the migrations once per session and must be a dedicated
+``*_test`` database on the pgvector image, as in CI and ``docker-compose.yml``.
 """
 
 import os
@@ -29,12 +28,12 @@ from tests.test_c09_publish_and_conflicts import (
     _request,
 )
 
-DSN = os.environ.get("C09_TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(not DSN, reason="C09_TEST_DATABASE_URL not set")
+DSN = os.environ.get("TEST_DATABASE_URL")
+pytestmark = pytest.mark.skipif(not DSN, reason="TEST_DATABASE_URL not set")
 
 
 @pytest.fixture
-def service() -> LogisticsKnowledge:
+def service(test_database_url) -> LogisticsKnowledge:
     with psycopg.connect(DSN) as conn:
         conn.execute(
             f"truncate {S}.publish_receipts, {S}.knowledge_warnings, "
