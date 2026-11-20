@@ -13,10 +13,18 @@ finalisation and UC08 negotiation are internal C08 operations.
 
 ## Event boundaries
 
-- [PlanReady example](examples/plan-ready-event.json). C05 emits this after
-  saving a plan version and its outbox record. C08 validates the event as
-  `PlanReadyEvent`. The payload fields and capacity vocabulary are proposed
-  for C05 review. C05 owns the eventual producer definition.
+- C05 emits [PlanReady](examples/plan-ready-event.json) after operator
+  confirmation in UC03 and after the revised plan commits in UC07. The
+  version and its outbox intent are saved together. Each event includes
+  the full set of resource requirements for unfinished deliveries in that
+  version. The single affected plan and its entity version must agree with
+  the payload. C05 owns the producer contract.
+- The C05 [confirmed simulation v3](../c05-planning/examples/confirmed-plan.json)
+  and [route-only revision event v4](../c05-planning/examples/plan-ready-revision-event.json) share a
+  plan and run ID. The route and schedule are read from the saved C05 version
+  for that run. The requirements stay the same; C08 reuses commitments that
+  still fit the revised route and schedule and checks that the plan version
+  is current before committing resources.
 - `ResourceAvailabilityChanged` uses [C03's producer contract](../c03-resource-management/events.yaml).
   UC04 checks whether the change affects the vehicle selected for a pending
   assignment. See the [C03 availability example](examples/resource-availability-changed-event.json).

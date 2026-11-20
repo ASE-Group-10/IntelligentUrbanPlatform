@@ -176,3 +176,50 @@ def test_plan_ready_rejects_invalid_event(
     wire.update(overrides)
     with pytest.raises(ValidationError, match=field):
         PlanReadyEvent.model_validate_json(json.dumps(wire))
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        (
+            "affected",
+            {
+                "planIds": ["d614062e-450a-488b-a186-76d8020e3112"],
+                "resourceIds": [],
+                "segmentKeys": [],
+            },
+            "affected.planIds",
+        ),
+        ("entityVersions", None, "entityVersions"),
+    ],
+)
+def test_plan_ready_requires_consistent_plan_metadata(
+    field: str, value: object, error: str
+) -> None:
+    wire = json.loads(event_fixture("plan-ready-event.json"))
+    wire[field] = value
+    with pytest.raises(ValidationError, match=error):
+        PlanReadyEvent.model_validate_json(json.dumps(wire))
+
+
+def test_plan_ready_rejects_stale_envelope_plan_version() -> None:
+    wire = json.loads(event_fixture("plan-ready-event.json"))
+    plan_id = wire["payload"]["planId"]
+    wire["entityVersions"][plan_id] = wire["payload"]["planVersion"] - 1
+    with pytest.raises(ValidationError, match="entityVersions"):
+        PlanReadyEvent.model_validate_json(json.dumps(wire))
+
+
+def test_plan_ready_accepts_c05_route_only_revision() -> None:
+    c05_examples = EXAMPLES.parent.parent / "c05-planning/examples"
+    previous = json.loads((c05_examples / "confirmed-plan.json").read_text())
+    revision = PlanReadyEvent.model_validate_json(
+        (c05_examples / "plan-ready-revision-event.json").read_text()
+    )
+    assert str(revision.run_id) == previous["runScope"]["runId"]
+    assert str(revision.payload.plan_id) == previous["planId"]
+    assert revision.payload.plan_version == previous["version"] + 1
+    assert (
+        revision.payload.model_dump(mode="json")["requirements"]
+        == previous["resourceNeeds"]
+    )
