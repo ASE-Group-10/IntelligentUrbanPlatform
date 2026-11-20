@@ -53,6 +53,12 @@ class TestHandleDelivery:
         assert disposition == "reject"
         assert called == []
 
+    def test_rejected_message_body_is_not_logged(self, caplog):
+        handle_delivery(b'{"note": "SECRET-BODY", broken', lambda e: "ack")
+
+        assert "rejected unreadable message" in caplog.text
+        assert "SECRET-BODY" not in caplog.text
+
     def test_handler_crash_is_retried(self, envelope):
         def crash(_: EventEnvelope):
             raise RuntimeError("bug")

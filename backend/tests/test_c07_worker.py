@@ -121,6 +121,34 @@ def test_closure_is_retried_while_c05_is_down_and_handled_once_it_is_back(
     assert len(planning.replan_calls) == 1
 
 
+class ReplanDown(DemoPlanningStub):
+    """The demo stub, but C05 refuses replan requests while ``down``."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+
+    def request_replan(self, request, correlation_id):
+        if self.down:
+            raise PlanningUnavailableError("C05 is down")
+        return super().request_replan(request, correlation_id)
+
+
+def test_replan_refused_by_c05_is_retried_until_c05_takes_it(closure_event):
+    planning = ReplanDown()
+    detection = DisruptionDetection(
+        planning=planning, store=InMemoryDisruptionStore(), clock=lambda: NOW
+    )
+    handle = c07_handler(detection)
+
+    assert handle(closure_event) == "retry"
+    assert handle(closure_event) == "retry"
+    planning.down = False
+    assert handle(closure_event) == "ack"
+    assert handle(closure_event) == "ack"
+    assert len(planning.replan_calls) == 1
+
+
 def test_unknown_outcome_that_a_retry_cannot_fix_is_acked(handler, closure_event):
     other_type = closure_event.model_copy(update={"event_type": "PlanReady"})
 
@@ -223,4 +251,52 @@ def test_closure_published_before_c07_starts_still_reaches_c07(c06_database, pla
     assert before_c07.published == 0
     assert "no queue is bound" in before_c07.stopped_by
     assert after_c07.published == 1
+    assert len(planning.replan_calls) == 1
+
+
+@needs_db_and_broker
+def test_closure_reaches_c07_started_late_while_another_consumer_listens(
+    c06_database, planning
+):
+    """Another subscriber already bound makes the publish routable; C07's queue,
+    declared by the publisher, still holds the closure until C07 starts."""
+    rabbit = os.environ["TEST_RABBITMQ_URL"]
+    exchange = f"ulop.events.test-{uuid4()}"
+    queue = f"{QUEUE}.test-{uuid4()}"
+    other_queue = f"c11.test-{uuid4()}"
+    connection = pika.BlockingConnection(pika.URLParameters(rabbit))
+    other = connection.channel()
+    other.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
+    other.queue_declare(queue=other_queue, exclusive=True)
+    other.queue_bind(
+        queue=other_queue, exchange=exchange, routing_key="CityStateUpdated"
+    )
+    c06_store = PostgresCityStateStore(c06_database)
+    publisher = RabbitMQPublisher(
+        rabbit, exchange, queues={queue: ["CityStateUpdated"]}
+    )
+    detection = DisruptionDetection(
+        planning=planning, store=InMemoryDisruptionStore(), clock=lambda: NOW
+    )
+    consumer = make_consumer(detection, rabbit, exchange=exchange, queue=queue)
+
+    try:
+        CityMonitoring(store=c06_store, clock=lambda: NOW).ingest_observation(
+            SourceContext(
+                state_scope=StateScope(scope="simulation", run_id=uuid4()),
+                correlation_id=uuid4(),
+            ),
+            closure_observation(),
+        )
+        drained = drain_outbox(c06_store, publisher).value
+        consumer.declare()  # C07 starts only now
+        consumer.consume_available()
+    finally:
+        publisher.close()
+        consumer.close()
+        other.queue_delete(other_queue)
+        connection.close()
+        delete_broker_objects(rabbit, exchange, queue)
+
+    assert drained.published == 1
     assert len(planning.replan_calls) == 1
