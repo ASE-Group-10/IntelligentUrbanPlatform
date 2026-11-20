@@ -140,6 +140,13 @@ docker compose run --rm dbmate up
 
 See [database/README.md](database/README.md) for migration conventions.
 
+### Event chain demo
+
+`docker compose up -d --build` also builds the backend image, applies the
+migrations and starts the C06 outbox publisher and the C07 worker. Then
+`docker compose run --rm demo-feed` sends the scenario's road closure through
+C06 → RabbitMQ → C07. See [backend/README.md](backend/README.md#demo-road-closure-through-c06-and-c07).
+
 ### Frontend
 
 ```sh
