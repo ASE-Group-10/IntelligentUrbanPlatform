@@ -252,3 +252,51 @@ def test_closure_published_before_c07_starts_still_reaches_c07(c06_database, pla
     assert "no queue is bound" in before_c07.stopped_by
     assert after_c07.published == 1
     assert len(planning.replan_calls) == 1
+
+
+@needs_db_and_broker
+def test_closure_reaches_c07_started_late_while_another_consumer_listens(
+    c06_database, planning
+):
+    """Another subscriber already bound makes the publish routable; C07's queue,
+    declared by the publisher, still holds the closure until C07 starts."""
+    rabbit = os.environ["TEST_RABBITMQ_URL"]
+    exchange = f"ulop.events.test-{uuid4()}"
+    queue = f"{QUEUE}.test-{uuid4()}"
+    other_queue = f"c11.test-{uuid4()}"
+    connection = pika.BlockingConnection(pika.URLParameters(rabbit))
+    other = connection.channel()
+    other.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
+    other.queue_declare(queue=other_queue, exclusive=True)
+    other.queue_bind(
+        queue=other_queue, exchange=exchange, routing_key="CityStateUpdated"
+    )
+    c06_store = PostgresCityStateStore(c06_database)
+    publisher = RabbitMQPublisher(
+        rabbit, exchange, queues={queue: ["CityStateUpdated"]}
+    )
+    detection = DisruptionDetection(
+        planning=planning, store=InMemoryDisruptionStore(), clock=lambda: NOW
+    )
+    consumer = make_consumer(detection, rabbit, exchange=exchange, queue=queue)
+
+    try:
+        CityMonitoring(store=c06_store, clock=lambda: NOW).ingest_observation(
+            SourceContext(
+                state_scope=StateScope(scope="simulation", run_id=uuid4()),
+                correlation_id=uuid4(),
+            ),
+            closure_observation(),
+        )
+        drained = drain_outbox(c06_store, publisher).value
+        consumer.declare()  # C07 starts only now
+        consumer.consume_available()
+    finally:
+        publisher.close()
+        consumer.close()
+        other.queue_delete(other_queue)
+        connection.close()
+        delete_broker_objects(rabbit, exchange, queue)
+
+    assert drained.published == 1
+    assert len(planning.replan_calls) == 1

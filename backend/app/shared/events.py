@@ -32,6 +32,7 @@ from pydantic import ValidationError
 
 from app.shared.contracts import EventEnvelope
 from app.shared.logging import trace
+from app.shared.topology import declare_queues
 
 Disposition = Literal["ack", "retry", "reject"]
 EventHandler = Callable[[EventEnvelope], Disposition]
@@ -84,15 +85,9 @@ class EventConsumer:
 
     def declare(self) -> None:
         """Create the exchange, the queue and its bindings if they do not exist."""
-        channel = self._open_channel()
-        channel.exchange_declare(
-            exchange=self._exchange, exchange_type="topic", durable=True
+        declare_queues(
+            self._open_channel(), self._exchange, {self._queue: self._event_types}
         )
-        channel.queue_declare(queue=self._queue, durable=True)
-        for event_type in self._event_types:
-            channel.queue_bind(
-                queue=self._queue, exchange=self._exchange, routing_key=event_type
-            )
 
     def consume_available(self, max_messages: int | None = None) -> int:
         """Handle messages already queued, then return how many were handled.

@@ -22,9 +22,10 @@ from app.shared.contracts import EventEnvelope
 from app.shared.events import DEFAULT_EXCHANGE, Disposition, EventConsumer, EventHandler
 from app.shared.logging import configure_logging, trace
 from app.shared.result import Ok
+from app.shared.topology import SUBSCRIBER_QUEUES
 
 QUEUE = "c07.city-state-updated"
-EVENT_TYPES = ["CityStateUpdated"]
+EVENT_TYPES = list(SUBSCRIBER_QUEUES[QUEUE])
 
 log = logging.getLogger(__name__)
 

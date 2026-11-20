@@ -19,6 +19,7 @@ import logging
 import os
 import signal
 import threading
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -32,6 +33,7 @@ from app.components.c06_city_monitoring.store import (
 from app.shared.contracts import EventEnvelope
 from app.shared.logging import configure_logging, trace
 from app.shared.result import Failure, Ok, Result
+from app.shared.topology import SUBSCRIBER_QUEUES, declare_queues
 
 DEFAULT_EXCHANGE = "ulop.events"
 DEFAULT_BATCH_SIZE = 100
@@ -101,11 +103,21 @@ class RabbitMQPublisher:
     Routing key is the ``eventType`` (contract ``events.yaml``). Publishes are
     mandatory: an event that reaches no queue raises ``PublishError`` and stays in
     the outbox. The connection is opened on first use and reopened after a failure.
+
+    ``queues`` are the consumer queues to declare when the channel opens
+    (``app.shared.topology``), so they hold events for consumers that have not
+    started yet.
     """
 
-    def __init__(self, url: str, exchange: str = DEFAULT_EXCHANGE) -> None:
+    def __init__(
+        self,
+        url: str,
+        exchange: str = DEFAULT_EXCHANGE,
+        queues: Mapping[str, Iterable[str]] | None = None,
+    ) -> None:
         self._parameters = pika.URLParameters(url)
         self._exchange = exchange
+        self._queues = queues or {}
         self._connection: pika.BlockingConnection | None = None
         self._channel = None
 
@@ -151,9 +163,7 @@ class RabbitMQPublisher:
             self._connection = pika.BlockingConnection(self._parameters)
             self._channel = self._connection.channel()
             self._channel.confirm_delivery()
-            self._channel.exchange_declare(
-                exchange=self._exchange, exchange_type="topic", durable=True
-            )
+            declare_queues(self._channel, self._exchange, self._queues)
         return self._channel
 
 
@@ -192,6 +202,7 @@ def main() -> None:  # pragma: no cover - process entry point
     publisher = RabbitMQPublisher(
         os.environ["RABBITMQ_URL"],
         os.environ.get("RABBITMQ_EXCHANGE", DEFAULT_EXCHANGE),
+        queues=SUBSCRIBER_QUEUES,
     )
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
