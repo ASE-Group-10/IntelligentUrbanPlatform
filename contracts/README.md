@@ -68,7 +68,14 @@ npm run contracts:build
 cd dist && python3 -m http.server 8080
 ```
 
-Open <http://localhost:8080/openapi/> to view the generated documentation.
+Open <http://localhost:8080/> to view the documentation index, or open:
+
+- <http://localhost:8080/openapi/>
+- <http://localhost:8080/asyncapi/>
+- <http://localhost:8080/internal/>
+
+Install `mkdocs-material` with `python3 -m pip install mkdocs-material` before
+running `contracts:build` locally.
 
 ## Event rules
 
@@ -87,8 +94,8 @@ Event contracts belong in one `events.yaml` per component:
   with `action: receive` and refers to the producer's definition rather than
   copying it.
 
-Event files are currently source-only. The CI workflow does not yet validate or
-render them.
+Event files are validated and rendered as an aggregated AsyncAPI documentation
+site by the CI workflow.
 
 ## Internal interface rules
 

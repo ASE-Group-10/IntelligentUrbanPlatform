@@ -132,6 +132,24 @@ class PostgresReader:
         return {key: SegmentCondition.model_validate(value) for key, value in rows}
 
 
+class PostgresOutboxBatch:
+    """``OutboxBatch`` over rows locked with ``FOR UPDATE SKIP LOCKED``.
+
+    Concurrent publishers skip each other's rows, so an event is not claimed twice.
+    """
+
+    def __init__(self, conn: psycopg.Connection, events: list[EventEnvelope]) -> None:
+        self._conn = conn
+        self.events = events
+
+    def mark_published(self, event_id: UUID) -> None:
+        self._conn.execute(
+            "update c06_city_monitoring.outbox set published_at = now()"
+            " where event_id = %s",
+            (event_id,),
+        )
+
+
 class PostgresCityStateStore:
     """``CityStateStore`` backed by PostgreSQL (local Docker or Supabase).
 
@@ -168,6 +186,25 @@ class PostgresCityStateStore:
                     f"City State store failed: {error}"
                 ) from error
 
+    @contextmanager
+    def outbox_batch(self, limit: int) -> Iterator["PostgresOutboxBatch"]:
+        with self._connect() as conn:
+            try:
+                with conn.transaction():
+                    rows = conn.execute(
+                        "select envelope from c06_city_monitoring.outbox"
+                        " where published_at is null order by seq limit %s"
+                        " for update skip locked",
+                        (limit,),
+                    ).fetchall()
+                    yield PostgresOutboxBatch(
+                        conn, [EventEnvelope.model_validate(e) for (e,) in rows]
+                    )
+            except psycopg.OperationalError as error:
+                raise StoreUnavailableError(
+                    f"City State store failed: {error}"
+                ) from error
+
     def seed_version(self, state_scope: StateScope, version: int) -> None:
         """Start a scope at ``version`` (tests use this to mirror the examples)."""
         with self.transaction(state_scope) as tx:
@@ -194,8 +231,8 @@ class PostgresCityStateStore:
                 (key,),
             ).fetchall()
             outbox_rows = conn.execute(
-                "select envelope from c06_city_monitoring.outbox"
-                " where scope_key = %s order by seq",
+                "select envelope, published_at is not null"
+                " from c06_city_monitoring.outbox where scope_key = %s order by seq",
                 (key,),
             ).fetchall()
 
@@ -210,7 +247,12 @@ class PostgresCityStateStore:
             (Observation.model_validate(o), IngestionReceipt.model_validate(r))
             for o, r in history_rows
         ]
-        state.outbox = [EventEnvelope.model_validate(e) for (e,) in outbox_rows]
+        state.outbox = [EventEnvelope.model_validate(e) for e, _ in outbox_rows]
+        state.published = {
+            envelope.event_id
+            for envelope, (_, published) in zip(state.outbox, outbox_rows, strict=True)
+            if published
+        }
         return state
 
     def _connect(self) -> psycopg.Connection:
