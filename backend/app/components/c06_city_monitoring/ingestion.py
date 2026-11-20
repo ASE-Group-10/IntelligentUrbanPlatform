@@ -8,11 +8,14 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 
 from app.components.c06_city_monitoring.contracts import (
+    CitySnapshot,
+    CitySnapshotQuery,
     CityStateUpdated,
     IngestionReceipt,
     Observation,
     SegmentCondition,
 )
+from app.components.c06_city_monitoring.snapshot import get_city_snapshot
 from app.components.c06_city_monitoring.store import (
     CityStateStore,
     CityStateTransaction,
@@ -74,6 +77,12 @@ class CityMonitoring:
         except StoreUnavailableError as error:
             return Failure("Unavailable", str(error))
 
+    def get_city_snapshot(
+        self, state_scope: StateScope, query: CitySnapshotQuery
+    ) -> Result[CitySnapshot]:
+        """Read City State for C05, C07 and the C01 map; see ``snapshot.py``."""
+        return get_city_snapshot(self._store, self._clock(), state_scope, query)
+
     def _merge(
         self,
         tx: CityStateTransaction,
@@ -96,7 +105,7 @@ class CityMonitoring:
 
         previous = tx.current_version()
         version = previous + 1
-        tx.put_segment(condition)
+        tx.put_segment(condition, version)
         tx.set_version(version)
         receipt = IngestionReceipt(
             observation_id=observation.observation_id,
