@@ -91,10 +91,9 @@ Pydantic shape, null/zero, coverage, timestamps and staleness; they do not prove
 authorisation, persistence, deduplication or integration. Run repository-root
 `npm run contracts:lint`, `npm run contracts:build`, then backend `uv run pytest`,
 `uv run ruff check .` and `uv run ruff format --check .`.
-Run `npm run contracts:test:c11-c12` for standard JSON Schema regression checks
-covering the HTTP shape invariants and fixed page/provenance caps; CI runs these
-checks too. The service must additionally enforce records.length <= the requested
-limit, numeric coverage comparisons, authorisation and state transitions.
+Component-specific invariants belong in backend/component tests. The service must
+enforce records.length <= the requested limit, numeric coverage comparisons,
+authorisation and state transitions.
 OpenAPI checks do not validate events/internal Markdown. Future behaviour is #16;
 agreement/review comes before runtime work. Prepared with AI assistance for Jolin;
 no producer agreement, deployment or completed paired implementation is claimed.

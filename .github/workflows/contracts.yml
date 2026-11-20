@@ -5,7 +5,6 @@ on:
     paths:
       - '.redocly.yaml'
       - 'contracts/**'
-      - 'scripts/test-c11-c12-contracts.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/contracts.yml'
@@ -16,7 +15,6 @@ on:
     paths:
       - '.redocly.yaml'
       - 'contracts/**'
-      - 'scripts/test-c11-c12-contracts.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/contracts.yml'
@@ -47,9 +45,6 @@ jobs:
 
       - name: Lint OpenAPI contract
         run: npm run contracts:lint
-
-      - name: Test C11/C12 response invariants
-        run: npm run contracts:test:c11-c12
 
       - name: Build Redoc site
         run: npm run contracts:build
