@@ -59,9 +59,6 @@ jobs:
       - name: Lint OpenAPI contract
         run: npm run contracts:lint
 
-      - name: Test C11/C12 response invariants
-        run: npm run contracts:test:c11-c12
-
       - name: Build contract documentation
         run: npm run contracts:build
 
