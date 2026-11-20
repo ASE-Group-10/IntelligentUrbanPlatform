@@ -47,8 +47,8 @@ def clock() -> Clock:
 
 
 @pytest.fixture
-def store() -> InMemoryCityStateStore:
-    store = InMemoryCityStateStore()
+def store(new_store):
+    store = new_store()
     store.seed_version(SIMULATION, 41)
     return store
 
