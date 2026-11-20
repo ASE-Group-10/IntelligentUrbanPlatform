@@ -162,6 +162,7 @@ def test_c05_unavailable_is_unknown_and_event_is_not_processed(
 
     assert isinstance(result, Ok)
     assert result.value.kind == "unknown"
+    assert result.value.retry_later is True
     assert store.disruptions("simulation", RUN_ID) == []
     assert planning.replan_calls == []
     assert store.processed("simulation", RUN_ID) == set()

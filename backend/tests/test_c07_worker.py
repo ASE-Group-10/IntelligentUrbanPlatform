@@ -16,6 +16,7 @@ from app.components.c06_city_monitoring.publisher import (
 )
 from app.components.c06_city_monitoring.store import StateScope
 from app.components.c07_disruption_detection.detection import DisruptionDetection
+from app.components.c07_disruption_detection.planning import PlanningUnavailableError
 from app.components.c07_disruption_detection.planning_stub import (
     DEMO_PLAN_ID,
     DEMO_SEGMENT,
@@ -90,6 +91,40 @@ def test_store_failure_is_retried(planning, closure_event):
 
     assert c07_handler(detection)(closure_event) == "retry"
     assert planning.replan_calls == []
+
+
+class FlakyPlanning(DemoPlanningStub):
+    """The demo stub, but C05 can be switched off."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+
+    def find_affected_work(self, scope):
+        if self.down:
+            raise PlanningUnavailableError("C05 is down")
+        return super().find_affected_work(scope)
+
+
+def test_closure_is_retried_while_c05_is_down_and_handled_once_it_is_back(
+    closure_event,
+):
+    planning = FlakyPlanning()
+    detection = DisruptionDetection(
+        planning=planning, store=InMemoryDisruptionStore(), clock=lambda: NOW
+    )
+    handle = c07_handler(detection)
+
+    assert handle(closure_event) == "retry"
+    planning.down = False
+    assert handle(closure_event) == "ack"
+    assert len(planning.replan_calls) == 1
+
+
+def test_unknown_outcome_that_a_retry_cannot_fix_is_acked(handler, closure_event):
+    other_type = closure_event.model_copy(update={"event_type": "PlanReady"})
+
+    assert handler(other_type) == "ack"
 
 
 def test_payload_that_breaks_the_contract_is_rejected(handler, closure_event):

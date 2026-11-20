@@ -30,12 +30,24 @@ log = logging.getLogger(__name__)
 
 
 def c07_handler(detection: DisruptionDetection) -> EventHandler:
-    """Map ``evaluate_change`` results onto ack / retry / reject."""
+    """Map ``evaluate_change`` results onto ack / retry / reject.
+
+    An outcome C07 could not finish because C05 was down is retried, so the
+    event comes back once C05 answers. Other ``unknown`` outcomes are acked:
+    delivering the same event again would give the same answer.
+    """
 
     def handle(envelope: EventEnvelope) -> Disposition:
         result = detection.evaluate_change(envelope)
         if isinstance(result, Ok):
             outcome = result.value
+            if outcome.retry_later:
+                log.warning(
+                    "not evaluated, will retry: %s",
+                    outcome.reason,
+                    extra=trace(envelope),
+                )
+                return "retry"
             log.info(
                 "evaluated: %s, %d replan request(s)%s",
                 outcome.kind,
