@@ -69,7 +69,8 @@ Details and wording are in the C05 section linked above.
 - [x] `ReplanOutcome` gains `reason`, required for `ReviewRequired`. `Infeasible` is no longer a failure. Remaining failures: `Invalid`, `NotFound`, `Conflict`, `Unavailable`.
 - [x] `PlanSaved` is returned once the revision and its `PlanReady` outbox entry are saved together; publication state stays with C05.
 - [x] `PlanningPort` returns a typed `Result` (`Ok` / `Failure`) from both calls.
-- [x] `findAffectedWork` answering `Unavailable` gives a detection result of `unknown` with `retryable` set, and the event is not marked as processed.
+- [x] `retryable` is set only when a redelivery can change the outcome: `findAffectedWork` answering `Unavailable` (result `unknown`, event not marked as processed), or a `requestReplan` not made because C05 answered `Unavailable`, including the rediscovery after a `Conflict` (disruption kept, plan not requested).
+- [x] When an event arrives again, C07 sends only the plans still pending, with the same key. Causes a redelivery would not change (`NotFound`, plan no longer affected, repeated `Conflict` or same `planVersion`, `Invalid`) do not set `retryable`, so the event is not retried forever.
 
 ## Still open
 

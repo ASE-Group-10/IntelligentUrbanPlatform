@@ -42,6 +42,8 @@ DetectionKind = Literal["duplicate", "no_disruption", "unknown", "created"]
 """What ``evaluate_change`` concluded. ``updated`` is reserved for AF3."""
 
 FIRST_VERSION = 1
+UNAVAILABLE = "Unavailable"
+"""Failure kind that makes a detection result retryable."""
 SEVERITY_RANK: dict[Severity, int] = {"low": 0, "medium": 1, "high": 2}
 
 
@@ -49,7 +51,10 @@ class DetectionOutcome(ContractModel):
     """Result of evaluating one event.
 
     ``replan_requests`` are the requests C05 accepted. ``retryable`` is true when
-    redelivering the event later may succeed because C05 was unavailable.
+    redelivering the event later can succeed because C05 answered ``Unavailable``,
+    to ``findAffectedWork`` or to a replan request. It is false for causes that a
+    redelivery would not change (``NotFound``, a repeated ``Conflict``, ``Invalid``,
+    a plan that is no longer affected), so a consumer never retries forever.
     """
 
     kind: DetectionKind
@@ -88,6 +93,8 @@ class _Detected:
 
     disruption: Disruption
     snapshot_version: Version
+    resumed: bool = False
+    """True for a redelivered event whose replan requests C05 did not all take."""
 
 
 @dataclass(frozen=True)
@@ -127,16 +134,23 @@ class DisruptionDetection:
         Returns:
             ``Ok(kind="created")`` once the disruption is saved and replans were
             requested; ``replan_requests`` holds those C05 received, and
-            ``reason`` says why each of the others was not made;
+            ``reason`` says why each of the others was not made. ``retryable``
+            is true only if some request was not made because C05 was
+            ``Unavailable``; other causes (``NotFound``, a repeated ``Conflict``,
+            a plan no longer affected) would not change on redelivery;
             ``Ok(kind="no_disruption")`` if no closed segment is used by a plan
             (AF2; the event is marked processed);
-            ``Ok(kind="duplicate")`` if the event was already processed;
+            ``Ok(kind="duplicate")`` if the event was already processed. If C05
+            did not take all its replan requests earlier, only those plans are
+            sent again, through the same path as a new event (so a stale plan is
+            retried once too), and ``replan_requests`` holds the ones C05 took
+            this time; ``retryable`` follows the same rule;
             ``Ok(kind="unknown")`` if reliable detection is not possible: the
             event type is not handled yet, a closed segment is not ``good``
             quality (AF1), ``findAffectedWork`` failed, or the affected segments
             have no single known cause. Nothing is saved and the event is not
             marked processed, so a redelivery can succeed later; ``retryable`` is
-            true when C05 was ``Unavailable``;
+            true only when ``findAffectedWork`` answered ``Unavailable``;
             ``Failure("Invalid")`` if the payload does not match its contract;
             ``Failure("Unavailable")`` if the store fails.
         """
@@ -154,7 +168,8 @@ class DisruptionDetection:
     ) -> Result[DetectionOutcome] | _Detected:
         """Steps 1-7: receive, validate, compare, classify and record."""
         if tx.is_processed(envelope.event_id):
-            return Ok(_outcome(envelope, "duplicate"))
+            unfinished = _unfinished(tx, envelope)
+            return unfinished or Ok(_outcome(envelope, "duplicate"))
 
         payload = _read_payload(envelope)
         if not isinstance(payload, CityStateUpdated):
@@ -177,7 +192,7 @@ class DisruptionDetection:
                     envelope,
                     "unknown",
                     reason=f"findAffectedWork failed ({found.kind}): {found.message}",
-                    retryable=found.kind == "Unavailable",
+                    retryable=found.kind == UNAVAILABLE,
                 )
             )
 
@@ -259,19 +274,25 @@ class DisruptionDetection:
     def _request_replans(
         self, envelope: EventEnvelope, detected: _Detected
     ) -> DetectionOutcome:
-        """Step 9: one replan request per affected plan, after the commit.
+        """Step 9: one replan request per plan C05 has not taken yet.
 
-        A plan whose request is not made stays ``replan_requested=False``; the
-        others continue. No retry here beyond the stale-plan one.
+        A new disruption has all its plans pending. For a redelivered event only
+        the plans with ``replan_requested=False`` are sent again (C05 deduplicates
+        on the request key). A plan whose request is not made stays pending and
+        the others continue. ``retryable`` is set only if some request was not
+        made because C05 was ``Unavailable``: other causes would not change.
         """
         disruption = detected.disruption
         replans = [
             self._replan_plan(envelope, detected, plan)
             for plan in disruption.affected_plans
+            if not plan.replan_requested
         ]
         sent = [replan.request for replan in replans if replan.request is not None]
         if sent:
-            self._record_replans(envelope, disruption, [r.plan for r in replans])
+            updated = {replan.plan.plan_id: replan.plan for replan in replans}
+            plans = [updated.get(p.plan_id, p) for p in disruption.affected_plans]
+            self._record_replans(envelope, disruption, plans)
 
         not_made = Counter(r.not_made for r in replans if r.not_made is not None)
         reason = None
@@ -279,12 +300,13 @@ class DisruptionDetection:
             causes = ", ".join(f"{count} {cause}" for cause, count in not_made.items())
             reason = f"{not_made.total()} replan request(s) not made: {causes}"
         return DetectionOutcome(
-            kind="created",
+            kind="duplicate" if detected.resumed else "created",
             event_id=envelope.event_id,
             disruption_id=disruption.disruption_id,
             disruption_version=disruption.version,
             replan_requests=sent,
             reason=reason,
+            retryable=UNAVAILABLE in not_made,
         )
 
     def _replan_plan(
@@ -393,6 +415,20 @@ def _accepted(
         ),
         request=request,
     )
+
+
+def _unfinished(tx: DisruptionTransaction, envelope: EventEnvelope) -> _Detected | None:
+    """The disruption a processed event created, if C05 has not taken all its
+    replan requests yet."""
+    disruption = tx.disruption_for_event(envelope.event_id)
+    if disruption is None or all(
+        plan.replan_requested for plan in disruption.affected_plans
+    ):
+        return None
+    payload = _read_payload(envelope)
+    if not isinstance(payload, CityStateUpdated):
+        return None
+    return _Detected(disruption, payload.snapshot_version, resumed=True)
 
 
 def _read_payload(

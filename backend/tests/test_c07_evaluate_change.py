@@ -501,3 +501,142 @@ def test_review_required_outcome_is_recorded(example, affected_work, store):
     (disruption,) = store.disruptions("simulation", RUN_ID)
     (plan,) = disruption.affected_plans
     assert (plan.replan_requested, plan.replan_outcome) == (True, "ReviewRequired")
+
+
+def test_failed_replan_request_is_sent_again_on_redelivery_once_c05_is_back(
+    example, planning, store
+):
+    service = make_service(planning, store)
+    event = make_event(example)
+    planning.replan_unavailable = True
+    first = service.evaluate_change(event).value
+
+    planning.replan_unavailable = False
+    again = service.evaluate_change(event).value
+    after = service.evaluate_change(event).value
+
+    assert first.retryable is True
+    assert (again.kind, again.retryable) == ("duplicate", False)
+    assert len(again.replan_requests) == 1
+    (disruption,) = store.disruptions("simulation", RUN_ID)
+    (plan,) = disruption.affected_plans
+    assert (plan.replan_requested, plan.replan_outcome) == (True, "PlanSaved")
+    assert after.replan_requests == []
+    first_key = planning.replan_calls[0][0].key
+    assert [request.key for request, _ in planning.replan_calls] == [first_key] * 2
+
+
+def test_redelivery_while_c05_is_still_down_keeps_the_replan_pending(
+    example, planning, store
+):
+    service = make_service(planning, store)
+    event = make_event(example)
+    planning.replan_unavailable = True
+    service.evaluate_change(event)
+
+    again = service.evaluate_change(event).value
+
+    assert (again.kind, again.retryable) == ("duplicate", True)
+    (disruption,) = store.disruptions("simulation", RUN_ID)
+    assert disruption.affected_plans[0].replan_requested is False
+
+
+def two_plans_work(affected_work: AffectedWork) -> AffectedWork:
+    second_plan = AffectedWorkItem(
+        plan_id=SECOND_PLAN_ID, plan_version=2, delivery_ids=[DELIVERY_ID]
+    )
+    return AffectedWork(items=[*affected_work.items, second_plan])
+
+
+def test_plan_not_found_alone_is_not_retryable(example, affected_work, store):
+    planning = FakePlanning(
+        work_by_segment={SEGMENT: affected_work},
+        plan_failures={PLAN_ID: Failure("NotFound", "plan does not exist")},
+    )
+
+    result = make_service(planning, store).evaluate_change(make_event(example))
+
+    assert isinstance(result, Ok)
+    assert result.value.reason == "1 replan request(s) not made: 1 NotFound"
+    assert result.value.retryable is False
+
+
+def test_unavailable_replan_alongside_not_found_is_retryable_until_the_cycle_ends(
+    example, affected_work, store
+):
+    planning = FakePlanning(
+        work_by_segment={SEGMENT: two_plans_work(affected_work)},
+        outcome=ReplanOutcome(
+            status="PlanSaved", new_plan_version=4, decision_id=DECISION_ID
+        ),
+        plan_failures={
+            PLAN_ID: Failure("Unavailable", "C05 is down"),
+            SECOND_PLAN_ID: Failure("NotFound", "plan does not exist"),
+        },
+    )
+    service = make_service(planning, store)
+    event = make_event(example)
+
+    first = service.evaluate_change(event).value
+    del planning.plan_failures[PLAN_ID]  # C05 is back
+    second = service.evaluate_change(event).value
+    third = service.evaluate_change(event).value
+
+    assert (first.kind, first.retryable) == ("created", True)
+    assert first.reason == "2 replan request(s) not made: 1 Unavailable, 1 NotFound"
+    assert (second.kind, second.retryable) == ("duplicate", False)
+    assert [request.plan_id for request in second.replan_requests] == [PLAN_ID]
+    assert second.reason == "1 replan request(s) not made: 1 NotFound"
+    (disruption,) = store.disruptions("simulation", RUN_ID)
+    assert [p.replan_requested for p in disruption.affected_plans] == [True, False]
+    assert third.retryable is False
+
+
+def test_unavailable_during_the_conflict_rediscovery_is_retryable(
+    example, affected_work, store
+):
+    planning = FakePlanning(
+        work_by_segment={SEGMENT: affected_work},
+        replan_failures=[Failure("Conflict", "stale")],
+        down_after_conflict=True,
+    )
+
+    result = make_service(planning, store).evaluate_change(make_event(example))
+
+    assert isinstance(result, Ok)
+    assert result.value.reason == "1 replan request(s) not made: 1 Unavailable"
+    assert result.value.retryable is True
+
+
+def test_redelivery_after_conflict_uses_the_new_key_and_keeps_the_version(
+    example, affected_work, store
+):
+    planning = FakePlanning(
+        work_by_segment={SEGMENT: affected_work},
+        outcome=ReplanOutcome(
+            status="PlanSaved", new_plan_version=6, decision_id=DECISION_ID
+        ),
+        replan_unavailable=True,
+        work_after_conflict=newer_work(affected_work, 5),
+    )
+    service = make_service(planning, store)
+    event = make_event(example)
+    first = service.evaluate_change(event).value
+
+    planning.replan_unavailable = False
+    planning.replan_failures = [Failure("Conflict", "plan version moved on")]
+    again = service.evaluate_change(event).value
+
+    assert (first.kind, first.retryable) == ("created", True)
+    assert (again.kind, again.retryable) == ("duplicate", False)
+    keys = [request.key for request, _ in planning.replan_calls]
+    assert keys == [
+        f"{PLAN_ID}:3:{DISRUPTION_ID}:1",
+        f"{PLAN_ID}:3:{DISRUPTION_ID}:1",
+        f"{PLAN_ID}:5:{DISRUPTION_ID}:1",
+    ]
+    assert again.replan_requests[0].key == keys[2]
+    (disruption,) = store.disruptions("simulation", RUN_ID)
+    assert disruption.version == 1
+    (plan,) = disruption.affected_plans
+    assert (plan.plan_version, plan.replan_requested) == (5, True)

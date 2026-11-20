@@ -191,9 +191,20 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
    response to C07.
 6. **Port.** `PlanningPort` returns a typed `Result` (`app.shared.result`: `Ok` or
    `Failure`) from both calls, instead of raising exceptions.
-7. **Unavailable.** If C05 answers `Unavailable` to `findAffectedWork`, C07 marks
-   the detection result as retryable so the event is not lost: it reports `unknown`
-   and does not mark the event as processed.
+7. **Unavailable and retry.** C07 marks the detection result as `retryable` only
+   when delivering the event again can change the outcome:
+   - If C05 answers `Unavailable` to `findAffectedWork`, C07 reports `unknown` and
+     does not mark the event as processed, so the event is not lost.
+   - If a `requestReplan` is not made because C05 answered `Unavailable`
+     (including the rediscovery after a `Conflict`), C07 keeps the disruption with
+     that plan as not requested and the result is `retryable`. When the event
+     arrives again, C07 sends only the plans still pending, with the same key, so
+     C05 deduplicates on it. A pending plan whose version has moved on still
+     follows the `Conflict` rule of point 3.
+   - Causes a redelivery would not change do not set `retryable`: `NotFound`, a
+     plan that is no longer affected, a repeated `Conflict` or one with the same
+     `planVersion`, and `Invalid`. Those plans stay not requested, so the event is
+     not retried forever.
 
 ## Open coordination points
 
