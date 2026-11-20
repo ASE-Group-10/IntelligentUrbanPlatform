@@ -1,0 +1,16 @@
+{
+  "scenarioId": "dublin-thin-slice",
+  "runId": "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+  "seed": 42,
+  "startTime": "2026-11-20T08:14:00Z",
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+  "closure": {
+    "observationId": "0b8f3c2e-6a1d-4f5b-9c7e-2d4a6b8c0e1f",
+    "sourceId": "sim-traffic",
+    "segmentKey": "seg:4471023",
+    "cause": "roadworks",
+    "observedAt": "2026-11-20T08:14:30Z",
+    "validUntil": "2026-11-20T18:00:00Z"
+  },
+  "segments": []
+}

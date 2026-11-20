@@ -72,3 +72,19 @@ going through the whole chain.
 
 Other components can consume events the same way with
 `app.shared.events.EventConsumer` (see its docstring).
+
+## Demo: road closure through C06 and C07
+
+The thin-slice event chain (#72 hops 7–8), using the shared scenario in
+`fixtures/dublin-scenario.json`. With `docker compose up -d db rabbitmq` running
+and the migrations applied, start the two workers in separate terminals (see
+above), then inject the closure:
+
+```sh
+DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop uv run python -m app.demo.feed
+```
+
+It prints the run, the `correlationId`, the new City State version and the
+queued event ID. The C06 publisher and C07 worker log the same `correlationId`
+as the event goes through. Running it again changes nothing; add `--fresh` to
+inject a new closure with new IDs at the current time.
