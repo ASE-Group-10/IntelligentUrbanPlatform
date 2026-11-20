@@ -2,9 +2,12 @@
 
 Delivery is at least once. An event is marked as published only after the
 broker confirms it. If the broker is down, events stay in the outbox and go
-out on a later pass (UC05 AF6). If a confirmation is received but the mark is
-lost, the event is sent again with the same ``eventId``; consumers deduplicate
-on it, as the event contract requires.
+out on a later pass (UC05 AF6). The same holds while no consumer queue is bound
+for the event type yet (for example C06 starting before C07 on a fresh broker):
+the broker returns the event instead of dropping it, so it is never marked
+published unseen. If a confirmation is received but the mark is lost, the event
+is sent again with the same ``eventId``; consumers deduplicate on it, as the
+event contract requires.
 
 Run as a worker::
 
@@ -16,18 +19,21 @@ import logging
 import os
 import signal
 import threading
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
 import pika
-from pika.exceptions import AMQPError
+from pika.exceptions import AMQPError, UnroutableError
 
 from app.components.c06_city_monitoring.store import (
     CityStateStore,
     StoreUnavailableError,
 )
 from app.shared.contracts import EventEnvelope
+from app.shared.logging import configure_logging, trace
 from app.shared.result import Failure, Ok, Result
+from app.shared.topology import SUBSCRIBER_QUEUES, declare_queues
 
 DEFAULT_EXCHANGE = "ulop.events"
 DEFAULT_BATCH_SIZE = 100
@@ -45,7 +51,8 @@ class EventPublisher(Protocol):
         """Publish one event and return once the broker confirms it.
 
         Raises:
-            PublishError: if the broker is unreachable or refuses the event.
+            PublishError: if the broker is unreachable, refuses the event, or no
+                queue is bound for its event type.
         """
         ...
 
@@ -84,6 +91,7 @@ def drain_outbox(
                     break
                 batch.mark_published(envelope.event_id)
                 published += 1
+                log.info("published %s", envelope.event_type, extra=trace(envelope))
     except StoreUnavailableError as error:
         return Failure("Unavailable", str(error))
     return Ok(DrainReport(published=published, stopped_by=stopped_by))
@@ -92,13 +100,24 @@ def drain_outbox(
 class RabbitMQPublisher:
     """Publishes envelopes to a durable topic exchange with publisher confirms.
 
-    Routing key is the ``eventType`` (contract ``events.yaml``). The connection is
-    opened on first use and reopened after a failure.
+    Routing key is the ``eventType`` (contract ``events.yaml``). Publishes are
+    mandatory: an event that reaches no queue raises ``PublishError`` and stays in
+    the outbox. The connection is opened on first use and reopened after a failure.
+
+    ``queues`` are the consumer queues to declare when the channel opens
+    (``app.shared.topology``), so they hold events for consumers that have not
+    started yet.
     """
 
-    def __init__(self, url: str, exchange: str = DEFAULT_EXCHANGE) -> None:
+    def __init__(
+        self,
+        url: str,
+        exchange: str = DEFAULT_EXCHANGE,
+        queues: Mapping[str, Iterable[str]] | None = None,
+    ) -> None:
         self._parameters = pika.URLParameters(url)
         self._exchange = exchange
+        self._queues = queues or {}
         self._connection: pika.BlockingConnection | None = None
         self._channel = None
 
@@ -120,8 +139,12 @@ class RabbitMQPublisher:
                         "runId": str(envelope.run_id) if envelope.run_id else None,
                     },
                 ),
-                mandatory=False,
+                mandatory=True,
             )
+        except UnroutableError as error:
+            raise PublishError(
+                f"no queue is bound for {envelope.event_type} yet"
+            ) from error
         except AMQPError as error:
             self.close()
             raise PublishError(f"broker unavailable: {error!r}") from error
@@ -140,9 +163,7 @@ class RabbitMQPublisher:
             self._connection = pika.BlockingConnection(self._parameters)
             self._channel = self._connection.channel()
             self._channel.confirm_delivery()
-            self._channel.exchange_declare(
-                exchange=self._exchange, exchange_type="topic", durable=True
-            )
+            declare_queues(self._channel, self._exchange, self._queues)
         return self._channel
 
 
@@ -176,14 +197,12 @@ def main() -> None:  # pragma: no cover - process entry point
         PostgresCityStateStore,
     )
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
-    logging.getLogger("pika").setLevel(logging.WARNING)
+    configure_logging("C06")
     store = PostgresCityStateStore(os.environ["DATABASE_URL"])
     publisher = RabbitMQPublisher(
         os.environ["RABBITMQ_URL"],
         os.environ.get("RABBITMQ_EXCHANGE", DEFAULT_EXCHANGE),
+        queues=SUBSCRIBER_QUEUES,
     )
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):

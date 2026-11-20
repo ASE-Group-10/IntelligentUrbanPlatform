@@ -162,6 +162,7 @@ def test_c05_unavailable_is_unknown_and_event_is_not_processed(
 
     assert isinstance(result, Ok)
     assert result.value.kind == "unknown"
+    assert result.value.retry_later is True
     assert store.disruptions("simulation", RUN_ID) == []
     assert planning.replan_calls == []
     assert store.processed("simulation", RUN_ID) == set()
@@ -308,3 +309,41 @@ def test_failed_replan_request_keeps_the_disruption_with_replan_pending(
     (plan,) = disruption.affected_plans
     assert (plan.replan_requested, plan.replan_outcome) == (False, None)
     assert store.processed("simulation", RUN_ID) == {EVENT_ID}
+
+
+def test_failed_replan_request_is_sent_again_on_redelivery_once_c05_is_back(
+    example, planning, store
+):
+    service = make_service(planning, store)
+    event = make_event(example)
+    planning.replan_unavailable = True
+    first = service.evaluate_change(event).value
+
+    planning.replan_unavailable = False
+    again = service.evaluate_change(event).value
+    after = service.evaluate_change(event).value
+
+    assert first.retry_later is True
+    assert (again.kind, again.retry_later) == ("duplicate", False)
+    assert len(again.replan_requests) == 1
+    (disruption,) = store.disruptions("simulation", RUN_ID)
+    (plan,) = disruption.affected_plans
+    assert (plan.replan_requested, plan.replan_outcome) == (True, "PlanSaved")
+    assert after.replan_requests == []
+    first_key = planning.replan_calls[0][0].key
+    assert [request.key for request, _ in planning.replan_calls] == [first_key] * 2
+
+
+def test_redelivery_while_c05_is_still_down_keeps_the_replan_pending(
+    example, planning, store
+):
+    service = make_service(planning, store)
+    event = make_event(example)
+    planning.replan_unavailable = True
+    service.evaluate_change(event)
+
+    again = service.evaluate_change(event).value
+
+    assert (again.kind, again.retry_later) == ("duplicate", True)
+    (disruption,) = store.disruptions("simulation", RUN_ID)
+    assert disruption.affected_plans[0].replan_requested is False
