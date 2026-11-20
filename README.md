@@ -5,6 +5,21 @@ CS7CS3 Advanced Software Engineering — Group 10.
 A platform for coordinating urban deliveries using resource agents, city conditions,
 planning, policy knowledge, and explainable decisions.
 
+## UC01 local implementation
+
+A FastAPI resource module and a small browser test desk are now available. See
+[backend setup and API documentation](backend/README.md) for startup, mock scenarios,
+database setup, and checks. Start from the repository root with:
+
+```sh
+uv sync --project backend --locked
+uv run --directory backend uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Open <http://127.0.0.1:8000>. This increment uses real configured database persistence
+and explicit mocks for authentication, mapping, and resource-agent activation.
+The broader application structure below remains a plan.
+
 This README defines the thin-slice scope and collaboration baseline. Implementation,
 deployment, and automated checks must be verified in the application repository;
 these documents do not indicate that those facilities already exist.

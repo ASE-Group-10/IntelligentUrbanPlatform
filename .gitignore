@@ -63,9 +63,6 @@ blob-report/
 *.log
 /local-data/
 /backups/
-supabase/.temp/
-supabase/.branches/
-
 # Local deployment tooling
 .vercel/
 .docker/
