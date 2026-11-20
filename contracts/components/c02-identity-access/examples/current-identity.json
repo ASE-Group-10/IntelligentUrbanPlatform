@@ -1,0 +1,18 @@
+{
+  "principalId": "20000000-0000-4000-8000-000000000001",
+  "principalType": "user",
+  "displayName": "Dublin depot manager",
+  "memberships": [
+    {
+      "providerId": "10000000-0000-4000-8000-000000000001",
+      "providerName": "Provider A (synthetic)",
+      "roles": ["manager", "operator"]
+    },
+    {
+      "providerId": "10000000-0000-4000-8000-000000000002",
+      "providerName": "Provider B (synthetic)",
+      "roles": ["operator"]
+    }
+  ],
+  "platformRoles": []
+}
