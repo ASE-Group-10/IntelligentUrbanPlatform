@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { queryClient } from "@/lib/query-client";
@@ -39,8 +39,9 @@ async function renderResources() {
         <RouterProvider router={router} />
       </QueryClientProvider>
     </ThemeProvider>,
+    { reactStrictMode: true },
   );
-  await router.load();
+  await act(() => router.load());
 }
 
 type Handler = (
@@ -69,6 +70,27 @@ function mockFetch(listHandler: Handler) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Resources page identity switching", () => {
+  it("registers a resource on the initial identity under StrictMode", async () => {
+    let abortedAtSubmit: boolean | undefined;
+    mockFetch((_identity, signal, init) => {
+      if (init?.method === "POST") {
+        abortedAtSubmit = signal?.aborted;
+        return Promise.resolve(json(resource("a1", "A van"), 201));
+      }
+      return Promise.resolve(json({ items: [] }));
+    });
+    const user = userEvent.setup();
+    await renderResources();
+    await screen.findByText("0 saved");
+    await user.type(screen.getByPlaceholderText("VAN-001"), "VAN-A");
+    await user.type(screen.getByPlaceholderText("Dublin electric van"), "A van");
+    await user.click(screen.getByRole("button", { name: "Register resource" }));
+
+    expect(abortedAtSubmit).toBe(false);
+    expect(await screen.findByText("A van registered successfully")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Register resource" })).toBeEnabled();
+  });
+
   it("ignores a slow response from the previous identity", async () => {
     let resolveA: (response: Response) => void = () => {};
     mockFetch((identity) =>

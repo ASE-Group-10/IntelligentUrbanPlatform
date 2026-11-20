@@ -105,8 +105,8 @@ function ResourcesPage() {
   );
 
   useEffect(() => {
-    const session = sessionRef.current;
-    return () => session.abort();
+    sessionRef.current = new AbortController();
+    return () => sessionRef.current.abort();
   }, []);
 
   function changeIdentity(next: string) {
