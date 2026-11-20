@@ -24,6 +24,12 @@ def _applies(c: Constraint, query: PolicyQuery) -> bool:
     return zones_ok and vehicle_ok
 
 
+def _shared_zones(a: Constraint, b: Constraint, query: PolicyQuery) -> set[str]:
+    """Zones of the query where both rules apply. A D1 rule and a D2 rule never
+    contradict, even when one query covers both zones."""
+    return set(a.zone_ids) & set(b.zone_ids) & set(query.area.zone_ids)
+
+
 def _days_overlap(a: Constraint, b: Constraint) -> bool:
     return (
         not a.days_of_week
@@ -56,7 +62,8 @@ def detect_conflicts(
     passages: list[Passage], query: PolicyQuery, corpus_version: int
 ) -> list[ConflictDetails]:
     """One conflict per pair of passages from different documents whose
-    constraints of the same kind both apply to the query but set different rules.
+    constraints of the same kind apply in a shared zone of the query (and on
+    overlapping segments and days) but set different rules.
 
     shortcut: two different rules on overlapping days count as a conflict even
     when their time windows do not overlap; refine if curators report noise.
@@ -66,8 +73,10 @@ def detect_conflicts(
         if p.document_id == q.document_id:
             continue
         for a, b in itertools.product(p.constraints, q.constraints):
+            zones = _shared_zones(a, b, query)
             if (
                 a.kind == b.kind
+                and zones
                 and _applies(a, query)
                 and _applies(b, query)
                 and _days_overlap(a, b)
@@ -82,7 +91,7 @@ def detect_conflicts(
                         document_ids=[p.document_id, q.document_id],
                         reason=(
                             f"Both apply to {query.vehicle_class} in "
-                            f"{', '.join(query.area.zone_ids)} but the {a.kind} "
+                            f"{', '.join(sorted(zones))} but the {a.kind} "
                             f"rules differ ({_rule(a)} vs {_rule(b)})."
                         ),
                     )

@@ -253,3 +253,47 @@ def test_same_key_same_body_stays_a_duplicate_when_lookup_races():
     again = service.publish_knowledge(CURATOR, _request()).value
     assert again.duplicate is True
     assert again.corpus_version == first.corpus_version
+
+
+# ---- TseGong's review of #24 (5917e76): rules in different zones ----
+
+
+def _scoped(request: PublishKnowledgeRequest, zone: str) -> PublishKnowledgeRequest:
+    data = request.model_dump(mode="json", by_alias=True)
+    for constraints in data["metadata"]["constraintsBySection"].values():
+        for c in constraints:
+            c["zoneIds"] = [zone]
+    data["idempotencyKey"] += f":{zone}"
+    return PublishKnowledgeRequest.model_validate(data)
+
+
+def _zones_query(*zones: str) -> PolicyQuery:
+    data = _example("query_knowledge.request.json")
+    data["area"]["zoneIds"] = list(zones)
+    data.pop("freeText", None)  # unranked, as in TseGong's scenario
+    return PolicyQuery.model_validate(data)
+
+
+def test_bans_in_different_zones_do_not_conflict_in_a_multi_zone_query():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _scoped(_request(), "dublin-D1"))
+    service.publish_knowledge(CURATOR, _scoped(_amendment(), "dublin-D2"))
+
+    for zones in (["dublin-D1"], ["dublin-D2"], ["dublin-D1", "dublin-D2"]):
+        result = service.query_knowledge(PLANNER, _zones_query(*zones)).value
+        assert result.status is RetrievalStatus.OK, zones
+        assert result.conflicts == []
+    assert store._warnings == {}  # no curator warning either
+
+
+def test_bans_sharing_a_queried_zone_still_conflict():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _scoped(_request(), "dublin-D2"))
+    service.publish_knowledge(CURATOR, _scoped(_amendment(), "dublin-D2"))
+    result = service.query_knowledge(
+        PLANNER, _zones_query("dublin-D1", "dublin-D2")
+    ).value
+    assert result.status is RetrievalStatus.CONFLICT
+    assert "in dublin-D2 but" in result.conflicts[0].reason
