@@ -56,6 +56,9 @@ class DetectionOutcome(ContractModel):
     disruption_version: Version | None = None
     replan_requests: list[ReplanRequest] = Field(default_factory=list)
     reason: str | None = None
+    retry_later: bool = False
+    """The event was not processed because a dependency (C05) was down;
+    delivering it again later can succeed."""
 
 
 def classify_impact(
@@ -155,7 +158,11 @@ class DisruptionDetection:
 
         found = self._find_affected_work(closed)
         if found is None:
-            return Ok(_outcome(envelope, "unknown", reason="C05 is unavailable"))
+            return Ok(
+                _outcome(
+                    envelope, "unknown", reason="C05 is unavailable", retry_later=True
+                )
+            )
 
         impacts = _impacts(found)
         if not impacts:
@@ -305,10 +312,15 @@ class DisruptionDetection:
 
 
 def _outcome(
-    envelope: EventEnvelope, kind: DetectionKind, reason: str | None = None
+    envelope: EventEnvelope,
+    kind: DetectionKind,
+    reason: str | None = None,
+    retry_later: bool = False,
 ) -> DetectionOutcome:
     """An outcome that created nothing (no disruption, no replan)."""
-    return DetectionOutcome(kind=kind, event_id=envelope.event_id, reason=reason)
+    return DetectionOutcome(
+        kind=kind, event_id=envelope.event_id, reason=reason, retry_later=retry_later
+    )
 
 
 def _read_payload(
