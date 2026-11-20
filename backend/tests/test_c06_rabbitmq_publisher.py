@@ -51,17 +51,33 @@ def test_event_is_routed_by_event_type_with_its_id(exchange, example):
     assert EventEnvelope.model_validate_json(body) == envelope
 
 
-def test_other_event_types_do_not_reach_the_queue(exchange, example):
+def test_event_no_queue_is_bound_for_raises_and_reaches_no_queue(exchange, example):
     envelope = EventEnvelope.model_validate(example("city-state-updated-event.json"))
     connection, channel, queue = bound_queue(exchange, "PlanReady")
     publisher = RabbitMQPublisher(RABBITMQ_URL, exchange)
 
-    publisher.publish(envelope)
+    with pytest.raises(PublishError, match="no queue is bound for CityStateUpdated"):
+        publisher.publish(envelope)
     method, _, _ = channel.basic_get(queue, auto_ack=True)
     publisher.close()
     connection.close()
 
     assert method is None
+
+
+def test_publisher_recovers_once_a_queue_is_bound(exchange, example):
+    envelope = EventEnvelope.model_validate(example("city-state-updated-event.json"))
+    publisher = RabbitMQPublisher(RABBITMQ_URL, exchange)
+    with pytest.raises(PublishError):
+        publisher.publish(envelope)
+
+    connection, channel, queue = bound_queue(exchange, "CityStateUpdated")
+    publisher.publish(envelope)
+    method, _, _ = channel.basic_get(queue, auto_ack=True)
+    publisher.close()
+    connection.close()
+
+    assert method is not None
 
 
 def test_unreachable_broker_raises_publish_error(example):

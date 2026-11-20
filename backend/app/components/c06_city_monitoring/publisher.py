@@ -2,9 +2,12 @@
 
 Delivery is at least once. An event is marked as published only after the
 broker confirms it. If the broker is down, events stay in the outbox and go
-out on a later pass (UC05 AF6). If a confirmation is received but the mark is
-lost, the event is sent again with the same ``eventId``; consumers deduplicate
-on it, as the event contract requires.
+out on a later pass (UC05 AF6). The same holds while no consumer queue is bound
+for the event type yet (for example C06 starting before C07 on a fresh broker):
+the broker returns the event instead of dropping it, so it is never marked
+published unseen. If a confirmation is received but the mark is lost, the event
+is sent again with the same ``eventId``; consumers deduplicate on it, as the
+event contract requires.
 
 Run as a worker::
 
@@ -20,7 +23,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import pika
-from pika.exceptions import AMQPError
+from pika.exceptions import AMQPError, UnroutableError
 
 from app.components.c06_city_monitoring.store import (
     CityStateStore,
@@ -46,7 +49,8 @@ class EventPublisher(Protocol):
         """Publish one event and return once the broker confirms it.
 
         Raises:
-            PublishError: if the broker is unreachable or refuses the event.
+            PublishError: if the broker is unreachable, refuses the event, or no
+                queue is bound for its event type.
         """
         ...
 
@@ -94,8 +98,9 @@ def drain_outbox(
 class RabbitMQPublisher:
     """Publishes envelopes to a durable topic exchange with publisher confirms.
 
-    Routing key is the ``eventType`` (contract ``events.yaml``). The connection is
-    opened on first use and reopened after a failure.
+    Routing key is the ``eventType`` (contract ``events.yaml``). Publishes are
+    mandatory: an event that reaches no queue raises ``PublishError`` and stays in
+    the outbox. The connection is opened on first use and reopened after a failure.
     """
 
     def __init__(self, url: str, exchange: str = DEFAULT_EXCHANGE) -> None:
@@ -122,8 +127,12 @@ class RabbitMQPublisher:
                         "runId": str(envelope.run_id) if envelope.run_id else None,
                     },
                 ),
-                mandatory=False,
+                mandatory=True,
             )
+        except UnroutableError as error:
+            raise PublishError(
+                f"no queue is bound for {envelope.event_type} yet"
+            ) from error
         except AMQPError as error:
             self.close()
             raise PublishError(f"broker unavailable: {error!r}") from error
