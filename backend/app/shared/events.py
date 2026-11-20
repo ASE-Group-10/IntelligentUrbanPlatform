@@ -94,7 +94,10 @@ class EventConsumer:
         """Handle messages already queued, then return how many were handled.
 
         Stops early after a ``retry`` so a failing message is not looped on.
+        ``max_messages=0`` handles nothing.
         """
+        if max_messages is not None and max_messages <= 0:
+            return 0
         channel = self._open_channel()
         handled = 0
         try:

@@ -111,6 +111,19 @@ class TestEventConsumerWithRabbitMQ:
 
         assert self.queued(names) == 1
 
+    def test_zero_capacity_handles_nothing(self, names, envelope):
+        received = []
+        consumer = self.consumer(names, lambda e: received.append(e) or "ack")
+        consumer.declare()
+        RabbitMQPublisher(RABBITMQ_URL, names[0]).publish(envelope)
+
+        handled = consumer.consume_available(max_messages=0)
+        consumer.close()
+
+        assert handled == 0
+        assert received == []
+        assert self.queued(names) == 1
+
     def test_unreadable_message_is_dropped(self, names):
         consumer = self.consumer(names, lambda e: "ack")
         consumer.declare()
