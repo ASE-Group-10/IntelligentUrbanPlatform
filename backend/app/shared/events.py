@@ -46,7 +46,11 @@ def handle_delivery(body: bytes, handler: EventHandler) -> Disposition:
     try:
         envelope = EventEnvelope.model_validate_json(body)
     except ValidationError as error:
-        log.warning("rejected unreadable message: %s", error.errors()[:1])
+        # No input: the first error can hold the whole message body.
+        log.warning(
+            "rejected unreadable message: %s",
+            error.errors(include_url=False, include_input=False)[:1],
+        )
         return "reject"
     try:
         disposition = handler(envelope)
