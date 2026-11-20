@@ -48,7 +48,7 @@ Index(
     unique=True,
 )
 receipts = Table(
-    "c03_command_receipts",
+    "command_receipts",
     metadata,
     Column("provider_id", Uuid, primary_key=True),
     Column("principal_id", Uuid, primary_key=True),
@@ -60,7 +60,7 @@ receipts = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 audit = Table(
-    "c03_audit_outcomes",
+    "audit_outcomes",
     metadata,
     Column("id", Uuid, primary_key=True),
     Column("provider_id", Uuid, nullable=False),
@@ -73,7 +73,7 @@ audit = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 outbox = Table(
-    "c03_outbox",
+    "outbox",
     metadata,
     Column("id", Uuid, primary_key=True),
     Column("provider_id", Uuid, nullable=False),
