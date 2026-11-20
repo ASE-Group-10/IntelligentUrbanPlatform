@@ -1,0 +1,10 @@
+{
+  "principalId": "30000000-0000-4000-8000-000000000007",
+  "principalType": "service",
+  "serviceId": "C07",
+  "actingProviderId": null,
+  "roles": ["service"],
+  "providerIds": [],
+  "platformRoles": [],
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e"
+}

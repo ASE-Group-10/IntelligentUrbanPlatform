@@ -1,36 +1,35 @@
 # C12 Simulation and Replay: internal interfaces (UC12)
 
-Status: proposal for producer/consumer review; relocation under issue #35
-of the reviewed #15 / PR #22 increment. Runtime functionality is not delivered.
-Pair: Jolin + Qingyuan; no completed paired work or UC12 handover is claimed.
-Outside reviewers: Bruno (C06/C12) and Oscar (C08).
+Status: contract proposal; no runtime endpoint is implemented here. Follows #35/#46;
+HTTP publication is tracked by #48. Pair: Jolin + Qingyuan. Requested HTTP reviewers:
+Julian (Antel0p3) and Oscar (OscarGomezGonzalezz). AI-assisted preparation for Jolin;
+no completed paired work or UC12 handover is claimed.
 
-Follow [the component contract rules](../../README.md). HTTP routes and transport
-envelopes were not agreed in #22, so this migration does not invent an
-`openapi.yaml`. C01-facing HTTP adapters need a separately agreed contract;
-the logical service calls below are documented as internal interfaces meanwhile.
-RabbitMQ consumer proposals are in [events.yaml](events.yaml). No live worker,
-route, database migration or algorithm is introduced.
+The C01-facing API definitions, field schemas, examples and HTTP failures now live
+in [openapi.yaml](openapi.yaml). Browser calls are not internal interfaces.
+Transport proposals (paths, paging, idempotency receipts and error envelopes)
+need consumer review. In-process `Result<T>`, C02 context and typed models remain
+unchanged; HTTP adapters translate them rather than redefining shared types.
+Event contracts stay in [events.yaml](events.yaml).
 
-Reuse `backend/app/shared/contracts.py` (`ContractModel`, `UtcDatetime`,
-`EventEnvelope`) and `backend/app/shared/result.py` (`Ok<T> | Failure`).
-JSON fields are camelCase, UUID entity IDs are v4, times are UTC with `Z`, unknown
-fields are rejected, and ranges are half-open `[start, end)`. `schemaVersion`
-and entity versions are distinct. An authenticated C02 context is passed
-separately, never trusted from the payload. Models validate shape only:
-server-side authorisation, transactional deduplication and ordering remain runtime work.
+## C01 HTTP operations
 
-## Provided interfaces
+| Logical operation | HTTP contract |
+| --- | --- |
+| startSimulation | POST `/api/v1/simulation-runs` |
+| listRuns | GET `/api/v1/simulation-runs` |
+| startReplay | POST `/api/v1/replay-sessions` |
+| getReplayFrame (read-only polling) | GET `/api/v1/replay-sessions/{sessionId}` |
+| controlReplay | POST `/api/v1/replay-sessions/{sessionId}/controls` |
 
-### startSimulation(context, request: SimulationRequest) → Result<RunManifest>
+The OpenAPI file defines authentication, fields, status mapping, timeline controls,
+idempotent HTTP retries and transport-only run paging. Session ID comes from the
+control path, then the adapter supplies it to the existing ReplayControl model.
+State/range/cursor validation remains required in the service implementation.
+Existing typed value models remain in
+`backend/app/components/c12_simulation_replay/contracts.py`.
 
-Caller: C01 simulation adapter/authorised operator. Example:
-[request](examples/start-simulation-request.json), [manifest](examples/run-manifest.json).
-Persist an isolated run manifest, immutable configuration and initial state before
-generation. Same provider/key/body returns the original run; changed body conflicts.
-No live adapter writes are permitted. Failures: `Invalid` (scenario/configuration),
-`Forbidden`, `Conflict` (key reuse), `Unavailable` (storage/generator dependency).
-The manifest shape is a proposal; runtime and generator are not implemented.
+## Provided internal interfaces
 
 ### recordSimulationEvent(runId, record: RecordingRecord) → Result<recording receipt>
 
@@ -46,36 +45,6 @@ conflicting ID/sequence fails. **Receipt DTO fields remain unagreed**; the model
 does not enforce cross-record ordering/durability. Failures: `Invalid` (wrong
 run/scope/payload), `Forbidden`, `Conflict`, `Unavailable` (no partial recording).
 
-### listRuns(context, filters) → Result<run page>
-
-Caller: C01 adapter/authorised operator. Filters: provider UUID v4 (required and
-checked against context), optional scenarioId string, recording status
-(`recording`/`completed`/`incomplete`), period (`TimeRange`) and page cursor string.
-Response contains `RunManifest` items including availableRanges and a bounded
-continuation cursor. **Filter/page DTO, bounds and exact fields are still pending**;
-the manifest is the currently typed part. Do not leak another provider's runs.
-Failures: `Invalid`, `Forbidden`, `Unavailable`. No state mutation.
-
-### startReplay(context, request: ReplayRequest) → Result<ReplayFrame or CannotReplay>
-
-Caller: C01 replay adapter/authorised operator. Examples:
-[request](examples/start-replay-request.json), [paused frame](examples/replay-frame-paused.json),
-[cannot replay](examples/cannot-replay.json).
-Verify selected run/range, configuration/checkpoint integrity and every essential
-record before creating a private ready/paused session and its initial frame.
-Missing essential data gives `Ok<CannotReplay>` with reason and availableRanges,
-not false success. Failures: `Invalid`, `Forbidden`, `NotFound` (run),
-`Unavailable` (store inaccessible). Session ownership must be checked separately.
-
-### controlReplay(context, control: ReplayControl) → Result<ReplayFrame>
-
-Caller: C01 replay adapter/session owner. Example: [seek](examples/control-replay-seek.json).
-Validate ownership, expectedCursor, command transition, selected range and target
-before mutation. Return actual frame/status. Failures: `Invalid` (command/target),
-`Forbidden`, `NotFound` (session), `Conflict` (stale cursor/state), `Unavailable`.
-For reads interrupted in an active session return a paused frame with the last
-committed state/cursor and interruption reason, without skipping the next event.
-
 ### advanceReplay(sessionId, expectedCursor) → Result<ReplayFrame>
 
 Caller: trusted replay scheduler. `sessionId`: UUID v4, required; `expectedCursor`:
@@ -85,99 +54,22 @@ once; completed at range end. Failures: `Invalid`, `Forbidden`, `NotFound`,
 This is a provided scheduler boundary; checkpoint loading/reconstruction helpers
 are component implementation details and are not additional public contracts.
 
-## Value-model fields
+## Internal recording/checkpoint values
 
-Typed models: `backend/app/components/c12_simulation_replay/contracts.py`.
-TimeRange and Indicator are reused from C11, whose definitions are in
-[C11 internal.md](../c11-kpi-analytics/internal.md); they are not duplicated.
-Required means required JSON property, separately from nullable. Identifier strings
-are nonempty and at most 200 characters. Sequence/cursor/seed use strict integers,
-not booleans. The manifest's scope defaults to simulation and can only be simulation.
+`RecordingRecord` (required fields): runId (UUID v4), sequence (strict integer >=1),
+simulationTime (UTC timestamp), event (shared EventEnvelope from the same simulation
+run). Example: [recording](examples/recording-record.json).
 
-### SimulationRequest
+`Checkpoint` (required fields): runId (UUID v4), cursor (strict integer >=0),
+simulationTime (UTC timestamp), stateRef (nonempty string, at most 200 characters),
+stateSha256 (64 lowercase hexadecimal characters). Example:
+[checkpoint](examples/checkpoint.json). These are internal values, not C01 endpoints.
 
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `scenarioId` | string | yes | Versioned synthetic scenario identifier. |
-| `seed` | integer | yes | Nonnegative deterministic input; seed alone does not guarantee reproducibility. |
-| `configurationVersion` | string | yes | Immutable configuration reference/version. |
-| `idempotencyKey` | string | yes | Provider-scoped mutation key; repeated body reuses the run, changed body conflicts. |
-
-### RunManifest
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `schemaVersion` | constant `1` | no | Contract shape version, separate from entity and metric definition versions. |
-| `runId` | string (uuid4) | yes | Simulation run identity; must match every recorded event/session. |
-| `providerId` | string (uuid4) | yes | Requested owner; checked against C02 context, never an access grant. |
-| `scope` | constant `simulation` | no | Defaults to simulation; a manifest never describes a live run. |
-| `scenarioId` | string | yes | Versioned synthetic scenario identifier. |
-| `seed` | integer | yes | Nonnegative deterministic input; seed alone does not guarantee reproducibility. |
-| `configurationVersion` | string | yes | Immutable configuration reference/version. |
-| `status` | `recording`, `completed`, `incomplete` | yes | Domain state; cross-field/state-transition constraints are documented below. |
-| `initialStateRef` | string | yes | Immutable initial-state object reference; example is a placeholder. |
-| `initialStateSha256` | string | yes | 64 lowercase hex digest; runtime must verify the referenced object. |
-| `availableRanges` | array of TimeRange | yes | Reconstructable recording intervals, not a promise that the entire run exists. |
-| `lastSequence` | integer | yes | Last recorded sequence, zero before any event. |
-
-### RecordingRecord
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `runId` | string (uuid4) | yes | Simulation run identity; must match every recorded event/session. |
-| `sequence` | integer | yes | One-based contiguous run-local recording sequence. |
-| `simulationTime` | string (date-time) | yes | Recorded simulation clock; apply equal-time outcomes in sequence order. |
-| `event` | EventEnvelope | yes | Shared EventEnvelope with the same simulation run; payload owned by its producer. |
-
-### Checkpoint
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `runId` | string (uuid4) | yes | Simulation run identity; must match every recorded event/session. |
-| `cursor` | integer | yes | Last applied sequence; zero means initial state; checkpoint state is after this cursor. |
-| `simulationTime` | string (date-time) | yes | Recorded simulation clock; apply equal-time outcomes in sequence order. |
-| `stateRef` | string | yes | Immutable checkpoint object reference. |
-| `stateSha256` | string | yes | 64 lowercase hex digest; runtime must verify object integrity. |
-
-### ReplayRequest
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `runId` | string (uuid4) | yes | Simulation run identity; must match every recorded event/session. |
-| `timeRange` | TimeRange | yes | Selected reconstructable half-open range; see C11 TimeRange. |
-| `speed` | number | no | Finite presentation pacing > 0 and <= 16; proposed bound needs C01 agreement. |
-
-### ReplayControl
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `sessionId` | string (uuid4) | yes | Private replay session, ownership checked on every command. |
-| `command` | `play`, `pause`, `resume`, `seek`, `stop` | yes | Replay control; allowed transitions are documented below. |
-| `expectedCursor` | integer | yes | Optimistic cursor check; stale cursor conflicts without state change. |
-| `targetCursor` | integer or null | no | Required only for seek; runtime checks selected range and reconstructability. |
-
-### ReplayFrame
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `schemaVersion` | constant `1` | no | Contract shape version, separate from entity and metric definition versions. |
-| `sessionId` | string (uuid4) | yes | Private replay session, ownership checked on every command. |
-| `runId` | string (uuid4) | yes | Simulation run identity; must match every recorded event/session. |
-| `cursor` | integer | yes | Last applied sequence; zero means initial state; checkpoint state is after this cursor. |
-| `status` | `ready`, `playing`, `paused`, `completed`, `stopped` | yes | Domain state; cross-field/state-transition constraints are documented below. |
-| `simulationTime` | string (date-time) | yes | Recorded simulation clock; apply equal-time outcomes in sequence order. |
-| `state` | object | yes | Recorded/reconstructed state, never a trigger for live operations. |
-| `decisionIds` | array of string (uuid4) | yes | Recorded decision references; use C10 historical evidence. |
-| `recordedKpis` | array of Indicator | yes | Recorded C11 Indicator values; do not recalculate using today's configuration. |
-| `interruption` | string or null | no | Read-failure reason; when present frame status must be paused. |
-
-### CannotReplay
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `runId` | string (uuid4) | yes | Simulation run identity; must match every recorded event/session. |
-| `reason` | string | yes | Explicit missing-data or CannotReplay reason. |
-| `availableRanges` | array of TimeRange | yes | Reconstructable recording intervals, not a promise that the entire run exists. |
+The shared envelope is defined by `backend/app/shared/contracts.py`; producer
+event payloads are referenced in events.yaml, never copied into the HTTP catalog.
+TimeRange/Indicator are reused from C11's Python module. C12's namespaced OpenAPI
+value schemas are exports of those same models for the aggregate catalog, not new
+metric formulas or producer event definitions.
 
 ## Recording, reproducibility and checkpoint semantics
 
@@ -198,22 +90,14 @@ makes that range unreconstructable; return CannotReplay and availableRanges.
 After a read interruption retain the last successful state/cursor; resume retries
 the next unread event exactly once.
 
-## Timeline semantics (proposed)
+## Timeline transport
 
-| Command/state | Behaviour |
-| --- | --- |
-| play from ready | playing |
-| pause from playing | paused, retain state/cursor |
-| resume from paused | playing, retry next unread event |
-| seek from ready/playing/paused | Reconstruct to target within selected range, then paused; only seek accepts targetCursor. |
-| stop from active session | stopped, retain final run/range/results metadata |
-| natural range end | completed, retain final metadata |
-| stale cursor/invalid transition | Conflict/Invalid, no cursor change |
-| source interruption | paused, original state/cursor and explicit interruption |
-
-Speed controls presentation only; the finite >0 and <=16 bound needs C01 agreement.
-Seek never runs today's planner. Final metadata DTO is still pending; no additional
-response fields are invented in this location-only change.
+The C01 play/pause/resume/seek/stop state table and HTTP error mapping now belong
+to `c12ControlReplay` in [openapi.yaml](openapi.yaml). Scheduler natural completion
+and read interruption still use the same recorded-state/cursor guarantees.
+Speed is presentation pacing only. Its >0 and <=16 bound needs C01 review;
+seek does not rerun today's planner. Stop/completion returns the existing frame;
+additional final-summary fields need a future agreed DTO.
 
 ## Required interfaces and isolation
 
@@ -256,6 +140,9 @@ finite pacing, UTC/ranges, seek and cursor boundaries, not persistent sequencing
 authorisation, recovery or broker ACLs. Run repository-root
 `npm run contracts:lint`, `npm run contracts:build`, then backend `uv run pytest`,
 `uv run ruff check .` and `uv run ruff format --check .`.
+Run `npm run contracts:test:c11-c12` for HTTP schema regression checks including
+recorded Indicator values and replay interruption states. CI runs these checks;
+they do not replace the runtime ownership, ordering and transition checks.
 OpenAPI checks do not validate events/internal Markdown. Follow-up runtime work is
 #17; simulation creation/full recording still needs its own agreed increment.
 Prepared with AI assistance for Jolin; no handover, producer agreement, deployment
