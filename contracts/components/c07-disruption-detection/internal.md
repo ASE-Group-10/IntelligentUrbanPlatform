@@ -40,8 +40,9 @@ C07 requires `findAffectedWork(changeScope)` and the synchronous, idempotent
 `requestReplan(context, planId, trigger, key)`. C05 owns their definitions and
 examples in [C05 internal interfaces](../c05-planning/internal.md).
 C07 uses the returned plan versions and final outcomes to update its disruption
-record. The proposed discovery retry on a version conflict is listed in the
-[C05 coordination points](../c05-planning/internal.md#open-coordination-points).
+record. Both calls carry the run `scope` and `runId` of the triggering event. The
+stale-plan retry and the other points agreed with C05 are in
+[Agreed with C07](../c05-planning/internal.md#agreed-with-c07-59-20-nov-2026).
 
 ### C06 getCitySnapshot(scope, freshnessPolicy) → Result\<CitySnapshot\>
 
@@ -58,9 +59,20 @@ slice.
 - [x] `findAffectedWork`: one C05 call per changed segment for now.
 - [x] `requestReplan` is synchronous; `PublicationPending` is dropped from `ReplanOutcome`.
 
+## Decisions (20 Nov 2026, with C05, #59)
+
+Details and wording are in the C05 section linked above.
+
+- [x] Run scope: `ChangeScope` and `ReplanRequest` carry `scope` and `runId`, copied from the triggering event (`runId` required in `simulation`, absent in `live`).
+- [x] Idempotency key: `planId:basedOnPlanVersion:disruptionId:disruptionVersion`.
+- [x] Any `Conflict` from `requestReplan` is a stale plan: C07 calls `findAffectedWork` once more and retries once with the new `planVersion` and key. No retry if the plan is no longer affected or the `planVersion` is unchanged. A retry never changes the disruption version.
+- [x] `ReplanOutcome` gains `reason`, required for `ReviewRequired`. `Infeasible` is no longer a failure. Remaining failures: `Invalid`, `NotFound`, `Conflict`, `Unavailable`.
+- [x] `PlanSaved` is returned once the revision and its `PlanReady` outbox entry are saved together; publication state stays with C05.
+- [x] `PlanningPort` returns a typed `Result` (`Ok` / `Failure`) from both calls.
+- [x] `findAffectedWork` answering `Unavailable` gives a detection result of `unknown` with `retryable` set, and the event is not marked as processed.
+
 ## Still open
 
-- [x] `findAffectedWork` and `requestReplan` definitions and examples are owned by C05 (#32).
 - [ ] Align the C03 producer envelope and payload for `ResourceAvailabilityChanged` with the C07 consumer (#31).
 - [ ] Review the C08 `OperationalDisruption` contract and failure kinds with C07 (#33). The C08 fixture passes C07 consumer validation.
 - [ ] Events C07 publishes for C01 alerts and C10/C11/C12, if any.
