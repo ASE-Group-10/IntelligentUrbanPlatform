@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Intelligent Urban Logistics Optimisation Platform backend (C02-C12)."
 requires-python = ">=3.12"
 dependencies = [
+    "pika==1.4.4",
+    "psycopg[binary]==3.3.8",
     "pydantic==2.14.3",
 ]
 
@@ -21,5 +23,6 @@ select = ["E", "F", "W", "I", "N", "UP", "B"]
 [dependency-groups]
 dev = [
     "pytest==9.2.0",
+    "pyyaml==6.0.3",
     "ruff==0.17.5",
 ]

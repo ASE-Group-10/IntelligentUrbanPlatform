@@ -9,3 +9,47 @@ uv sync            # install pinned dependencies from uv.lock
 uv run pytest      # tests (contract examples are read from ../contracts/components/*/examples)
 uv run ruff check . && uv run ruff format --check .
 ```
+
+## Postgres-backed tests
+
+Stores with a Postgres implementation (C06 so far) run the same tests against
+the in-memory test double and against a real database. Those tests are skipped
+unless `TEST_DATABASE_URL` points at a **dedicated test database**: its schemas
+are rebuilt from `database/migrations/` and its tables are emptied before each
+test. The test setup refuses any database whose name does not end in `_test`.
+
+Locally, with the Docker Compose database running (`docker compose up -d db`):
+
+```sh
+docker compose exec db createdb -U ulop ulop_test   # once
+cd backend
+TEST_DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop_test uv run pytest
+```
+
+CI starts its own Postgres service and sets `TEST_DATABASE_URL` (see
+`.github/workflows/backend.yml`).
+
+## RabbitMQ tests
+
+Publisher tests that need a real broker are skipped unless `TEST_RABBITMQ_URL`
+is set. They use a throwaway exchange, never the shared `ulop.events`:
+
+```sh
+docker compose up -d rabbitmq
+TEST_RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F uv run pytest
+```
+
+## C06 outbox publisher
+
+Sends queued `CityStateUpdated` events from the C06 outbox to the `ulop.events`
+topic exchange (routing key = event type), at least once. Run it as a worker
+next to the database and broker:
+
+```sh
+DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop \
+RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
+uv run python -m app.components.c06_city_monitoring.publisher
+```
+
+Stop it with Ctrl+C. Events stay in the outbox while the broker is down and go
+out once it is back.

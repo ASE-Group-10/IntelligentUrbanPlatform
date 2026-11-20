@@ -34,6 +34,12 @@ Some components have only events and internal interfaces (for example C07),
 and others may have only an HTTP API. A component folder can be added as soon
 as one of these files exists.
 
+C01 Web Interface has no folder: it provides no operations, events or
+internal interfaces of its own. It calls the HTTP APIs of the other
+components, so each screen follows the `openapi.yaml` of the component it
+uses. Sign-in, the bearer token and the acting provider are defined by C02
+(`c02-identity-access/`).
+
 ## OpenAPI rules
 
 - Use OpenAPI `3.1.0`.
@@ -62,7 +68,14 @@ npm run contracts:build
 cd dist && python3 -m http.server 8080
 ```
 
-Open <http://localhost:8080/openapi/> to view the generated documentation.
+Open <http://localhost:8080/> to view the documentation index, or open:
+
+- <http://localhost:8080/openapi/>
+- <http://localhost:8080/asyncapi/>
+- <http://localhost:8080/internal/>
+
+Install `mkdocs-material` with `python3 -m pip install mkdocs-material` before
+running `contracts:build` locally.
 
 ## Event rules
 
@@ -81,8 +94,8 @@ Event contracts belong in one `events.yaml` per component:
   with `action: receive` and refers to the producer's definition rather than
   copying it.
 
-Event files are currently source-only. The CI workflow does not yet validate or
-render them.
+Event files are validated and rendered as an aggregated AsyncAPI documentation
+site by the CI workflow.
 
 ## Internal interface rules
 

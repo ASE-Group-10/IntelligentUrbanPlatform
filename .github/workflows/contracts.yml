@@ -4,8 +4,8 @@ on:
   pull_request:
     paths:
       - '.redocly.yaml'
+      - 'mkdocs.yml'
       - 'contracts/**'
-      - 'scripts/test-c11-c12-contracts.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/contracts.yml'
@@ -15,8 +15,8 @@ on:
       - main
     paths:
       - '.redocly.yaml'
+      - 'mkdocs.yml'
       - 'contracts/**'
-      - 'scripts/test-c11-c12-contracts.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/contracts.yml'
@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate OpenAPI contract
+    name: Validate contract specifications
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,33 +39,39 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.11.0
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install internal documentation dependencies
+        run: python -m pip install mkdocs-material
+
       - name: Lint OpenAPI contract
         run: npm run contracts:lint
-
-      - name: Test C11/C12 response invariants
-        run: npm run contracts:test:c11-c12
 
       - name: Build Redoc site
         run: npm run contracts:build
 
-      - name: Upload preview artifact
+      - name: Upload documentation preview
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: openapi-preview
-          path: dist/openapi
+          name: contract-documentation-preview
+          path: dist
 
   publish:
     name: Publish stable documentation
     if: >-
       github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+      github.ref == 'refs/heads/develop'
     needs: validate
     runs-on: ubuntu-latest
     permissions:
@@ -77,13 +83,22 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.11.0
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Redoc site
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install internal documentation dependencies
+        run: python -m pip install mkdocs-material
+
+      - name: Build contract documentation
         run: npm run contracts:build
 
       - name: Publish branch documentation

@@ -1,0 +1,558 @@
+openapi: 3.1.0
+info:
+  title: C05 Planning and Replanning API
+  version: 0.1.0
+  description: >-
+    Proposed UC03 HTTP contracts for C01 review under #32. Paths and new fields await
+    consumer agreement. Runtime implementation follows separately.
+    Uses the shared /api/v1 resource paths and the C11/C12 camelCase HTTP error
+    envelope proposal. Internal Result failures and event payloads are unchanged.
+  contact:
+    name: Ye + Zecheng
+servers:
+  - url: /
+    description: Platform backend
+tags:
+  - name: C05 Planning and Replanning
+    description: Generate, inspect and confirm delivery plans.
+security:
+  - C05BearerAuth: []
+paths:
+  /api/v1/plans:
+    post:
+      operationId: c05GeneratePlan
+      tags:
+        - C05 Planning and Replanning
+      summary: Generate a plan proposal
+      description: >-
+        Read usable request, resource, city and policy inputs. Save a feasible proposal
+        with its C10 decision and exact evidence. Await operator confirmation.
+      responses:
+        '201':
+          description: Proposal saved awaiting confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C05Plan'
+              example:
+                planId: 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+                version: 2
+                status: awaiting_confirmation
+                requestIds:
+                  - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                runScope:
+                  scope: simulation
+                  runId: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
+                routes:
+                  - deliveryIds:
+                      - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    segmentKeys:
+                      - seg:4471023
+                    distanceMetres: 1200
+                    estimatedDurationSeconds: 360
+                resourceNeeds:
+                  - deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    resourceKind: van
+                    capacity:
+                      amount: 10
+                      unit: kg
+                decisionId: 33333333-3333-4333-8333-333333333333
+                inputVersions:
+                  cityState: 41
+                  delivery:7c6b5a49-3827-4165-a0f9-e8d7c6b5a493: 1
+                  resource:44444444-4444-4444-8444-444444444444: 1
+        '400':
+          $ref: '#/components/responses/C05Invalid'
+        '401':
+          $ref: '#/components/responses/C05Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C05Forbidden'
+        '409':
+          $ref: '#/components/responses/C05Conflict'
+        '422':
+          $ref: '#/components/responses/C05Infeasible'
+        '503':
+          $ref: '#/components/responses/C05Unavailable'
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >-
+            Caller-generated retry key. Same scoped request returns its first committed
+            response.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C05GeneratePlanRequest'
+            example:
+              requestIds:
+                - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+              priorities:
+                objective: minimum_delay
+              runScope:
+                scope: simulation
+                runId: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
+      security:
+        - C05BearerAuth: []
+  /api/v1/plans/{planId}:
+    get:
+      operationId: c05GetPlan
+      tags:
+        - C05 Planning and Replanning
+      summary: Read a saved plan
+      description: >-
+        Return the requested scoped plan. C08 allocation facts remain owned by C08.
+        Allocation-view fields await C08 agreement.
+      responses:
+        '200':
+          description: Saved plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C05Plan'
+              example:
+                planId: 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+                version: 3
+                status: confirmed
+                requestIds:
+                  - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                runScope:
+                  scope: simulation
+                  runId: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
+                routes:
+                  - deliveryIds:
+                      - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    segmentKeys:
+                      - seg:4471023
+                    distanceMetres: 1200
+                    estimatedDurationSeconds: 360
+                resourceNeeds:
+                  - deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    resourceKind: van
+                    capacity:
+                      amount: 10
+                      unit: kg
+                decisionId: 33333333-3333-4333-8333-333333333333
+                inputVersions:
+                  cityState: 41
+                  delivery:7c6b5a49-3827-4165-a0f9-e8d7c6b5a493: 1
+                  resource:44444444-4444-4444-8444-444444444444: 1
+        '400':
+          $ref: '#/components/responses/C05Invalid'
+        '401':
+          $ref: '#/components/responses/C05Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C05Forbidden'
+        '404':
+          $ref: '#/components/responses/C05NotFound'
+        '503':
+          $ref: '#/components/responses/C05Unavailable'
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          description: C05 plan identifier.
+          schema:
+            type: string
+            format: uuid
+        - name: scope
+          in: query
+          required: true
+          description: City/run state to read.
+          schema:
+            type: string
+            enum:
+              - live
+              - simulation
+        - name: runId
+          in: query
+          description: Required for simulation and forbidden for live.
+          schema:
+            type: string
+            format: uuid
+      security:
+        - C05BearerAuth: []
+  /api/v1/plans/{planId}/confirmation:
+    post:
+      operationId: c05ConfirmPlan
+      tags:
+        - C05 Planning and Replanning
+      summary: Confirm a plan proposal
+      description: >-
+        Check expectedVersion and atomically confirm the plan, link deliveries and
+        enqueue PlanReady. Response confirms persistence. Allocation is processed by
+        C08.
+      responses:
+        '200':
+          description: Confirmed state committed and PlanReady queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C05Plan'
+              example:
+                planId: 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+                version: 3
+                status: confirmed
+                requestIds:
+                  - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                runScope:
+                  scope: simulation
+                  runId: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
+                routes:
+                  - deliveryIds:
+                      - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    segmentKeys:
+                      - seg:4471023
+                    distanceMetres: 1200
+                    estimatedDurationSeconds: 360
+                resourceNeeds:
+                  - deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                    resourceKind: van
+                    capacity:
+                      amount: 10
+                      unit: kg
+                decisionId: 33333333-3333-4333-8333-333333333333
+                inputVersions:
+                  cityState: 41
+                  delivery:7c6b5a49-3827-4165-a0f9-e8d7c6b5a493: 1
+                  resource:44444444-4444-4444-8444-444444444444: 1
+        '400':
+          $ref: '#/components/responses/C05Invalid'
+        '401':
+          $ref: '#/components/responses/C05Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C05Forbidden'
+        '404':
+          $ref: '#/components/responses/C05NotFound'
+        '409':
+          $ref: '#/components/responses/C05Conflict'
+        '503':
+          $ref: '#/components/responses/C05Unavailable'
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          description: C05 plan identifier.
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >-
+            Caller-generated retry key. Same scoped request returns its first committed
+            response.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C05ConfirmPlanRequest'
+            example:
+              expectedVersion: 2
+              runScope:
+                scope: simulation
+                runId: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
+      security:
+        - C05BearerAuth: []
+components:
+  securitySchemes:
+    C05BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: C02-issued token
+      description: C02 authenticates identity and authorises actions and scope.
+  responses:
+    C05Invalid:
+      description: Invalid input or scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Invalid
+              message: The requested run scope is invalid.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Unauthenticated:
+      description: Bearer credentials missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Unauthenticated
+              message: Bearer credentials are missing or invalid.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Forbidden:
+      description: Operation forbidden in this scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Forbidden
+              message: This operation is not permitted in the requested scope.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05NotFound:
+      description: Plan missing in the authorised scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: NotFound
+              message: The plan was not found in the authorised scope.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Conflict:
+      description: Stale version or idempotency key reused with different input.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Conflict
+              message: The expected plan version is stale or the idempotency key was reused with different input.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Infeasible:
+      description: No feasible plan satisfies the hard constraints.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Infeasible
+              message: No feasible plan satisfies the hard constraints.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+    C05Unavailable:
+      description: A required input or durable store is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C05ErrorResponse'
+          example:
+            error:
+              code: Unavailable
+              message: A required input or durable store is unavailable.
+              correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+  schemas:
+    C05Scope:
+      description: >-
+        Simulation requires runId. Live forbids runId. Storage, evidence, events and
+        receipts share this scope.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - scope
+          properties:
+            scope:
+              type: string
+              const: live
+        - type: object
+          additionalProperties: false
+          required:
+            - scope
+            - runId
+          properties:
+            scope:
+              type: string
+              const: simulation
+            runId:
+              type: string
+              format: uuid
+    C05GeneratePlanRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - requestIds
+        - priorities
+        - runScope
+      properties:
+        requestIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        priorities:
+          type: object
+          additionalProperties: false
+          required:
+            - objective
+          properties:
+            objective:
+              type: string
+              enum:
+                - minimum_delay
+                - minimum_distance
+        runScope:
+          $ref: '#/components/schemas/C05Scope'
+    C05ResourceNeed:
+      type: object
+      additionalProperties: false
+      required:
+        - deliveryId
+        - resourceKind
+        - capacity
+      properties:
+        deliveryId:
+          type: string
+          format: uuid
+        resourceKind:
+          type: string
+          enum: [van, cargo_bike, depot, warehouse, locker]
+        capacity:
+          type: object
+          additionalProperties: false
+          required: [amount, unit]
+          properties:
+            amount:
+              type: number
+              exclusiveMinimum: 0
+            unit:
+              type: string
+              enum: [kg, parcels, slots]
+    C05Route:
+      type: object
+      additionalProperties: false
+      required:
+        - deliveryIds
+        - segmentKeys
+        - distanceMetres
+        - estimatedDurationSeconds
+      properties:
+        deliveryIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        segmentKeys:
+          type: array
+          items:
+            type: string
+            pattern: ^seg:[1-9][0-9]*$
+        distanceMetres:
+          type: number
+          minimum: 0
+        estimatedDurationSeconds:
+          type: number
+          minimum: 0
+    C05Plan:
+      type: object
+      additionalProperties: false
+      required:
+        - planId
+        - version
+        - status
+        - requestIds
+        - runScope
+        - routes
+        - resourceNeeds
+        - decisionId
+        - inputVersions
+      properties:
+        planId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+            - awaiting_confirmation
+            - confirmed
+        requestIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        runScope:
+          $ref: '#/components/schemas/C05Scope'
+        routes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/C05Route'
+        resourceNeeds:
+          type: array
+          minItems: 1
+          description: Resource requirements for this plan version. C08 owns allocation.
+          items:
+            $ref: '#/components/schemas/C05ResourceNeed'
+        decisionId:
+          type: string
+          format: uuid
+        inputVersions:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: integer
+            minimum: 1
+    C05ConfirmPlanRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedVersion
+        - runScope
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+        runScope:
+          $ref: '#/components/schemas/C05Scope'
+    C05ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      description: >-
+        HTTP transport proposal aligned with C11/C12. Internal Result<T> remains
+        unchanged. Correlation IDs support tracing; error messages must not expose
+        plans outside the authorised scope.
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - correlationId
+          properties:
+            code:
+              type: string
+              enum:
+                - Unauthenticated
+                - Invalid
+                - Forbidden
+                - NotFound
+                - Conflict
+                - Unavailable
+                - Infeasible
+            message:
+              type: string
+              minLength: 1
+            correlationId:
+              type: string
+              format: uuid
