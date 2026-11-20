@@ -1,8 +1,8 @@
 """Version 1 C08 event boundaries, built on the backend's shared envelope."""
 
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import UUID4
+from pydantic import UUID4, model_validator
 
 from app.shared.contracts import ContractModel, EventMetadata, Version
 
@@ -39,6 +39,18 @@ class PlanReadyEvent(EventMetadata):
     producer: Literal["C05"]
     schema_version: Literal[1]
     payload: PlanReadyPayload
+
+    @model_validator(mode="after")
+    def _check_plan_metadata(self) -> Self:
+        plan_id = self.payload.plan_id
+        if self.affected.plan_ids != [plan_id]:
+            raise ValueError("affected.planIds must contain exactly payload.planId")
+        versions = self.entity_versions or {}
+        if versions.get(str(plan_id)) != self.payload.plan_version:
+            raise ValueError(
+                "entityVersions must match payload.planVersion for payload.planId"
+            )
+        return self
 
 
 class OperationalDisruptionEvent(EventMetadata):
