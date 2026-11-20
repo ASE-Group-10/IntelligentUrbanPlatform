@@ -27,6 +27,7 @@ from app.components.c06_city_monitoring.store import (
     StoreUnavailableError,
 )
 from app.shared.contracts import EventEnvelope
+from app.shared.logging import configure_logging, trace
 from app.shared.result import Failure, Ok, Result
 
 DEFAULT_EXCHANGE = "ulop.events"
@@ -84,6 +85,7 @@ def drain_outbox(
                     break
                 batch.mark_published(envelope.event_id)
                 published += 1
+                log.info("published %s", envelope.event_type, extra=trace(envelope))
     except StoreUnavailableError as error:
         return Failure("Unavailable", str(error))
     return Ok(DrainReport(published=published, stopped_by=stopped_by))
@@ -176,10 +178,7 @@ def main() -> None:  # pragma: no cover - process entry point
         PostgresCityStateStore,
     )
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
-    logging.getLogger("pika").setLevel(logging.WARNING)
+    configure_logging("C06")
     store = PostgresCityStateStore(os.environ["DATABASE_URL"])
     publisher = RabbitMQPublisher(
         os.environ["RABBITMQ_URL"],

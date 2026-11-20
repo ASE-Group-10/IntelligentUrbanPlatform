@@ -53,3 +53,22 @@ uv run python -m app.components.c06_city_monitoring.publisher
 
 Stop it with Ctrl+C. Events stay in the outbox while the broker is down and go
 out once it is back.
+
+## C07 worker
+
+Consumes `CityStateUpdated` from `ulop.events` (queue `c07.city-state-updated`)
+and runs `evaluateChange`. Until C05 exists it uses the labelled stub in
+`planning_stub.py`, which knows one demo plan on `seg:4471023`.
+
+```sh
+RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
+uv run python -m app.components.c07_disruption_detection.worker
+```
+
+Workers log one JSON object per line with `component` and, for events,
+`correlationId`, `eventId`, `eventType`, `scope` and `runId`. Following one
+`correlationId` across the C06 publisher and the C07 worker shows a closure
+going through the whole chain.
+
+Other components can consume events the same way with
+`app.shared.events.EventConsumer` (see its docstring).
