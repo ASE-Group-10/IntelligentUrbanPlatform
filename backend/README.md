@@ -72,7 +72,9 @@ Workers log one JSON object per line with `component` and, for events,
 going through the whole chain.
 
 Other components can consume events the same way with
-`app.shared.events.EventConsumer` (see its docstring).
+`app.shared.events.EventConsumer` (see its docstring). Add your queue and its
+event types to `app/shared/topology.py` too: publishers declare those queues at
+startup, so your queue keeps events published before your worker starts.
 
 ## Demo: road closure through C06 and C07
 
