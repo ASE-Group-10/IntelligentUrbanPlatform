@@ -8,6 +8,8 @@ from typing import Any
 import psycopg
 import pytest
 
+from tests.database_guard import is_dedicated_test_database
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPONENTS_DIR = REPO_ROOT / "contracts" / "components"
 MIGRATIONS_DIR = REPO_ROOT / "database" / "migrations"
@@ -16,8 +18,8 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 """Dedicated test database, e.g. postgres://ulop:ulop@localhost:5432/ulop_test.
 
 Postgres-backed tests are skipped when it is not set. Its schema is rebuilt from
-``database/migrations`` and its tables are emptied before each test, so it must
-never point at a database with real data.
+``database/migrations`` and its tables are emptied before each test, so the
+database name must end in ``_test``; anything else is refused before any change.
 """
 
 C06_TABLES = (
@@ -63,8 +65,11 @@ def test_database_url() -> str:
         pytest.skip("TEST_DATABASE_URL not set; skipping Postgres-backed tests")
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
         name = conn.execute("select current_database()").fetchone()[0]
-        if "test" not in name:
-            raise RuntimeError(f"refusing to reset non-test database {name!r}")
+        if not is_dedicated_test_database(name):
+            raise RuntimeError(
+                f"refusing to reset {name!r}: TEST_DATABASE_URL must name a "
+                "dedicated test database ending in '_test', such as ulop_test"
+            )
         conn.execute("drop schema if exists c06_city_monitoring cascade")
         conn.execute("drop schema if exists c07_disruption_detection cascade")
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):

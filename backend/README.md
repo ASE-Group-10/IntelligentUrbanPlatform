@@ -16,7 +16,7 @@ Stores with a Postgres implementation (C06 so far) run the same tests against
 the in-memory test double and against a real database. Those tests are skipped
 unless `TEST_DATABASE_URL` points at a **dedicated test database**: its schemas
 are rebuilt from `database/migrations/` and its tables are emptied before each
-test. The test setup refuses any database whose name does not contain `test`.
+test. The test setup refuses any database whose name does not end in `_test`.
 
 Locally, with the Docker Compose database running (`docker compose up -d db`):
 
