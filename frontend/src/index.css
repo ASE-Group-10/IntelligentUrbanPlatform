@@ -1,0 +1,195 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * ULOP design tokens. Neutrals carry a slight teal bias toward the primary.
+ * Status tokens (open/slow/closed, good/degraded/unknown) are shared by the
+ * map layers and the UI so a closure looks the same everywhere.
+ */
+@theme inline {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-status-open: var(--status-open);
+  --color-status-slow: var(--status-slow);
+  --color-status-closed: var(--status-closed);
+  --color-quality-good: var(--quality-good);
+  --color-quality-degraded: var(--quality-degraded);
+  --color-quality-unknown: var(--quality-unknown);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.004 170);
+  --foreground: oklch(0.2 0.015 190);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.015 190);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.015 190);
+  --primary: oklch(0.47 0.09 175);
+  --primary-foreground: oklch(0.985 0.005 170);
+  --secondary: oklch(0.955 0.008 170);
+  --secondary-foreground: oklch(0.25 0.02 190);
+  --muted: oklch(0.955 0.008 170);
+  --muted-foreground: oklch(0.5 0.015 190);
+  --accent: oklch(0.94 0.02 170);
+  --accent-foreground: oklch(0.3 0.05 180);
+  --destructive: oklch(0.577 0.215 27);
+  --border: oklch(0.91 0.01 170);
+  --input: oklch(0.91 0.01 170);
+  --ring: oklch(0.6 0.08 175);
+
+  --chart-1: oklch(0.55 0.1 175);
+  --chart-2: oklch(0.62 0.14 250);
+  --chart-3: oklch(0.72 0.15 75);
+  --chart-4: oklch(0.6 0.16 330);
+  --chart-5: oklch(0.65 0.12 140);
+
+  --sidebar: oklch(0.97 0.006 170);
+  --sidebar-foreground: oklch(0.25 0.02 190);
+  --sidebar-primary: oklch(0.47 0.09 175);
+  --sidebar-primary-foreground: oklch(0.985 0.005 170);
+  --sidebar-accent: oklch(0.93 0.02 170);
+  --sidebar-accent-foreground: oklch(0.25 0.04 180);
+  --sidebar-border: oklch(0.91 0.01 170);
+  --sidebar-ring: oklch(0.6 0.08 175);
+
+  --status-open: oklch(0.6 0.13 155);
+  --status-slow: oklch(0.72 0.15 70);
+  --status-closed: oklch(0.58 0.21 27);
+  --quality-good: oklch(0.6 0.13 155);
+  --quality-degraded: oklch(0.72 0.15 70);
+  --quality-unknown: oklch(0.62 0.01 190);
+}
+
+.dark {
+  --background: oklch(0.17 0.012 200);
+  --foreground: oklch(0.95 0.006 170);
+  --card: oklch(0.21 0.014 200);
+  --card-foreground: oklch(0.95 0.006 170);
+  --popover: oklch(0.21 0.014 200);
+  --popover-foreground: oklch(0.95 0.006 170);
+  --primary: oklch(0.74 0.11 175);
+  --primary-foreground: oklch(0.2 0.03 190);
+  --secondary: oklch(0.26 0.015 200);
+  --secondary-foreground: oklch(0.95 0.006 170);
+  --muted: oklch(0.26 0.015 200);
+  --muted-foreground: oklch(0.7 0.015 190);
+  --accent: oklch(0.3 0.03 185);
+  --accent-foreground: oklch(0.95 0.006 170);
+  --destructive: oklch(0.68 0.19 24);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.6 0.08 175);
+
+  --chart-1: oklch(0.74 0.11 175);
+  --chart-2: oklch(0.7 0.13 250);
+  --chart-3: oklch(0.8 0.14 80);
+  --chart-4: oklch(0.7 0.15 330);
+  --chart-5: oklch(0.74 0.12 140);
+
+  --sidebar: oklch(0.19 0.013 200);
+  --sidebar-foreground: oklch(0.92 0.006 170);
+  --sidebar-primary: oklch(0.74 0.11 175);
+  --sidebar-primary-foreground: oklch(0.2 0.03 190);
+  --sidebar-accent: oklch(0.27 0.025 190);
+  --sidebar-accent-foreground: oklch(0.95 0.006 170);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.6 0.08 175);
+
+  --status-open: oklch(0.72 0.14 155);
+  --status-slow: oklch(0.8 0.15 75);
+  --status-closed: oklch(0.68 0.2 27);
+  --quality-good: oklch(0.72 0.14 155);
+  --quality-degraded: oklch(0.8 0.15 75);
+  --quality-unknown: oklch(0.68 0.012 190);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  code,
+  kbd {
+    @apply font-mono;
+  }
+}
+
+/* MapLibre's built-in controls, restyled to the theme. */
+.maplibregl-ctrl.maplibregl-ctrl-group {
+  @apply overflow-hidden rounded-lg border bg-card shadow-sm;
+}
+.maplibregl-ctrl-group button {
+  @apply bg-card;
+}
+.maplibregl-ctrl-group button + button {
+  @apply border-t border-border;
+}
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  @apply dark:invert;
+}
+.maplibregl-ctrl.maplibregl-ctrl-attrib,
+.maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact {
+  @apply bg-card/80 text-[11px] text-muted-foreground backdrop-blur;
+}
+.maplibregl-ctrl-attrib a {
+  @apply text-muted-foreground underline-offset-2 hover:underline;
+}
+.maplibregl-ctrl-attrib-button {
+  @apply dark:invert;
+}
+.maplibregl-ctrl.maplibregl-ctrl-scale {
+  @apply border-muted-foreground bg-card/80 text-[11px] text-muted-foreground;
+}

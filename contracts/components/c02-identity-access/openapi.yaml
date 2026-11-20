@@ -1,0 +1,181 @@
+openapi: 3.1.0
+info:
+  title: C02 Identity and Access API
+  version: 1.0.0
+  summary: Who the caller is and what they may do, for C01 and every protected API.
+  description: |
+    Synchronous HTTP contract for C02 Identity and Access.
+
+    C01 signs users in with Supabase Auth and sends the Supabase access token
+    as `Authorization: Bearer <token>` on every protected request. C02 verifies
+    the token and builds the caller's identity. Roles and provider memberships
+    come from C02's own records, never from the token or the request.
+
+    Provider IDs in other components' requests are filters, not permission:
+    every protected operation checks them against the caller's memberships.
+    When a caller belongs to more than one provider, the provider they act for
+    is named in the `X-Acting-Provider` header (see `internal.md`).
+
+    Error bodies use the same format as C03 so one C01 error handler works for
+    every API: `401` means not signed in (missing, invalid or expired token),
+    `403` means signed in but not allowed.
+  contact:
+    name: C02 Identity and Access
+servers:
+  - url: /
+    description: Relative URL for the deployed platform
+tags:
+  - name: C02 Identity and Access
+    description: C02 current identity, roles and provider memberships
+paths:
+  /api/v1/identity/me:
+    get:
+      operationId: getCurrentIdentity
+      summary: Get the signed-in caller's identity
+      description: |
+        Returns the verified caller and every provider they belong to, with
+        their roles there. C01 calls it after sign-in to decide which screens
+        and providers to offer. It reveals nothing about other users.
+      tags: [C02 Identity and Access]
+      security:
+        - c02BearerAuth: []
+      responses:
+        '200':
+          description: The caller's identity and memberships.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C02Identity'
+              example:
+                principalId: 20000000-0000-4000-8000-000000000001
+                principalType: user
+                displayName: Dublin depot manager
+                memberships:
+                  - providerId: 10000000-0000-4000-8000-000000000001
+                    providerName: Provider A (synthetic)
+                    roles: [manager, operator]
+                  - providerId: 10000000-0000-4000-8000-000000000002
+                    providerName: Provider B (synthetic)
+                    roles: [operator]
+                platformRoles: []
+        '401':
+          $ref: '#/components/responses/C02Unauthenticated'
+        '503':
+          $ref: '#/components/responses/C02Unavailable'
+components:
+  securitySchemes:
+    c02BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Supabase Auth access token for the signed-in user. Other components'
+        `*BearerAuth` schemes refer to this same token.
+  parameters:
+    C02ActingProvider:
+      name: X-Acting-Provider
+      in: header
+      required: false
+      description: |
+        Provider the caller acts for. Required when the caller has more than
+        one membership; optional when they have exactly one. Must be one of
+        the caller's memberships, otherwise the request is denied with `403`.
+      schema:
+        type: string
+        format: uuid
+  responses:
+    C02Unauthenticated:
+      description: Token missing, invalid or expired. Sign in again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C02ErrorResponse'
+          example:
+            error:
+              code: UNAUTHENTICATED
+              message: Sign in to continue.
+              correlation_id: 6f1d2c3b-4a5e-4f60-8b7a-9c0d1e2f3a4b
+    C02Unavailable:
+      description: The identity provider or C02 records are unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C02ErrorResponse'
+          example:
+            error:
+              code: IDENTITY_UNAVAILABLE
+              message: Identity service is unavailable. Try again shortly.
+              correlation_id: 6f1d2c3b-4a5e-4f60-8b7a-9c0d1e2f3a4b
+  schemas:
+    C02Role:
+      type: string
+      description: |
+        Role within one provider. `manager` changes resources (C03);
+        `operator` confirms plans and handles disruptions; `driver` accepts
+        assignments (UC04); `analyst` reads KPIs (C11); `curator` publishes
+        knowledge (C09).
+      enum: [manager, operator, driver, analyst, curator]
+    C02PlatformRole:
+      type: string
+      description: Role across all providers. `admin` manages platform settings.
+      enum: [admin]
+    C02Membership:
+      type: object
+      additionalProperties: false
+      required: [providerId, providerName, roles]
+      properties:
+        providerId:
+          type: string
+          format: uuid
+        providerName:
+          type: string
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/C02Role'
+    C02Identity:
+      type: object
+      additionalProperties: false
+      required: [principalId, principalType, displayName, memberships, platformRoles]
+      properties:
+        principalId:
+          type: string
+          format: uuid
+          description: Stable user ID (the Supabase Auth user ID).
+        principalType:
+          type: string
+          enum: [user]
+          description: Always `user` over HTTP; services do not call this endpoint.
+        displayName:
+          type: string
+        memberships:
+          type: array
+          description: Providers the caller belongs to. Empty means no access yet.
+          items:
+            $ref: '#/components/schemas/C02Membership'
+        platformRoles:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/C02PlatformRole'
+    C02ErrorResponse:
+      type: object
+      description: Same shape as C03's `ErrorResponse`.
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          additionalProperties: true
+          properties:
+            code:
+              type: string
+              enum: [UNAUTHENTICATED, FORBIDDEN, IDENTITY_UNAVAILABLE]
+            message:
+              type: string
+            correlation_id:
+              type: string
+              format: uuid

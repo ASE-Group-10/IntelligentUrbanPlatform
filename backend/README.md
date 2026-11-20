@@ -9,8 +9,10 @@ Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), and an existing migrate
 From the repository root:
 
 ```sh
-uv sync --project backend --locked
-uv run --directory backend uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+cd backend
+uv sync            # install pinned dependencies from uv.lock
+uv run pytest      # tests (contract examples are read from ../contracts/components/*/examples)
+uv run ruff check . && uv run ruff format --check .
 ```
 
 Open <http://127.0.0.1:8000> for the test desk, <http://127.0.0.1:8000/docs> for

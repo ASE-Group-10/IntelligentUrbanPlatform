@@ -143,6 +143,52 @@ The first implementation issue must add and verify:
 Add executable setup commands here when they have been verified from a clean clone.
 Keep local secrets out of Git; privileged database keys never belong in the browser.
 
+### Local database
+
+Start Postgres and apply migrations with Docker Compose and dbmate:
+
+```sh
+cp .env.example .env
+docker compose up -d db
+docker compose run --rm dbmate up
+```
+
+See [database/README.md](database/README.md) for migration conventions.
+
+### Frontend
+
+```sh
+cd frontend && npm ci && npm run dev
+```
+
+See [frontend/README.md](frontend/README.md) for checks, structure and conventions.
+
+### API contract documentation
+
+Component-owned OpenAPI source documents live under
+`contracts/components/<component>/`. CI discovers and aggregates them into a
+temporary file before linting and building the Redoc site. Run the documentation
+locally with:
+
+```sh
+npm ci
+npm run contracts:lint
+npm run contracts:build
+cd dist && python3 -m http.server 8080
+```
+
+Open <http://localhost:8080/openapi/> in a browser. Pushes to `develop` and
+`main` publish documentation for the integration and stable branches at:
+
+```text
+https://ase-group-10.github.io/IntelligentUrbanPlatform/develop/openapi/
+https://ase-group-10.github.io/IntelligentUrbanPlatform/main/openapi/
+```
+
+Pull requests and feature branches only lint/build the documentation and upload
+an artifact; they do not publish public pages. Enable GitHub Pages with the
+`gh-pages` branch as its source before using the published URLs.
+
 ## Suggested repository structure
 
 Create this structure as implementation begins; it is not an inventory of existing files.
