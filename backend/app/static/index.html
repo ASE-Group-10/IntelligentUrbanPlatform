@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Urban Logistics · Resource Test</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><span class="eyebrow">INTELLIGENT URBAN PLATFORM / UC01</span>
+        <h1>Resource test desk</h1>
+        <p>Register a resource, edit its profile, and test agent activation.</p>
+      </div>
+      <a href="/docs" target="_blank" rel="noreferrer">API documentation ↗</a>
+    </header>
+    <aside class="notice">Development view · Supabase authentication · Simulated locations and agents.
+      Changes are saved in your configured database. Use synthetic data only.</aside>
+    <section class="toolbar" aria-label="Development controls">
+      <label>Supabase access token<input id="identity" type="password" autocomplete="off" spellcheck="false"></label>
+      <label>Acting provider UUID (if required)<input id="provider" autocomplete="off" spellcheck="false"></label>
+      <label>Location validation<select id="mapping-result">
+        <option value="matched">Matched</option><option value="unmatched">Unmatched</option>
+        <option value="unconfirmed">Service unavailable</option>
+      </select></label>
+      <label>Agent activation<select id="agent-result">
+        <option value="active">Succeeds</option><option value="failed">Fails</option>
+        <option value="pending">Stays pending</option>
+      </select></label>
+      <span id="connection" role="status">Connecting…</span>
+    </section>
+    <div id="message" role="status" aria-live="polite" hidden></div>
+    <div class="workspace">
+      <section class="panel">
+        <div class="section-title"><h2 id="form-title">Register resource</h2>
+          <button id="new-resource" class="quiet" type="button">New resource</button></div>
+        <p id="editing" class="muted">New resources start with a validated profile.</p>
+        <form id="resource-form">
+          <div class="fields">
+            <label>Resource type<select id="resource-type">
+              <option value="vehicle">Vehicle</option><option value="depot">Depot</option>
+              <option value="warehouse">Warehouse</option><option value="locker">Locker</option>
+            </select></label>
+            <label>Identifier<input id="identifier" required maxlength="100"></label>
+            <label class="full">Name<input id="name" required maxlength="200"></label>
+            <label class="full">Synthetic location<select id="location" required></select></label>
+            <label>Profile status<select id="profile-status"><option value="active">Active</option>
+              <option value="inactive">Inactive</option></select></label>
+            <label>Observed availability<select id="availability">
+              <option value="available">Available</option><option value="unavailable">Unavailable</option>
+              <option value="unknown">Unknown</option></select></label>
+            <label class="full">Type-specific details (JSON)
+              <textarea id="details" rows="15" required spellcheck="false"></textarea></label>
+          </div>
+          <p class="hint">Details must match the resource type. Operating hours, restrictions,
+            and timezone belong inside this object. Empty hours mean unspecified.</p>
+          <div class="actions"><button id="save" type="submit">Register resource</button>
+            <button id="activate" type="button" class="secondary" disabled>Activate agent</button></div>
+        </form>
+      </section>
+      <section class="panel">
+        <div class="section-title"><h2>Saved resources</h2>
+          <button id="refresh" class="quiet">Refresh</button></div>
+        <label class="filter">Filter by type<select id="type-filter">
+          <option value="">All types</option><option value="vehicle">Vehicles</option>
+          <option value="depot">Depots</option><option value="warehouse">Warehouses</option>
+          <option value="locker">Lockers</option></select></label>
+        <div id="resource-list" aria-live="polite"></div>
+        <button id="load-more" class="quiet" hidden>Load more</button>
+        <details class="response" open><summary>Last API response</summary>
+          <p id="request-label" class="muted">No request yet.</p>
+          <pre id="response-body">Select a saved resource or register a new one.</pre>
+          <button id="replay" type="button" class="quiet" disabled>Repeat last mutation (same key)</button>
+        </details>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

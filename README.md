@@ -5,6 +5,21 @@ CS7CS3 Advanced Software Engineering — Group 10.
 A platform for coordinating urban deliveries using resource agents, city conditions,
 planning, policy knowledge, and explainable decisions.
 
+## UC01 local implementation
+
+A FastAPI resource module and a small browser test desk are now available. See
+[backend setup and API documentation](backend/README.md) for startup, mock scenarios,
+database setup, and checks. Start from the repository root with:
+
+```sh
+uv sync --project backend --locked
+uv run --directory backend uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Open <http://127.0.0.1:8000>. This increment uses real configured database persistence
+and explicit mocks for authentication, mapping, and resource-agent activation.
+The broader application structure below remains a plan.
+
 This README defines the thin-slice scope and collaboration baseline. Implementation,
 deployment, and automated checks must be verified in the application repository;
 these documents do not indicate that those facilities already exist.
@@ -150,25 +165,23 @@ See [frontend/README.md](frontend/README.md) for checks, structure and conventio
 
 ### API contract documentation
 
-Component-owned OpenAPI source documents live under
-`contracts/components/<component>/`. CI discovers and aggregates them into a
-temporary file before linting and building the Redoc site. Run the documentation
-locally with:
+Component-owned contract documents live under
+`contracts/components/<component>/`. CI discovers OpenAPI, AsyncAPI, and
+internal Markdown contracts, validates them, and builds them into one
+documentation site. Run the documentation locally with:
 
 ```sh
 npm ci
+python3 -m pip install mkdocs-material
 npm run contracts:lint
 npm run contracts:build
 cd dist && python3 -m http.server 8080
 ```
 
-Open <http://localhost:8080/openapi/> in a browser. Pushes to `develop` and
-`main` publish documentation for the integration and stable branches at:
+Open <http://localhost:8080/> in a browser. Successful pushes to `develop`
+publish the documentation at:
 
-```text
-https://ase-group-10.github.io/IntelligentUrbanPlatform/develop/openapi/
-https://ase-group-10.github.io/IntelligentUrbanPlatform/main/openapi/
-```
+<https://ase-group-10.github.io/IntelligentUrbanPlatform/>
 
 Pull requests and feature branches only lint/build the documentation and upload
 an artifact; they do not publish public pages. Enable GitHub Pages with the

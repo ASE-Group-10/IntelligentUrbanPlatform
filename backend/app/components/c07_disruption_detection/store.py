@@ -34,6 +34,10 @@ class DisruptionTransaction(Protocol):
         """Insert the disruption, or replace the one with the same ``disruption_id``."""
         ...
 
+    def disruption_for_event(self, event_id: UUID) -> Disruption | None:
+        """Return the disruption ``event_id`` triggered in this scope, if any."""
+        ...
+
 
 class DisruptionStore(Protocol):
     """Persistence for disruptions and processed events, partitioned by scope."""
@@ -74,6 +78,12 @@ class InMemoryDisruptionTransaction:
 
     def save_disruption(self, disruption: Disruption) -> None:
         self._state.disruptions[disruption.disruption_id] = disruption
+
+    def disruption_for_event(self, event_id: UUID) -> Disruption | None:
+        for disruption in self._state.disruptions.values():
+            if event_id in disruption.trigger_event_ids:
+                return deepcopy(disruption)
+        return None
 
 
 class InMemoryDisruptionStore:

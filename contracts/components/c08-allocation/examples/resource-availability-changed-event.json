@@ -1,0 +1,20 @@
+{
+  "eventId": "1c5034c6-f173-45d2-8eaf-4463ef2b4f22",
+  "eventType": "ResourceAvailabilityChanged",
+  "schemaVersion": 1,
+  "producer": "C03",
+  "emittedAt": "2026-11-20T08:14:55Z",
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+  "resourceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+  "resourceVersion": 4,
+  "payload": {
+    "resource": {
+      "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "resource_type": "vehicle",
+      "external_identifier": "VAN-001",
+      "observed_availability": "unavailable"
+    },
+    "integration_mode": "mock",
+    "scope": "development"
+  }
+}

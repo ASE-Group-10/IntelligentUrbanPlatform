@@ -56,6 +56,9 @@ class DetectionOutcome(ContractModel):
     disruption_version: Version | None = None
     replan_requests: list[ReplanRequest] = Field(default_factory=list)
     reason: str | None = None
+    retry_later: bool = False
+    """The event was not processed because a dependency (C05) was down;
+    delivering it again later can succeed."""
 
 
 def classify_impact(
@@ -85,6 +88,8 @@ class _Detected:
 
     disruption: Disruption
     snapshot_version: Version
+    resumed: bool = False
+    """True for a redelivered event whose replan requests C05 did not all take."""
 
 
 class DisruptionDetection:
@@ -114,7 +119,10 @@ class DisruptionDetection:
             ``reason`` says how many are still pending if C05 refused some;
             ``Ok(kind="no_disruption")`` if no closed segment is used by a plan
             (AF2; the event is marked processed);
-            ``Ok(kind="duplicate")`` if the event was already processed;
+            ``Ok(kind="duplicate")`` if the event was already processed; if
+            C05 refused some of its replan requests earlier, those are sent
+            again (C05 deduplicates on the request key) and ``replan_requests``
+            holds the ones it took this time;
             ``Ok(kind="unknown")`` if reliable detection is not possible: the
             event type is not handled yet, a closed segment is not ``good``
             quality (AF1), C05 is unavailable, or the affected segments have no
@@ -137,7 +145,8 @@ class DisruptionDetection:
     ) -> Result[DetectionOutcome] | _Detected:
         """Steps 1-7: receive, validate, compare, classify and record."""
         if tx.is_processed(envelope.event_id):
-            return Ok(_outcome(envelope, "duplicate"))
+            unfinished = _unfinished(tx, envelope)
+            return unfinished or Ok(_outcome(envelope, "duplicate"))
 
         payload = _read_payload(envelope)
         if not isinstance(payload, CityStateUpdated):
@@ -155,7 +164,11 @@ class DisruptionDetection:
 
         found = self._find_affected_work(closed)
         if found is None:
-            return Ok(_outcome(envelope, "unknown", reason="C05 is unavailable"))
+            return Ok(
+                _outcome(
+                    envelope, "unknown", reason="C05 is unavailable", retry_later=True
+                )
+            )
 
         impacts = _impacts(found)
         if not impacts:
@@ -238,12 +251,14 @@ class DisruptionDetection:
         """Step 9: one replan request per affected plan, after the commit.
 
         A plan whose request C05 cannot take stays ``replan_requested=False``;
-        the others continue. No retry here.
+        the others continue. The outcome then has ``retry_later`` set, and a
+        redelivery of the event sends the missing requests again.
         """
         disruption = detected.disruption
+        to_send = [p for p in disruption.affected_plans if not p.replan_requested]
         sent: list[ReplanRequest] = []
         statuses: dict[UUID, ReplanOutcomeStatus] = {}
-        for plan in disruption.affected_plans:
+        for plan in to_send:
             request = ReplanRequest.build(
                 plan.plan_id,
                 ReplanTrigger(
@@ -267,9 +282,9 @@ class DisruptionDetection:
         if statuses:
             self._record_replans(envelope, disruption, statuses)
 
-        pending = len(disruption.affected_plans) - len(sent)
+        pending = len(to_send) - len(sent)
         return DetectionOutcome(
-            kind="created",
+            kind="duplicate" if detected.resumed else "created",
             event_id=envelope.event_id,
             disruption_id=disruption.disruption_id,
             disruption_version=disruption.version,
@@ -277,6 +292,7 @@ class DisruptionDetection:
             reason=f"{pending} replan request(s) pending: C05 unavailable"
             if pending
             else None,
+            retry_later=pending > 0,
         )
 
     def _record_replans(
@@ -305,10 +321,29 @@ class DisruptionDetection:
 
 
 def _outcome(
-    envelope: EventEnvelope, kind: DetectionKind, reason: str | None = None
+    envelope: EventEnvelope,
+    kind: DetectionKind,
+    reason: str | None = None,
+    retry_later: bool = False,
 ) -> DetectionOutcome:
     """An outcome that created nothing (no disruption, no replan)."""
-    return DetectionOutcome(kind=kind, event_id=envelope.event_id, reason=reason)
+    return DetectionOutcome(
+        kind=kind, event_id=envelope.event_id, reason=reason, retry_later=retry_later
+    )
+
+
+def _unfinished(tx: DisruptionTransaction, envelope: EventEnvelope) -> _Detected | None:
+    """The disruption a processed event created, if C05 has not taken all its
+    replan requests yet."""
+    disruption = tx.disruption_for_event(envelope.event_id)
+    if disruption is None or all(
+        plan.replan_requested for plan in disruption.affected_plans
+    ):
+        return None
+    payload = _read_payload(envelope)
+    if not isinstance(payload, CityStateUpdated):
+        return None
+    return _Detected(disruption, payload.snapshot_version, resumed=True)
 
 
 def _read_payload(

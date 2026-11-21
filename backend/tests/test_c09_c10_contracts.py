@@ -251,3 +251,23 @@ def test_planning_attempt_cannot_carry_a_version():
         lambda d: d["subject"].update(version=1),
         c10.DecisionRecord,
     )
+
+
+# ---- Ye's review of #21: status must match the conflicts ----
+
+
+@pytest.mark.parametrize("status", ["Ok", "LowConfidence"])
+def test_rejects_result_with_conflicts_but_non_conflict_status(status):
+    def m(d):
+        d["status"] = status
+        d["evidenceSnapshot"]["retrievalStatus"] = status
+
+    bad("C09QueryKnowledgeConflictResponse", m, c09.KnowledgeResult)
+
+
+@pytest.mark.parametrize("status", ["Ok", "LowConfidence"])
+def test_rejects_snapshot_with_conflicts_but_non_conflict_status(status):
+    snapshot = load("C09QueryKnowledgeConflictResponse")["evidenceSnapshot"]
+    snapshot["retrievalStatus"] = status
+    with pytest.raises(ValidationError, match="Conflict exactly when"):
+        c09.EvidenceSnapshot.model_validate(snapshot)
