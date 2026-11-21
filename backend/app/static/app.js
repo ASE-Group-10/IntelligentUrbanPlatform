@@ -21,7 +21,8 @@ function showResponse(path, status, body, replayed = false) {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
-    headers: { Authorization: `Bearer ${$("identity").value}`, ...options.headers },
+    headers: { Authorization: `Bearer ${$("identity").value}`,
+      ...($("provider").value ? { "X-Acting-Provider": $("provider").value } : {}), ...options.headers },
   });
   const body = await response.json();
   showResponse(path, response.status, body, response.headers.get("Idempotency-Replayed") === "true");
@@ -33,7 +34,7 @@ async function api(path, options = {}) {
 }
 async function mutate(path, body, repeat = false) {
   const headers = { "Content-Type": "application/json", "X-Mock-Location-Result": $("mapping-result").value, "X-Mock-Agent-Result": $("agent-result").value };
-  const signature = JSON.stringify({ path, body, headers, identity: $("identity").value });
+  const signature = JSON.stringify({ path, body, headers });
   if (!repeat && pending?.signature !== signature) pending = { signature, key: crypto.randomUUID() };
   const request = repeat ? lastMutation : { path, body, headers: { ...headers, "Idempotency-Key": pending.key } };
   lastMutation = structuredClone(request);
@@ -163,8 +164,10 @@ $("resource-type").onchange = fillTemplate;
 $("refresh").onclick = () => run(() => refresh());
 $("load-more").onclick = () => run(() => refresh(true));
 $("type-filter").onchange = () => run(() => refresh());
-$("identity").onchange = () => run(async () => {
-  pending = null; lastMutation = null; $("replay").disabled = true; resetForm(); await refresh();
+$("provider").onchange = $("identity").onchange = () => run(async () => {
+  pending = null; lastMutation = null; $("replay").disabled = true;
+  $("resource-list").replaceChildren(); showResponse("", "", {}); resetForm();
+  if ($("identity").value) await refresh();
 });
 run(async () => {
   const [config, health] = await Promise.all([
@@ -174,5 +177,5 @@ run(async () => {
   locations = config.locations;
   locations.forEach((location, index) => { const option = document.createElement("option"); option.value = index; option.textContent = location.address; $("location").append(option); });
   $("connection").textContent = health.status === "ok" ? "● Database connected" : "Database unavailable";
-  resetForm(); await refresh();
+  resetForm(); if ($("identity").value) await refresh();
 });

@@ -1,14 +1,21 @@
+import json
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
+import jwt
 import pytest
-from app.infrastructure.database import audit, metadata, outbox, receipts, resources
-from app.main import create_app
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.pool import StaticPool
+
+from app.components.c02_identity_access import records
+from app.components.c02_identity_access.tokens import SupabaseVerifier
+from app.infrastructure.database import audit, metadata, outbox, receipts, resources
+from app.main import create_app
 
 BASE = "/api/v1/resources"
 PAYLOAD = {
@@ -28,26 +35,90 @@ PAYLOAD = {
 }
 
 
+PROJECT = "https://c02.example.test"
+SIGNER = ec.generate_private_key(ec.SECP256R1())
+PRINCIPALS = {
+    name: uuid4() for name in ("dev-manager", "dev-operator", "dev-other-provider")
+}
+PROVIDER_A, PROVIDER_B = uuid4(), uuid4()
+
+
+def access_token(name="dev-manager", **claims):
+    now = datetime.now(UTC)
+    return jwt.encode(
+        {
+            "sub": str(PRINCIPALS[name]),
+            "role": "authenticated",
+            "iat": now,
+            "iss": PROJECT + "/auth/v1",
+            "aud": "authenticated",
+            "exp": now + timedelta(minutes=5),
+            **claims,
+        },
+        SIGNER,
+        algorithm="ES256",
+        headers={"kid": "test-key"},
+    )
+
+
 def headers(token="dev-manager", **extra):
     return {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {access_token(token)}",
         "Idempotency-Key": str(uuid4()),
         **extra,
     }
 
 
 @pytest.fixture
-def setup():
+def setup(monkeypatch):
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+    engine = engine.execution_options(
+        schema_translate_map={"c02_identity_access": None}
+    )
     metadata.create_all(engine)
+    records.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            records.providers.insert(),
+            [
+                {"provider_id": pid, "provider_name": name}
+                for pid, name in [(PROVIDER_A, "A"), (PROVIDER_B, "B")]
+            ],
+        )
+        for name, pid in PRINCIPALS.items():
+            conn.execute(
+                records.profiles.insert().values(
+                    principal_id=pid, display_name=name, platform_admin=False
+                )
+            )
+            conn.execute(
+                records.memberships.insert().values(
+                    principal_id=pid,
+                    provider_id=PROVIDER_B
+                    if name == "dev-other-provider"
+                    else PROVIDER_A,
+                    role="operator" if name == "dev-operator" else "manager",
+                )
+            )
+    verifier = SupabaseVerifier(PROJECT)
+    public_key = json.loads(jwt.algorithms.ECAlgorithm.to_jwk(SIGNER.public_key()))
+    monkeypatch.setattr(
+        verifier.keys,
+        "fetch_data",
+        lambda: {
+            "keys": [{**public_key, "kid": "test-key", "alg": "ES256", "use": "sig"}]
+        },
+    )
+
     settings = SimpleNamespace(
         database_url=SecretStr("sqlite://"),
         mock_dependencies=True,
+        supabase_url=PROJECT,
         availability_max_age_seconds=86400,
     )
-    with TestClient(create_app(engine, settings)) as client:
+    with TestClient(create_app(engine, settings, identity_verifier=verifier)) as client:
         yield client, engine
     engine.dispose()
 
@@ -288,3 +359,140 @@ def test_filters_pagination_and_openapi(setup):
     assert "post" in paths[BASE + "/{resource_id}"]
     assert "patch" not in paths[BASE + "/{resource_id}"]
     assert BASE + "/{resource_id}/agent-activation" in paths
+
+
+def test_admin_selects_existing_provider_without_membership(setup):
+    client, engine = setup
+    admin = uuid4()
+    with engine.begin() as conn:
+        conn.execute(
+            records.profiles.insert().values(
+                principal_id=admin, display_name="Platform admin", platform_admin=True
+            )
+        )
+    admin_headers = headers(Authorization="Bearer " + access_token(sub=str(admin)))
+    profile = client.get("/api/v1/identity/me", headers=admin_headers).json()
+    assert profile["memberships"] == []
+    assert profile["platformRoles"] == ["admin"]
+    assert {
+        p["providerId"]: p["providerName"] for p in profile["availableProviders"]
+    } == {
+        str(PROVIDER_A): "A",
+        str(PROVIDER_B): "B",
+    }
+    assert client.post(BASE, headers=admin_headers, json=PAYLOAD).status_code == 422
+    missing = {**admin_headers, "X-Acting-Provider": str(uuid4())}
+    assert client.post(BASE, headers=missing, json=PAYLOAD).status_code == 403
+
+    manager = client.get("/api/v1/identity/me", headers=headers()).json()
+    assert [p["providerId"] for p in manager["availableProviders"]] == [str(PROVIDER_A)]
+    wrong_provider = headers(**{"X-Acting-Provider": str(PROVIDER_B)})
+    assert client.post(BASE, headers=wrong_provider, json=PAYLOAD).status_code == 403
+    for table in [resources, audit, receipts, outbox]:
+        assert count(engine, table) == 0
+
+    for pid in (PROVIDER_A, PROVIDER_B):
+        selected = {
+            **admin_headers,
+            "X-Acting-Provider": str(pid),
+            "Idempotency-Key": str(uuid4()),
+        }
+        assert client.post(BASE, headers=selected, json=PAYLOAD).status_code == 201
+        assert len(client.get(BASE, headers=selected).json()["items"]) == 1
+    with engine.connect() as conn:
+        assert set(conn.execute(select(audit.c.principal_id, audit.c.provider_id))) == {
+            (admin, PROVIDER_A),
+            (admin, PROVIDER_B),
+        }
+
+
+def test_multi_provider_registration_and_recorded_actor(setup):
+    client, engine = setup
+    actor = PRINCIPALS["dev-manager"]
+    with engine.begin() as conn:
+        conn.execute(
+            records.memberships.insert().values(
+                principal_id=actor, provider_id=PROVIDER_B, role="operator"
+            )
+        )
+    me = client.get("/api/v1/identity/me", headers=headers())
+    assert me.status_code == 200
+    profile = me.json()
+    assert profile["principalId"] == str(actor)
+    assert {m["providerId"]: m["roles"] for m in profile["memberships"]} == {
+        str(PROVIDER_A): ["manager"],
+        str(PROVIDER_B): ["operator"],
+    }
+    assert client.post(BASE, headers=headers(), json=PAYLOAD).status_code == 422
+    for denied in [PROVIDER_B, uuid4()]:
+        response = client.post(
+            BASE, headers=headers(**{"X-Acting-Provider": str(denied)}), json=PAYLOAD
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "FORBIDDEN"
+    for table in [resources, receipts, audit, outbox]:
+        assert count(engine, table) == 0
+    response = client.post(
+        BASE, headers=headers(**{"X-Acting-Provider": str(PROVIDER_A)}), json=PAYLOAD
+    )
+    assert response.status_code == 201
+    with engine.connect() as conn:
+        assert conn.execute(
+            select(audit.c.principal_id, audit.c.provider_id)
+        ).one() == (actor, PROVIDER_A)
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        {"exp": 10},
+        {"iss": "https://other.example.test/auth/v1"},
+        {"aud": "other"},
+    ],
+)
+def test_invalid_tokens_are_denied_before_registration(setup, claims):
+    client, engine = setup
+    request_headers = headers()
+    request_headers["Authorization"] = "Bearer " + access_token(**claims)
+    response = client.post(BASE, headers=request_headers, json=PAYLOAD)
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+    assert count(engine, resources) == count(engine, audit) == 0
+
+
+def test_mock_token_no_longer_authenticates(setup):
+    client, _ = setup
+    assert (
+        client.get(
+            "/api/v1/identity/me", headers={"Authorization": "Bearer dev-manager"}
+        ).status_code
+        == 401
+    )
+
+
+def test_unprovisioned_user_can_read_empty_identity(setup):
+    client, _ = setup
+    request_headers = headers()
+    request_headers["Authorization"] = "Bearer " + access_token(sub=str(uuid4()))
+    assert (
+        client.get("/api/v1/identity/me", headers=request_headers).json()["memberships"]
+        == []
+    )
+    assert client.post(BASE, headers=request_headers, json=PAYLOAD).status_code == 403
+
+
+def test_identity_provider_outage_fails_closed(setup, monkeypatch):
+    from jwt.exceptions import PyJWKClientConnectionError
+
+    client, engine = setup
+
+    def unavailable():
+        raise PyJWKClientConnectionError("Signing keys unavailable")
+
+    monkeypatch.setattr(
+        client.app.state.identity_verifier.keys, "fetch_data", unavailable
+    )
+    response = client.post(BASE, headers=headers(), json=PAYLOAD)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "IDENTITY_UNAVAILABLE"
+    assert count(engine, resources) == count(engine, audit) == 0

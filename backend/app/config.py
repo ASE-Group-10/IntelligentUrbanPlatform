@@ -1,6 +1,7 @@
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import SecretStr
+from pydantic import AnyUrl, SecretStr, UrlConstraints
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,10 @@ class Settings(BaseSettings):
     )
 
     database_url: SecretStr
+    supabase_url: (
+        Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"], host_required=True)]
+        | None
+    ) = None
     mock_dependencies: bool = True
     availability_max_age_seconds: int = 86400
 

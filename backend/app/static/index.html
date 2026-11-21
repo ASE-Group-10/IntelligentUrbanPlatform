@@ -16,14 +16,11 @@
       </div>
       <a href="/docs" target="_blank" rel="noreferrer">API documentation ↗</a>
     </header>
-    <aside class="notice">Development view · Authentication, locations, and agents are mocked.
+    <aside class="notice">Development view · Supabase authentication · Simulated locations and agents.
       Changes are saved in your configured database. Use synthetic data only.</aside>
     <section class="toolbar" aria-label="Development controls">
-      <label>Test identity<select id="identity">
-        <option value="dev-manager">Provider A · Manager</option>
-        <option value="dev-operator">Provider A · Operator (read only)</option>
-        <option value="dev-other-provider">Provider B · Manager</option>
-      </select></label>
+      <label>Supabase access token<input id="identity" type="password" autocomplete="off" spellcheck="false"></label>
+      <label>Acting provider UUID (if required)<input id="provider" autocomplete="off" spellcheck="false"></label>
       <label>Location validation<select id="mapping-result">
         <option value="matched">Matched</option><option value="unmatched">Unmatched</option>
         <option value="unconfirmed">Service unavailable</option>

@@ -1,49 +1,56 @@
-from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.infrastructure.errors import APIError
+from app.components.c02_identity_access.records import load_identity
+from app.infrastructure.errors import APIError, correlation_id
+from app.shared.auth import (
+    AuthContext,
+    CurrentIdentity,
+    require_role,
+    resolve_user_context,
+)
+from app.shared.result import Failure
 
-
-@dataclass(frozen=True)
-class AuthContext:
-    principal_id: UUID
-    provider_id: UUID
-    role: str
-
-
-# Synthetic development identities, never Supabase keys or real user tokens.
-PROVIDER_A = UUID("10000000-0000-4000-8000-000000000001")
-PROVIDER_B = UUID("10000000-0000-4000-8000-000000000002")
-IDENTITIES = {
-    "dev-manager": AuthContext(
-        UUID("20000000-0000-4000-8000-000000000001"), PROVIDER_A, "manager"
-    ),
-    "dev-operator": AuthContext(
-        UUID("20000000-0000-4000-8000-000000000002"), PROVIDER_A, "operator"
-    ),
-    "dev-other-provider": AuthContext(
-        UUID("20000000-0000-4000-8000-000000000003"), PROVIDER_B, "manager"
-    ),
-}
+router = APIRouter(prefix="/api/v1/identity", tags=["C02 Identity and Access"])
 bearer = HTTPBearer(auto_error=False)
+
+
+def current_identity(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> CurrentIdentity:
+    if credentials is None:
+        raise APIError(401, "UNAUTHENTICATED", "Sign in to continue.")
+    verifier = request.app.state.identity_verifier
+    if verifier is None:
+        raise APIError(503, "IDENTITY_UNAVAILABLE", "Identity service unavailable.")
+    subject = verifier.subject(credentials.credentials)
+    return load_identity(request.app.state.engine, subject)
+
+
+@router.get("/me", response_model=CurrentIdentity, operation_id="getCurrentIdentity")
+def get_current_identity(
+    identity: Annotated[CurrentIdentity, Depends(current_identity)],
+):
+    return identity
 
 
 def authenticate(
     request: Request,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    identity: Annotated[CurrentIdentity, Depends(current_identity)],
+    provider: Annotated[UUID | None, Header(alias="X-Acting-Provider")] = None,
 ) -> AuthContext:
-    if not request.app.state.settings.mock_dependencies:
-        raise APIError(503, "IDENTITY_UNAVAILABLE", "C02 is not connected yet.")
-    identity = IDENTITIES.get(credentials.credentials) if credentials else None
-    if identity is None:
-        raise APIError(401, "UNAUTHENTICATED", "A valid development token is required.")
-    return identity
+    result = resolve_user_context(identity, provider, UUID(correlation_id(request)))
+    if isinstance(result, Failure):
+        if result.kind == "Forbidden":
+            raise APIError(403, "FORBIDDEN", "Access denied.")
+        raise APIError(422, "VALIDATION_FAILED", result.message)
+    return result.value
 
 
-def require_manager(context: AuthContext):
-    if context.role != "manager":
-        raise APIError(403, "FORBIDDEN", "Resource changes require a resource manager.")
+def require_manager(context: AuthContext) -> None:
+    if isinstance(require_role(context, "manager"), Failure):
+        raise APIError(403, "FORBIDDEN", "Access denied.")

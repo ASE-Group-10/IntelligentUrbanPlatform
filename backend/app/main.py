@@ -12,25 +12,31 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.components.c02_identity_access.tokens import SupabaseVerifier
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
 from app.infrastructure.database import make_engine
 from app.infrastructure.errors import APIError, api_error_handler
+from app.integrations.identity import router as identity_router
 from app.integrations.mocks import LOCATIONS
 
 STATIC = Path(__file__).parent / "static"
 logger = logging.getLogger("urban.resources")
 
 
-def create_app(engine=None, settings=None):
+def create_app(engine=None, settings=None, *, identity_verifier=None):
     @asynccontextmanager
     async def lifespan(app):
         app.state.settings = settings or get_settings()
         if not app.state.settings.mock_dependencies:
             raise RuntimeError(
-                "Real C02/C08 adapters are not implemented. Keep this local."
+                "Real mapping/C08 adapters are not implemented. Keep this local."
             )
+        project_url = app.state.settings.supabase_url
+        app.state.identity_verifier = identity_verifier or (
+            SupabaseVerifier(str(project_url)) if project_url else None
+        )
         app.state.engine = engine or make_engine(
             app.state.settings.database_url.get_secret_value()
         )
@@ -44,7 +50,7 @@ def create_app(engine=None, settings=None):
     app = FastAPI(
         title="Urban Logistics · UC01 Resource API",
         version="0.1.0",
-        description="Local development: real persistence; mock C02, mapping, and C08. "
+        description="C02 identity, persistent resources, mock mapping and C08. "
         "C10 uses a durable audit stand-in. Events stay in an unpublished outbox.",
         lifespan=lifespan,
     )
@@ -125,6 +131,7 @@ def create_app(engine=None, settings=None):
         return FileResponse(STATIC / "index.html")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    app.include_router(identity_router)
     app.include_router(router)
     return app
 

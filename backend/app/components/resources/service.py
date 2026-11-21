@@ -25,7 +25,7 @@ class ResourceService:
         if connection.dialect.name == "postgresql":
             connection.execute(
                 text("SELECT set_config('app.provider_id', :provider, true)"),
-                {"provider": str(context.provider_id)},
+                {"provider": str(context.acting_provider_id)},
             )
 
     def _find(self, connection, context, resource_id):
@@ -33,7 +33,7 @@ class ResourceService:
             connection.execute(
                 select(resources).where(
                     resources.c.id == resource_id,
-                    resources.c.provider_id == context.provider_id,
+                    resources.c.provider_id == context.acting_provider_id,
                 )
             )
             .mappings()
@@ -77,7 +77,9 @@ class ResourceService:
     def list(
         self, context, resource_type=None, profile_status=None, limit=20, cursor=None
     ):
-        query = select(resources).where(resources.c.provider_id == context.provider_id)
+        query = select(resources).where(
+            resources.c.provider_id == context.acting_provider_id
+        )
         if resource_type:
             query = query.where(resources.c.resource_type == resource_type)
         if profile_status:
@@ -101,7 +103,7 @@ class ResourceService:
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         scope = {
-            "provider_id": context.provider_id,
+            "provider_id": context.acting_provider_id,
             "principal_id": context.principal_id,
             "operation": operation,
             "idempotency_key": key,
@@ -134,7 +136,7 @@ class ResourceService:
                 connection.execute(
                     insert(audit).values(
                         id=uuid4(),
-                        provider_id=context.provider_id,
+                        provider_id=context.acting_provider_id,
                         principal_id=context.principal_id,
                         operation=operation,
                         resource_id=resource["id"],
@@ -148,7 +150,7 @@ class ResourceService:
                     connection.execute(
                         insert(outbox).values(
                             id=uuid4(),
-                            provider_id=context.provider_id,
+                            provider_id=context.acting_provider_id,
                             event_type=event_type,
                             schema_version=1,
                             resource_id=resource["id"],
@@ -202,7 +204,7 @@ class ResourceService:
             values.update(
                 **mapped,
                 id=resource_id,
-                provider_id=context.provider_id,
+                provider_id=context.acting_provider_id,
                 created_by=context.principal_id,
                 location_validated_at=timestamp,
                 availability_observed_at=timestamp
@@ -273,7 +275,7 @@ class ResourceService:
                     update(resources)
                     .where(
                         resources.c.id == resource_id,
-                        resources.c.provider_id == context.provider_id,
+                        resources.c.provider_id == context.acting_provider_id,
                         resources.c.version == command.expected_version,
                     )
                     .values(**values)
@@ -311,7 +313,7 @@ class ResourceService:
                     update(resources)
                     .where(
                         resources.c.id == resource_id,
-                        resources.c.provider_id == context.provider_id,
+                        resources.c.provider_id == context.acting_provider_id,
                         resources.c.version == command.expected_version,
                     )
                     .values(
