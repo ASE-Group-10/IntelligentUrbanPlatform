@@ -33,10 +33,11 @@ log = logging.getLogger(__name__)
 def c07_handler(detection: DisruptionDetection) -> EventHandler:
     """Map ``evaluate_change`` results onto ack / retry / reject.
 
-    An outcome C07 could not finish because C05 was down (the lookup, or some
-    replan requests) is retried, so the event comes back once C05 answers.
-    Other ``unknown`` outcomes are acked: delivering the same event again would
-    give the same answer.
+    An outcome C07 could not finish because C05 answered ``Unavailable`` (the
+    lookup, or some replan requests) has ``retryable`` set and is retried, so the
+    event comes back once C05 answers. Everything else is acked, including plans
+    C05 will not take (``NotFound``, a repeated ``Conflict``): delivering the same
+    event again would give the same answer.
     """
 
     def handle(envelope: EventEnvelope) -> Disposition:
@@ -44,15 +45,15 @@ def c07_handler(detection: DisruptionDetection) -> EventHandler:
         if isinstance(result, Ok):
             outcome = result.value
             log.log(
-                logging.WARNING if outcome.retry_later else logging.INFO,
+                logging.WARNING if outcome.retryable else logging.INFO,
                 "evaluated: %s, %d replan request(s)%s%s",
                 outcome.kind,
                 len(outcome.replan_requests),
                 f" ({outcome.reason})" if outcome.reason else "",
-                "; will retry" if outcome.retry_later else "",
+                "; will retry" if outcome.retryable else "",
                 extra=trace(envelope),
             )
-            return "retry" if outcome.retry_later else "ack"
+            return "retry" if outcome.retryable else "ack"
         log.warning("%s: %s", result.kind, result.message, extra=trace(envelope))
         return "reject" if result.kind == "Invalid" else "retry"
 
