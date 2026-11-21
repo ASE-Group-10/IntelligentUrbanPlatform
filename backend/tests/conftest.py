@@ -72,6 +72,7 @@ def test_database_url() -> str:
             )
         conn.execute("drop schema if exists c06_city_monitoring cascade")
         conn.execute("drop schema if exists c07_disruption_detection cascade")
+        conn.execute("drop schema if exists c09_logistics_knowledge cascade")
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
             conn.execute(_migrate_up_sql(migration))
     return TEST_DATABASE_URL
