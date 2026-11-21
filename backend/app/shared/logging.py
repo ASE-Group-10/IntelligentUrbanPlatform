@@ -1,7 +1,8 @@
 """One structured log format for every component and worker (#72).
 
 Each line is a JSON object with ``time``, ``level``, ``component`` and
-``message``, plus any trace fields passed through ``extra``: ``correlationId``,
+``message`` (``component`` is the process's unless the line passes its own
+through ``extra``), plus any trace fields passed through ``extra``: ``correlationId``,
 ``eventId``, ``eventType``, ``scope`` and ``runId``. Following one
 ``correlationId`` across components is how the walking skeleton is checked.
 """
@@ -22,7 +23,9 @@ class JsonFormatter(logging.Formatter):
         line = {
             "time": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
-            "component": self._component,
+            # in-process calls (C05 -> C09/C10) share one process, so a line
+            # may name its own component through ``extra={"component": ...}``
+            "component": getattr(record, "component", None) or self._component,
             "logger": record.name,
             "message": record.getMessage(),
         }

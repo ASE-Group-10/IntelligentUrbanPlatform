@@ -7,6 +7,7 @@ offer ``commit()`` and ``rollback()``.
 """
 
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -356,6 +357,21 @@ def test_memory_closed_transaction_cannot_be_reused(clock):
 
     with pytest.raises(TransactionClosedError):
         service.record_decision(tx, C05, _record())
+
+
+def test_memory_rejected_call_is_logged_with_correlation_id(clock, caplog):
+    store = InMemoryDecisionStore()
+    service = DecisionRecords(store, clock)
+    caplog.set_level(logging.INFO, logger="app.components.c10_decision_records")
+
+    service.record_decision(store.begin(), C08, _record())
+
+    [line] = caplog.records
+    assert line.levelno == logging.WARNING
+    assert line.component == "C10"
+    assert line.correlationId == str(C08.correlation_id)
+    assert line.scope == "live"
+    assert "PRODUCER_MISMATCH" in line.getMessage()
 
 
 # ---- PostgreSQL only ----

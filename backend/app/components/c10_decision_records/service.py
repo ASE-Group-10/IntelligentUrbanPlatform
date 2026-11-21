@@ -2,9 +2,14 @@
 
 Both run on the caller's connection and never commit (internal.md). The read
 side (getDecision, explainDecision, getDecisionEvidence) is added separately.
+
+Every call writes one JSON log line (``app.shared.logging``) with
+``component=C10`` and the caller's ``correlationId``; recordDecision adds the
+record's ``scope`` and ``runId`` (walking skeleton #72, hop 4).
 """
 
 import hashlib
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -25,8 +30,10 @@ from app.components.c10_decision_records.store import (
     StoredOutcome,
     StoreUnavailableError,
 )
-from app.shared.c09_c10_common import AuthContext, PrincipalType
+from app.shared.c09_c10_common import AuthContext, PrincipalType, RunScope
 from app.shared.result import Failure, Ok, Result
+
+log = logging.getLogger(__name__)
 
 EVIDENCE_REF_MISSING = "C10.EVIDENCE_REF_MISSING"
 EVIDENCE_CONTENT_MISSING = "C10.EVIDENCE_CONTENT_MISSING"
@@ -67,6 +74,17 @@ def _hash(record: DecisionRecord) -> str:
     return hashlib.sha256(record.model_dump_json(by_alias=True).encode()).hexdigest()
 
 
+def _trace(ctx: AuthContext, run_scope: RunScope | None = None) -> dict[str, str]:
+    """``extra`` fields for one C10 log line. ``scope`` uses the event
+    envelope's lower-case values (``live`` / ``simulation``)."""
+    fields = {"component": "C10", "correlationId": str(ctx.correlation_id)}
+    if run_scope is not None:
+        fields["scope"] = run_scope.mode.value.lower()
+        if run_scope.run_id is not None:
+            fields["runId"] = str(run_scope.run_id)
+    return fields
+
+
 class DecisionRecords:
     """C10 service API (UC10), in-process write operations."""
 
@@ -86,6 +104,28 @@ class DecisionRecords:
     ) -> Result[RecordDecisionResponse]:
         """Store one decision attempt and its evidence on the caller's
         connection. Insert-only and idempotent on ``idempotencyKey``."""
+        result = self._record_decision(conn, ctx, record)
+        trace = _trace(ctx, record.run_scope)
+        if isinstance(result, Ok):
+            log.info(
+                "recordDecision %s %s %s for %s %s%s (pending caller commit)",
+                record.decision_type.value,
+                record.attempt_outcome.value,
+                result.value.decision_id,
+                record.subject.type.value,
+                record.subject.id,
+                ", duplicate" if result.value.duplicate else "",
+                extra=trace,
+            )
+        else:
+            log.warning(
+                "recordDecision %s: %s", result.kind, result.message, extra=trace
+            )
+        return result
+
+    def _record_decision(
+        self, conn: Connection, ctx: AuthContext, record: DecisionRecord
+    ) -> Result[RecordDecisionResponse]:
         if (
             ctx.principal_type is not PrincipalType.SERVICE
             or f"Service:{record.producer}" not in ctx.roles
@@ -165,5 +205,14 @@ class DecisionRecords:
                 ),
             )
         except StoreUnavailableError as exc:
-            return Failure("Unavailable", f"{UNAVAILABLE}: {exc}")
+            failure = Failure("Unavailable", f"{UNAVAILABLE}: {exc}")
+            log.warning("recordOutcome %s", failure.message, extra=_trace(ctx))
+            return failure
+        log.info(
+            "recordOutcome %s %s %s (pending caller commit)",
+            outcome.operation,
+            outcome.outcome.value,
+            audit_id,
+            extra=_trace(ctx),
+        )
         return Ok(AuditId(audit_id=audit_id))
