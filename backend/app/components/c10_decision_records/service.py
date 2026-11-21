@@ -96,30 +96,18 @@ class DecisionRecords:
             )
         request_hash = _hash(record)
         try:
-            previous = self._store.find_by_idempotency_key(conn, record.idempotency_key)
-            if previous is not None:
-                if previous.request_hash != request_hash:
-                    return Failure(
-                        "Conflict",
-                        f"{IDEMPOTENCY_MISMATCH}: key already used with another body",
-                    )
-                return Ok(
-                    RecordDecisionResponse(
-                        decision_id=previous.record.decision_id,
-                        recorded_at=previous.recorded_at,
-                        duplicate=True,
-                    )
-                )
-            if self._store.find_by_decision_id(conn, record.decision_id) is not None:
-                return Failure(
-                    "Conflict",
-                    f"{IDEMPOTENCY_MISMATCH}: decisionId already recorded "
-                    "under another idempotency key",
-                )
+            existing = self._existing(conn, record, request_hash)
+            if existing is not None:
+                return existing
             recorded_at = self._clock()
-            self._store.insert_decision(
+            inserted = self._store.insert_decision(
                 conn, StoredDecision(record, request_hash, recorded_at)
             )
+            if not inserted:
+                # a concurrent transaction recorded the same key or ID first
+                return self._existing(conn, record, request_hash) or Failure(
+                    "Conflict", f"{IDEMPOTENCY_MISMATCH}: recorded concurrently"
+                )
         except StoreUnavailableError as exc:
             return Failure("Unavailable", f"{UNAVAILABLE}: {exc}")
         return Ok(
@@ -129,6 +117,33 @@ class DecisionRecords:
                 duplicate=False,
             )
         )
+
+    def _existing(
+        self, conn: Connection, record: DecisionRecord, request_hash: str
+    ) -> Result[RecordDecisionResponse] | None:
+        """The outcome for a record whose key or ID is already stored, or
+        ``None`` when neither is."""
+        previous = self._store.find_by_idempotency_key(conn, record.idempotency_key)
+        if previous is not None:
+            if previous.request_hash != request_hash:
+                return Failure(
+                    "Conflict",
+                    f"{IDEMPOTENCY_MISMATCH}: key already used with another body",
+                )
+            return Ok(
+                RecordDecisionResponse(
+                    decision_id=previous.record.decision_id,
+                    recorded_at=previous.recorded_at,
+                    duplicate=True,
+                )
+            )
+        if self._store.find_by_decision_id(conn, record.decision_id) is not None:
+            return Failure(
+                "Conflict",
+                f"{IDEMPOTENCY_MISMATCH}: decisionId already recorded "
+                "under another idempotency key",
+            )
+        return None
 
     # ---- recordOutcome (internal.md) ----
     def record_outcome(

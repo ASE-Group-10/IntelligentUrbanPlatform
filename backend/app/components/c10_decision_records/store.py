@@ -62,8 +62,13 @@ class DecisionStore(Protocol):
         ``conn``."""
         ...
 
-    def insert_decision(self, conn: Connection, decision: StoredDecision) -> None:
-        """Add the decision on ``conn``; it commits with the caller."""
+    def insert_decision(self, conn: Connection, decision: StoredDecision) -> bool:
+        """Add the decision on ``conn``; it commits with the caller.
+
+        Returns ``False`` and writes nothing when its ``decisionId`` or
+        ``idempotencyKey`` is already taken, including by a concurrent
+        transaction that committed first; the caller then reads that record.
+        """
         ...
 
     def insert_outcome(self, conn: Connection, outcome: StoredOutcome) -> None:
@@ -137,9 +142,13 @@ class InMemoryDecisionStore:
 
     def insert_decision(
         self, conn: InMemoryTransaction, decision: StoredDecision
-    ) -> None:
-        self._visible(conn)  # availability and open-transaction checks
+    ) -> bool:
+        if self.find_by_decision_id(
+            conn, decision.record.decision_id
+        ) or self.find_by_idempotency_key(conn, decision.record.idempotency_key):
+            return False
         conn.decisions[decision.record.decision_id] = decision
+        return True
 
     def insert_outcome(self, conn: InMemoryTransaction, outcome: StoredOutcome) -> None:
         self._visible(conn)
