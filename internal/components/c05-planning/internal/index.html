@@ -1,0 +1,1777 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../../c04-delivery-management/internal/">
+      
+      
+        <link rel="next" href="../../c06-city-monitoring/internal/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>C05 Planning and Replanning - Intelligent Urban Platform — Internal Contracts</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#c05-planning-and-replanning" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-header__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent Urban Platform — Internal Contracts
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              C05 Planning and Replanning
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-nav__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent Urban Platform — Internal Contracts
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Components
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Components
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 identity access
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C02 identity access
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c02-identity-access/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 Identity and Access: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 delivery management
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C04 delivery management
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c04-delivery-management/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 Delivery Management: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C05 planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 Planning and Replanning
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 Planning and Replanning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#findaffectedworkchangescope-resultaffectedwork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        findAffectedWork(changeScope) → Result\&lt;AffectedWork>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requestreplancontext-planid-trigger-key-resultreplanoutcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#planning-and-persistence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planning and persistence rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example sequence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-coordination-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open coordination points
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 city monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C06 city monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c06-city-monitoring/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 City Monitoring: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 disruption detection
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C07 disruption detection
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c07-disruption-detection/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 Disruption Detection: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 allocation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C08 allocation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c08-allocation/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 Allocation and Resource Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 logistics knowledge
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C09 logistics knowledge
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c09-logistics-knowledge/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 Logistics Knowledge: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 decision records
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C10 decision records
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c10-decision-records/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 Decision Records and Explanation: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_9" id="__nav_2_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 kpi analytics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C11 kpi analytics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c11-kpi-analytics/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 KPI Analytics: internal interfaces (UC11)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_10" id="__nav_2_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 simulation replay
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C12 simulation replay
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c12-simulation-replay/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 Simulation and Replay: internal interfaces (UC12)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#findaffectedworkchangescope-resultaffectedwork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        findAffectedWork(changeScope) → Result\&lt;AffectedWork>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requestreplancontext-planid-trigger-key-resultreplanoutcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#planning-and-persistence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planning and persistence rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example sequence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-coordination-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open coordination points
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="c05-planning-and-replanning">C05 Planning and Replanning<a class="headerlink" href="#c05-planning-and-replanning" title="Permanent link">&para;</a></h1>
+<p>Contract draft for UC03 and UC07, issue #32. Pair Ye + Zecheng.
+Reviewers Bruno or Alejandro for C07 compatibility. Proposed HTTP and event
+fields require review with C01, C08 and C10 before implementation.</p>
+<p>C05 owns proposals, confirmed plans and revisions. C08 owns actual allocation
+and operational commitments. Planning reads those facts when checking feasibility.</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<p>Use camelCase JSON, UUID v4 identifiers, positive integer versions and UTC
+RFC 3339 timestamps. Reuse the shared <code>Result&lt;T&gt;</code> from
+<code>backend/app/shared/result.py</code>. A successful internal call returns <code>Ok(value)</code>;
+a failure returns <code>Failure(kind, message)</code>. JSON examples show the success value.
+The existing <code>PlanningPort</code> returns unwrapped values and raises
+<code>PlanningUnavailableError</code> for unavailability. Its future C05 adapter must map
+these to and from the logical <code>Result</code> contract.</p>
+<p>The adopted C07 models remain in
+<code>backend/app/components/c07_disruption_detection/contracts.py</code> for compatibility.
+<code>ChangeScope</code>, <code>AffectedWork</code>, <code>ReplanRequest</code> and <code>ReplanOutcome</code> are the current
+typed models. <code>PlanningPort</code> in the adjacent <code>planning.py</code> is the current caller
+interface. This documentation migration preserves their fields and imports.</p>
+<h2 id="provided-interfaces">Provided interfaces<a class="headerlink" href="#provided-interfaces" title="Permanent link">&para;</a></h2>
+<h3 id="findaffectedworkchangescope-resultaffectedwork">findAffectedWork(changeScope) → Result\&lt;AffectedWork&gt;<a class="headerlink" href="#findaffectedworkchangescope-resultaffectedwork" title="Permanent link">&para;</a></h3>
+<p>C07 asks C05 which unfinished work a change touches. C05 owns plans, so it
+decides what "affected" means for a route; C07 only says where and what
+changed. For the slice, C07 sends one call per changed segment.</p>
+<p>Examples <a href="../examples/find-affected-work-request.json">request</a> and
+<a href="../examples/find-affected-work-response.json">response</a>.</p>
+<p><strong>Request: changeScope</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>segmentKeys</code></td>
+<td>array of string</td>
+<td>one of</td>
+<td>Segments whose condition changed</td>
+</tr>
+<tr>
+<td><code>resourceIds</code></td>
+<td>array of UUID</td>
+<td>one of</td>
+<td>Resources whose availability changed or failed</td>
+</tr>
+<tr>
+<td><code>planIds</code></td>
+<td>array of UUID</td>
+<td>one of</td>
+<td>Plans named directly (for example by <code>OperationalDisruption</code>)</td>
+</tr>
+<tr>
+<td><code>from</code> / <code>to</code></td>
+<td>timestamp</td>
+<td>no</td>
+<td>Time window the change applies to; default now → open-ended</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response: AffectedWork</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>items</code></td>
+<td>array</td>
+<td>yes</td>
+<td>Empty when nothing is affected</td>
+</tr>
+<tr>
+<td><code>items[].planId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Plan touching the scope</td>
+</tr>
+<tr>
+<td><code>items[].planVersion</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Current version C05 checked against</td>
+</tr>
+<tr>
+<td><code>items[].deliveryIds</code></td>
+<td>array of UUID</td>
+<td>yes</td>
+<td>Unfinished deliveries on the affected part; completed ones excluded</td>
+</tr>
+<tr>
+<td><code>items[].matchedSegmentKeys</code></td>
+<td>array of string</td>
+<td>no</td>
+<td>Which of the requested segments the route uses</td>
+</tr>
+<tr>
+<td><code>items[].matchedResourceIds</code></td>
+<td>array of UUID</td>
+<td>no</td>
+<td>Which requested resources the plan relies on</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Failures:</strong> <code>Invalid</code>, <code>Unavailable</code> (C07 then reports disruption status
+<code>unknown</code>).</p>
+<h3 id="requestreplancontext-planid-trigger-key-resultreplanoutcome">requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome&gt;<a class="headerlink" href="#requestreplancontext-planid-trigger-key-resultreplanoutcome" title="Permanent link">&para;</a></h3>
+<p>C07 sends one <code>requestReplan</code> per affected plan. The call is synchronous: C05
+answers with a final outcome straight away.</p>
+<p>Examples <a href="../examples/request-replan.json">request</a>,
+<a href="../examples/replan-saved.json">saved outcome</a> and
+<a href="../examples/replan-conflict.json">conflict failure</a>.</p>
+<p><strong>Request</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context</code></td>
+<td>AuthContext</td>
+<td>yes</td>
+<td>Service identity <code>C07</code>, plus <code>correlationId</code></td>
+</tr>
+<tr>
+<td><code>planId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Plan to revise</td>
+</tr>
+<tr>
+<td><code>trigger.disruptionId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Disruption record behind the request</td>
+</tr>
+<tr>
+<td><code>trigger.disruptionVersion</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Version of that record</td>
+</tr>
+<tr>
+<td><code>trigger.basedOnPlanVersion</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Plan version returned by <code>findAffectedWork</code></td>
+</tr>
+<tr>
+<td><code>trigger.reason</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>road_closed</code> / <code>congestion</code> / <code>resource_unavailable</code> / <code>operational_failure</code> / <code>weather</code></td>
+</tr>
+<tr>
+<td><code>trigger.citySnapshotVersion</code></td>
+<td>integer</td>
+<td>no</td>
+<td>Snapshot the disruption was judged on</td>
+</tr>
+<tr>
+<td><code>trigger.sourceEventId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Event that started the chain</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Idempotency key = <code>planId:disruptionId:disruptionVersion</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response: ReplanOutcome</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>NoChange</code> / <code>ReviewRequired</code> / <code>PlanSaved</code></td>
+</tr>
+<tr>
+<td><code>newPlanVersion</code></td>
+<td>integer</td>
+<td>when saved</td>
+<td>Version of the saved revision</td>
+</tr>
+<tr>
+<td><code>decisionId</code></td>
+<td>UUID</td>
+<td>when saved</td>
+<td>C10 decision record</td>
+</tr>
+</tbody>
+</table>
+<p>The inherited logical draft lists <code>Conflict</code>, <code>Infeasible</code>, <code>Unavailable</code> and
+<code>NotFound</code>. The current <code>PlanningPort</code> returns an unwrapped <code>ReplanOutcome</code> or
+raises <code>PlanningUnavailableError</code>. C07 catches that exception and otherwise
+records <code>outcome.status</code>. Agree the mapping of other logical failures and any
+<code>Conflict</code> discovery retry with C07 before connecting the C05 adapter.</p>
+<p>The idempotency key is what stops the C08 → C07 → C05 loop. The same
+disruption version can never produce a second replan of the same plan; C05
+returns the first outcome again.</p>
+<h2 id="required-interfaces">Required interfaces<a class="headerlink" href="#required-interfaces" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Operation</th>
+<th>Use by C05</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C02</td>
+<td><code>authorize(context, action, scope)</code></td>
+<td>Authorise generation, confirmation and reads within the permitted scope</td>
+</tr>
+<tr>
+<td>C03</td>
+<td><code>listEligibleResources(scope)</code></td>
+<td>Read resource capabilities, observed availability and quality</td>
+</tr>
+<tr>
+<td>C04</td>
+<td><code>getRequests(context, requestIds)</code></td>
+<td>Read requirements, versions and progress</td>
+</tr>
+<tr>
+<td>C04</td>
+<td><code>markRequestsPlanned(requestIds, planId)</code></td>
+<td>Link deliveries when confirming a plan</td>
+</tr>
+<tr>
+<td>C06</td>
+<td><code>getCitySnapshot(scope, freshnessPolicy)</code></td>
+<td>Read versioned and quality-labelled city conditions; definition in <a href="../../c06-city-monitoring/internal/">C06</a></td>
+</tr>
+<tr>
+<td>C09</td>
+<td><code>queryKnowledge(context, policyQuery)</code></td>
+<td>Obtain applicable policy evidence and provenance</td>
+</tr>
+<tr>
+<td>C10</td>
+<td><code>recordDecision(decisionRecord)</code></td>
+<td>Preserve actual input versions, alternatives, reasons and exact evidence used</td>
+</tr>
+</tbody>
+</table>
+<p>C02/C03/C04/C09/C10 provider definitions remain authoritative as their contracts
+are published. Required operations listed here do not define their fields.</p>
+<h2 id="planning-and-persistence-rules">Planning and persistence rules<a class="headerlink" href="#planning-and-persistence-rules" title="Permanent link">&para;</a></h2>
+<p>The proposed C01 HTTP operations are in <code>openapi.yaml</code>. Authentication is obtained
+from the bearer token. HTTP paths use <code>/api/v1/plans</code>; HTTP errors use the
+C11/C12-style <code>error { code, message, correlationId }</code> envelope proposal, pending
+shared frontend review. This transport mapping does not change the internal
+<code>Result</code> contract or C07 models. Authorisation and scope checks use C02.
+An initial proposal awaits operator confirmation. Confirmation checks its expected version, links its
+deliveries and queues <code>PlanReady</code> atomically with the confirmed state and decision
+references. A saved revision atomically records its expected-version update,
+C10-owned decision/evidence and <code>PlanReady</code> outbox entry.</p>
+<p>C10 evidence contains the exact passages and source/version/provenance used at
+decision time. Evidence is retained after the C09 corpus changes. An outbox
+publisher retries the saved event ID without rerunning planning. Failure to commit
+any authoritative state, evidence or outbox entry rolls back the operation.</p>
+<p>For UC07, <code>trigger.citySnapshotVersion</code> records the City State that triggered
+the request when C07 provides it. C05 reads current conditions in the same run
+and records the version it actually uses for the decision.</p>
+<p>C08 uses <code>planId</code>, <code>planVersion</code> and the event's run scope to look up C05's
+current plan. It rechecks that the event version is still current before
+committing resources. The <code>requirements</code> list describes all resource needs for
+unfinished deliveries in that plan version. C08 checks which existing
+commitments still satisfy those needs against the revised route and timing.</p>
+<p>For mutating HTTP calls, a retry with the same caller, operation, run scope, key
+and request returns the first committed response. Reusing that key with a
+different request gives <code>Conflict</code>. Concurrent writes use expected-version checks.
+A lost response after commit is recovered by retrying the same request and key.</p>
+<h2 id="example-sequence">Example sequence<a class="headerlink" href="#example-sequence" title="Permanent link">&para;</a></h2>
+<p>The <a href="../examples/plan-proposal.json">proposal</a> at version 2 is confirmed with
+<a href="../examples/confirm-plan-request.json">expectedVersion 2</a>, giving the
+<a href="../examples/confirmed-plan.json">confirmed plan</a> at version 3. The earlier version
+1 is outside this excerpt. After C06 records snapshot 42, C07 requests a replan
+based on version 3. The <a href="../examples/replan-saved.json">saved outcome</a> refers to
+<a href="../examples/revised-plan.json">revision 4</a>, which avoids <code>seg:4471023</code>.
+Versions 3 and 4 have the same van capacity requirement. The
+<a href="../examples/plan-ready-revision-event.json">PlanReady event</a> carries that requirement
+with version 4 and its decision ID. It retains the closure correlation ID and
+simulation run ID and has its own event ID.
+HTTP examples and this event illustrate proposed fields pending consumer review.</p>
+<h2 id="open-coordination-points">Open coordination points<a class="headerlink" href="#open-coordination-points" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The HTTP paths, proposal representation, priorities and resource-needs schema
+  are proposals for C01/C03/C04/C08 review. Only the two C07 interfaces above
+  have existing typed models. New HTTP/event schemas have no runtime yet.</li>
+<li>The existing <code>PlanningPort</code> passes no run scope or run ID to either method.
+  Agree scope propagation with C07 before connecting simulation to real C05
+  storage. A simulation must resolve only its run's plans, inputs and receipts.
+  Do not silently treat an unspecified simulation run as live.</li>
+<li>Agree with C07 whether one fresh discovery is allowed after a stale-plan
+  <code>Conflict</code>, and whether that conflict consumes the key. A refreshed
+  <code>basedOnPlanVersion</code> changes the request but leaves the current key unchanged.</li>
+<li>The inherited logical draft lists <code>Infeasible</code>, while architecture UC07 returns
+  <code>ReviewRequired</code> for an infeasible revision. Agree that mapping with C07. The
+  current <code>ReplanOutcome</code> has no reason/details field.</li>
+<li>Agree with C07 when the synchronous <code>PlanSaved</code> outcome is returned and how to
+  report a saved revision while <code>PlanReady</code> publication is pending. <code>PlanReady</code>
+  is the event for confirmation and saved revisions.</li>
+<li>Exchange/routing and the canonical shared event envelope are tracked in #28.
+  The event draft refers to the existing C06 envelope to avoid another copy.</li>
+<li>C05 receives replanning through an internal call from C07. No direct subscription
+  to <code>CityStateUpdated</code> is currently proposed.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": [], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

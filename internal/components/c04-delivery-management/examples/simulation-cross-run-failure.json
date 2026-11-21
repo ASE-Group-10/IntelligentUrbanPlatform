@@ -1,0 +1,30 @@
+{
+  "description": "Simulation run c3f1a2b4-... attempts to read a live delivery (or a delivery belonging to another simulation run). C04 rejects the call with NotFound and commits no state changes.",
+  "operation": "getRequests",
+  "request": {
+    "context": {
+      "principalId": "00000000-0000-4000-8000-000000000005",
+      "principalType": "service",
+      "serviceId": "C05",
+      "actingProviderId": null,
+      "roles": ["service"],
+      "providerIds": [],
+      "platformRoles": [],
+      "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e"
+    },
+    "runScope": {
+      "scope": "simulation",
+      "runId": "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+    },
+    "requestIds": [
+      "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"
+    ]
+  },
+  "result": {
+    "failure": {
+      "kind": "NotFound",
+      "code": "C04.DELIVERY_NOT_FOUND",
+      "message": "One or more requested deliveries were not found in the specified run scope."
+    }
+  }
+}

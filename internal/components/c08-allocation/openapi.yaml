@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: C08 Allocation and Resource Agents API
+  version: 1.0.0
+  description: Proposed HTTP contract for the operator and driver actions in UC04.
+servers:
+  - url: /
+    description: Relative URL for the deployed platform
+tags:
+  - name: C08 Allocation and Resource Agents
+    description: Vehicle assignment and driver acceptance
+paths:
+  /api/v1/vehicle-assignments:
+    post:
+      operationId: assignVehicle
+      summary: Request a vehicle assignment
+      description: Derive the operator context from authentication. Reuse an existing UC08 assignment reference when available.
+      tags: [C08 Allocation and Resource Agents]
+      security:
+        - c08BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/C08IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C08AssignVehicleRequest'
+            example:
+              planId: 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+              deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+              expectedVersion: 3
+      responses:
+        '200':
+          description: UC04 workflow outcome, including an offer awaiting driver acceptance or an unassigned delivery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C08AllocationOutcome'
+              example:
+                code: awaiting_acceptance
+                correlationId: 71ffaed8-05c8-4c57-ad03-3dec4cef43eb
+                assignmentRef: 4ccdbdad-004a-490a-8cf8-d365f6d2be47
+                acceptanceStatus: awaiting_uc04_acceptance
+        '401':
+          description: Authentication required.
+        '403':
+          description: The operator cannot assign this delivery.
+        '409':
+          description: The expected plan version is stale or the key was reused with a different request.
+  /api/v1/driver-offers/{offerId}/response:
+    post:
+      operationId: recordOfferResponse
+      summary: Record a driver response
+      description: Only the authenticated recipient may respond. Acceptance is recorded before internal assignment finalisation.
+      tags: [C08 Allocation and Resource Agents]
+      security:
+        - c08BearerAuth: []
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/C08IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C08OfferResponseRequest'
+            example:
+              response: accept
+      responses:
+        '200':
+          description: Workflow outcome after recording the driver's response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C08AllocationOutcome'
+        '401':
+          description: Authentication required.
+        '403':
+          description: The caller cannot respond to this offer.
+        '409':
+          description: The offer no longer accepts responses or the key was reused with a different request.
+components:
+  securitySchemes:
+    c08BearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    C08IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Replaying the same request with this key returns the original result.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  schemas:
+    C08AssignVehicleRequest:
+      type: object
+      additionalProperties: false
+      required: [planId, deliveryId, expectedVersion]
+      properties:
+        planId:
+          type: string
+          format: uuid
+        deliveryId:
+          type: string
+          format: uuid
+        expectedVersion:
+          type: integer
+          minimum: 1
+    C08OfferResponseRequest:
+      type: object
+      additionalProperties: false
+      required: [response]
+      properties:
+        response:
+          type: string
+          enum: [accept, reject]
+    C08AllocationOutcome:
+      type: object
+      additionalProperties: false
+      required: [code, correlationId]
+      properties:
+        code:
+          type: string
+          enum: [confirmed, awaiting_acceptance, assigned, allocation_failed, unassigned, unresolved, conflict, forbidden, invalid, unavailable]
+        correlationId:
+          type: string
+          format: uuid
+        assignmentRef:
+          type: [string, 'null']
+          format: uuid
+        allocationId:
+          type: [string, 'null']
+          format: uuid
+        resourceId:
+          type: [string, 'null']
+          format: uuid
+        resultingPlanVersion:
+          type: [integer, 'null']
+          minimum: 1
+        resultingResourceVersions:
+          type: object
+          propertyNames:
+            format: uuid
+          additionalProperties:
+            type: integer
+            minimum: 1
+        acceptanceStatus:
+          type: [string, 'null']
+          enum: [not_required, awaiting_uc04_acceptance, accepted, rejected, expired, null]
+        reason:
+          type: [string, 'null']

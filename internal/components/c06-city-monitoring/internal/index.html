@@ -1,0 +1,1667 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../../c05-planning/internal/">
+      
+      
+        <link rel="next" href="../../c07-disruption-detection/internal/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>C06 City Monitoring: internal interfaces - Intelligent Urban Platform — Internal Contracts</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#c06-city-monitoring-internal-interfaces" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-header__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent Urban Platform — Internal Contracts
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              C06 City Monitoring: internal interfaces
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-nav__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent Urban Platform — Internal Contracts
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Components
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Components
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 identity access
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C02 identity access
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c02-identity-access/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 Identity and Access: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 delivery management
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C04 delivery management
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c04-delivery-management/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 Delivery Management: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C05 planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c05-planning/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 Planning and Replanning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 city monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C06 city monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 City Monitoring: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 City Monitoring: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getcitysnapshotscope-freshnesspolicy-resultcitysnapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        getCitySnapshot(scope, freshnessPolicy) → Result\&lt;CitySnapshot>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingestobservationsourcecontext-observation-resultingestionreceipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ingestObservation(sourceContext, observation) → Result\&lt;IngestionReceipt>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#still-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still open
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 disruption detection
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C07 disruption detection
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c07-disruption-detection/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 Disruption Detection: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 allocation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C08 allocation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c08-allocation/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 Allocation and Resource Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 logistics knowledge
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C09 logistics knowledge
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c09-logistics-knowledge/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 Logistics Knowledge: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 decision records
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C10 decision records
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c10-decision-records/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 Decision Records and Explanation: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_9" id="__nav_2_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 kpi analytics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C11 kpi analytics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c11-kpi-analytics/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 KPI Analytics: internal interfaces (UC11)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_10" id="__nav_2_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 simulation replay
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C12 simulation replay
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c12-simulation-replay/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 Simulation and Replay: internal interfaces (UC12)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getcitysnapshotscope-freshnesspolicy-resultcitysnapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        getCitySnapshot(scope, freshnessPolicy) → Result\&lt;CitySnapshot>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingestobservationsourcecontext-observation-resultingestionreceipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ingestObservation(sourceContext, observation) → Result\&lt;IngestionReceipt>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#still-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still open
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="c06-city-monitoring-internal-interfaces">C06 City Monitoring: internal interfaces<a class="headerlink" href="#c06-city-monitoring-internal-interfaces" title="Permanent link">&para;</a></h1>
+<p>C06 owns City State (UC05). This file covers the calls other components make to
+C06 inside the backend process. Events are in <code>events.yaml</code>. HTTP operations
+for C01 and other clients are in <code>openapi.yaml</code> (<code>getCitySnapshot</code> so far;
+<code>submitManualCondition</code> will follow).</p>
+<p>Typed models: <code>backend/app/components/c06_city_monitoring/contracts.py</code> and
+<code>backend/app/shared/contracts.py</code>. Examples: <code>examples/</code>.</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<p>These conventions apply to the C06 and C07 contracts. All pairs need to agree
+them once (#28).</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Convention</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Identifiers</td>
+<td>UUID v4 strings for every entity and event ID (<code>eventId</code>, <code>planId</code>, <code>disruptionId</code>, ...)</td>
+</tr>
+<tr>
+<td>Versions</td>
+<td>Integers starting at 1, incremented on every committed change to an entity</td>
+</tr>
+<tr>
+<td>Timestamps</td>
+<td>ISO 8601 in UTC with <code>Z</code> suffix, for example <code>2026-11-20T08:15:00Z</code>; the UI converts to local time</td>
+</tr>
+<tr>
+<td>Road segment key</td>
+<td><code>seg:&lt;osm_way_id&gt;</code> (OpenStreetMap way ID), for example <code>seg:4471023</code>. <strong>Agreed.</strong></td>
+</tr>
+<tr>
+<td>Zone key</td>
+<td><code>zone:&lt;code&gt;</code>, using a fixed grid or Dublin postal district (to decide)</td>
+</tr>
+<tr>
+<td>Units</td>
+<td>Speed in km/h, delay in seconds, rainfall in mm/h, temperature in °C, distance in metres</td>
+</tr>
+<tr>
+<td>Quality</td>
+<td>Enum <code>good</code> / <code>degraded</code> / <code>unknown</code> on any observed or derived value</td>
+</tr>
+<tr>
+<td>Run scope</td>
+<td><code>live</code> or <code>simulation</code>, plus <code>runId</code> when simulation; replay never writes to <code>live</code></td>
+</tr>
+<tr>
+<td>Failure outcomes</td>
+<td>The shared <code>Result&lt;T&gt;</code> kinds: <code>Invalid</code>, <code>Forbidden</code>, <code>NotFound</code>, <code>Conflict</code>, <code>Unavailable</code>, <code>Unconfirmed</code>, <code>Infeasible</code>, <code>Partial</code></td>
+</tr>
+</tbody>
+</table>
+<p>Where a field is marked <em>slice: no</em>, it can be left out until Iteration 3 but
+the name is reserved.</p>
+<h2 id="provided-interfaces">Provided interfaces<a class="headerlink" href="#provided-interfaces" title="Permanent link">&para;</a></h2>
+<h3 id="getcitysnapshotscope-freshnesspolicy-resultcitysnapshot">getCitySnapshot(scope, freshnessPolicy) → Result\&lt;CitySnapshot&gt;<a class="headerlink" href="#getcitysnapshotscope-freshnesspolicy-resultcitysnapshot" title="Permanent link">&para;</a></h3>
+<p>Callers: C05 (planning) and C07 (full context after <code>CityStateUpdated</code>).
+Examples: <code>examples/city-snapshot-query.json</code>, <code>examples/city-snapshot.json</code>.</p>
+<p><strong>Request: CitySnapshotQuery</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scope.segmentKeys</code></td>
+<td>array of string</td>
+<td>one of</td>
+<td>Specific segments</td>
+</tr>
+<tr>
+<td><code>scope.bbox</code></td>
+<td>[minLon, minLat, maxLon, maxLat]</td>
+<td>one of</td>
+<td>Area query</td>
+</tr>
+<tr>
+<td><code>freshnessPolicy.maxAgeSeconds</code></td>
+<td>integer</td>
+<td>no</td>
+<td>Values older than this come back <code>degraded</code>; default 900</td>
+</tr>
+<tr>
+<td><code>atVersion</code></td>
+<td>integer</td>
+<td>no</td>
+<td>Read a past snapshot version (used by C10/C12)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response: CitySnapshot</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>snapshotVersion</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Monotonic City State version</td>
+</tr>
+<tr>
+<td><code>generatedAt</code></td>
+<td>timestamp</td>
+<td>yes</td>
+<td>When this snapshot was assembled</td>
+</tr>
+<tr>
+<td><code>segments</code></td>
+<td>array of SegmentCondition</td>
+<td>yes</td>
+<td>Only segments with a non-default condition; absent = <code>open</code>, <code>good</code></td>
+</tr>
+<tr>
+<td><code>staleSources</code></td>
+<td>array of string</td>
+<td>yes</td>
+<td>Empty when all feeds are fresh</td>
+</tr>
+<tr>
+<td><code>overallQuality</code></td>
+<td>enum</td>
+<td>yes</td>
+<td>Worst quality among returned values</td>
+</tr>
+</tbody>
+</table>
+<p><code>SegmentCondition</code> is defined in <code>events.yaml</code> (<code>components.schemas.SegmentCondition</code>).</p>
+<p>Behaviour (implemented in <code>backend/app/components/c06_city_monitoring/snapshot.py</code>):</p>
+<ul>
+<li>The caller also passes the City State scope: live, or one simulation <code>runId</code>.
+  A run's state is never mixed with live state.</li>
+<li>Requested segments without a recorded condition are omitted (absent means
+  <code>open</code>, <code>good</code>).</li>
+<li>In a current snapshot, a <code>good</code> value older than <code>maxAgeSeconds</code> (default
+  900) is returned as <code>degraded</code> and its sources are listed in <code>staleSources</code>.
+  Past versions (<code>atVersion</code>) are returned as they were recorded.</li>
+<li><code>overallQuality</code> is the worst quality among the returned segments, or <code>good</code>
+  when none are returned.</li>
+<li><code>scope.bbox</code> is rejected as <code>Invalid</code> until segments have geometry in C06.</li>
+<li><code>scope.segmentKeys</code> must hold 1 to 200 keys, the same limit as <code>openapi.yaml</code>.</li>
+<li>A read has no side effects: it sees committed City State and never writes, so
+  an ingestion committed during the read is kept. Returned segments are copies.</li>
+</ul>
+<p><strong>Failures:</strong> <code>Invalid</code> (bad scope, <code>bbox</code>, or 0 or more than 200 segment keys), <code>NotFound</code> (<code>atVersion</code> newer
+than the current version), <code>Unavailable</code> (no City State yet, or store down),
+<code>Forbidden</code>.</p>
+<h3 id="ingestobservationsourcecontext-observation-resultingestionreceipt">ingestObservation(sourceContext, observation) → Result\&lt;IngestionReceipt&gt;<a class="headerlink" href="#ingestobservationsourcecontext-observation-resultingestionreceipt" title="Permanent link">&para;</a></h3>
+<p>Callers: the traffic, weather and event source adapters, and manual reports.
+Examples: <code>examples/observation-closure.json</code>, <code>examples/ingestion-receipt.json</code>.</p>
+<p><strong>Request: Observation</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observationId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Assigned by source or C06; dedup key</td>
+</tr>
+<tr>
+<td><code>sourceId</code></td>
+<td>string</td>
+<td>yes</td>
+<td>For example <code>sim-traffic</code>, <code>manual</code></td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>traffic</code> / <code>weather</code> / <code>event</code> / <code>closure</code></td>
+</tr>
+<tr>
+<td><code>target</code></td>
+<td>object</td>
+<td>yes</td>
+<td><code>{ "segmentKey" }</code> or <code>{ "zoneKey" }</code> or <code>{ "lat", "lon" }</code> (C06 maps to a segment)</td>
+</tr>
+<tr>
+<td><code>values</code></td>
+<td>object</td>
+<td>yes</td>
+<td>Raw values in source units, for example <code>{ "status": "closed" }</code></td>
+</tr>
+<tr>
+<td><code>observedAt</code></td>
+<td>timestamp</td>
+<td>yes</td>
+<td>Source time; older than current → history only (AF4)</td>
+</tr>
+<tr>
+<td><code>author</code> / <code>expiresAt</code></td>
+<td>string / timestamp</td>
+<td>manual only</td>
+<td>AF5</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response: IngestionReceipt</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observationId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>The ingested observation</td>
+</tr>
+<tr>
+<td><code>disposition</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>merged</code> / <code>history_only</code> / <code>conflict</code> / <code>rejected</code></td>
+</tr>
+<tr>
+<td><code>snapshotVersion</code></td>
+<td>integer</td>
+<td>when merged</td>
+<td>New City State version</td>
+</tr>
+</tbody>
+</table>
+<p>Re-ingesting the same <code>observationId</code> returns the first receipt and changes
+nothing. A merged observation commits the City State change and the
+<code>CityStateUpdated</code> outbox entry in one transaction.</p>
+<p><strong>Failures:</strong> <code>Invalid</code> (unusable values or unsupported target), <code>Unavailable</code>
+(store down; nothing is saved).</p>
+<p>Zone-level weather (<code>zoneKey</code>, <code>rainMmH</code>, <code>tempC</code>, <code>windKmh</code>, <code>quality</code>)
+follows the same pattern. <em>slice: no</em>.</p>
+<h2 id="required-interfaces">Required interfaces<a class="headerlink" href="#required-interfaces" title="Permanent link">&para;</a></h2>
+<p>None yet. Source authentication will use C02 once its contract exists.</p>
+<h2 id="still-open">Still open<a class="headerlink" href="#still-open" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[ ] RabbitMQ exchange and queue naming, and who creates them (proposed: <code>ulop.events</code> topic exchange, routing key = <code>eventType</code>, shared setup script in the repo).</li>
+<li>[ ] Where the shared <code>EventEnvelope</code> and conventions live (#28).</li>
+<li>[ ] Zones: fixed grid or postal districts? Only needed for weather, so this can wait.</li>
+<li>[ ] Per-source freshness overrides.</li>
+<li>[x] City State read for C01: <code>getCitySnapshot</code> in <code>openapi.yaml</code>.</li>
+<li>[ ] <code>submitManualCondition</code> over HTTP (UC05 AF5).</li>
+<li>[ ] Segment geometry for area (<code>bbox</code>) queries and the C01 map (#43): from C05's routing graph or a demo fixture.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": [], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>
