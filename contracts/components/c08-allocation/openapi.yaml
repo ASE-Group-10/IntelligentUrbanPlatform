@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: C08 Allocation and Resource Agents API
   version: 1.0.0
-  description: Proposed HTTP contract for the operator and driver actions in UC04.
+  description: Provider-scoped allocation reads and operator and driver actions in UC04.
 servers:
   - url: /
     description: Relative URL for the deployed platform
@@ -11,6 +11,28 @@ tags:
     description: Vehicle assignment and driver acceptance
 paths:
   /api/v1/vehicle-assignments:
+    get:
+      operationId: listVehicleAssignments
+      summary: List vehicle assignments for the acting provider
+      description: Operators and platform admins see provider assignments. Drivers see their own issued offers and responses.
+      tags: [C08 Allocation and Resource Agents]
+      security:
+        - c08BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/C08ActingProvider'
+      responses:
+        '200':
+          description: Saved allocations and actions available to this caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/C08AssignmentView'
+        '401':
+          description: Authentication required.
+        '403':
+          description: Access denied for this provider.
     post:
       operationId: assignVehicle
       summary: Request a vehicle assignment
@@ -19,6 +41,7 @@ paths:
       security:
         - c08BearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/C08ActingProvider'
         - $ref: '#/components/parameters/C08IdempotencyKey'
       requestBody:
         required: true
@@ -63,6 +86,7 @@ paths:
           schema:
             type: string
             format: uuid
+        - $ref: '#/components/parameters/C08ActingProvider'
         - $ref: '#/components/parameters/C08IdempotencyKey'
       requestBody:
         required: true
@@ -91,6 +115,14 @@ components:
       type: http
       scheme: bearer
   parameters:
+    C08ActingProvider:
+      name: X-Acting-Provider
+      in: header
+      required: false
+      description: Provider selected from C02 availableProviders. Required for platform admins and multi-provider users.
+      schema:
+        type: string
+        format: uuid
     C08IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -101,6 +133,22 @@ components:
         minLength: 1
         maxLength: 128
   schemas:
+    C08AssignmentView:
+      type: object
+      additionalProperties: false
+      required: [planId, planVersion, deliveryId, assignmentRef, resourceId, resourceName, offerId, status, correlationId, canOffer, canRespond]
+      properties:
+        planId: { type: string, format: uuid }
+        planVersion: { type: integer, minimum: 1 }
+        deliveryId: { type: string, format: uuid }
+        assignmentRef: { type: string, format: uuid }
+        resourceId: { type: string, format: uuid }
+        resourceName: { type: string }
+        offerId: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [allocated, offered, accepted, rejected] }
+        correlationId: { type: string, format: uuid }
+        canOffer: { type: boolean }
+        canRespond: { type: boolean }
     C08AssignVehicleRequest:
       type: object
       additionalProperties: false

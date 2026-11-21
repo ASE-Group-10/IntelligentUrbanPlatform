@@ -15,15 +15,33 @@ export interface ResourceScope {
 
 type Workspace = (scope: ResourceScope) => ReactNode;
 
-export function ResourceAccess({ children }: { children: Workspace }) {
+export function ResourceAccess({
+  children,
+  area = "Resources",
+}: {
+  children: Workspace;
+  area?: string;
+}) {
   if (!supabase) {
-    return <AccessNotice>Resource sign-in is unavailable in this environment.</AccessNotice>;
+    return <AccessNotice>{area} sign-in is unavailable in this environment.</AccessNotice>;
   }
 
-  return <ResourceSession client={supabase}>{children}</ResourceSession>;
+  return (
+    <ResourceSession client={supabase} area={area}>
+      {children}
+    </ResourceSession>
+  );
 }
 
-function ResourceSession({ client, children }: { client: SupabaseClient; children: Workspace }) {
+function ResourceSession({
+  client,
+  children,
+  area,
+}: {
+  client: SupabaseClient;
+  children: Workspace;
+  area: string;
+}) {
   const [session, setSession] = useState<Session | null | undefined>();
   const queryClient = useQueryClient();
 
@@ -44,7 +62,7 @@ function ResourceSession({ client, children }: { client: SupabaseClient; childre
   }, [client, queryClient]);
 
   if (session === undefined) return <AccessNotice>Checking your session…</AccessNotice>;
-  if (!session) return <SignIn client={client} />;
+  if (!session) return <SignIn client={client} area={area} />;
 
   return (
     <SignedInResources
@@ -58,7 +76,7 @@ function ResourceSession({ client, children }: { client: SupabaseClient; childre
   );
 }
 
-function SignIn({ client }: { client: SupabaseClient }) {
+function SignIn({ client, area }: { client: SupabaseClient; area: string }) {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -87,7 +105,7 @@ function SignIn({ client }: { client: SupabaseClient }) {
       onSubmit={signIn}
       className="mx-auto my-8 grid w-full max-w-sm gap-4 rounded-xl border bg-card p-6 text-card-foreground"
     >
-      <h1 className="font-heading text-xl font-semibold">Sign in to Resources</h1>
+      <h1 className="font-heading text-xl font-semibold">Sign in to {area}</h1>
       <label className="grid gap-1 text-sm">
         Email
         <input className={inputClass} name="email" type="email" autoComplete="username" required />
@@ -178,7 +196,7 @@ function SignedInResources({
         </Button>
         {signOutError && <p role="alert">Sign-out failed. Try again.</p>}
       </div>
-      {identity.isPending && <AccessNotice>Checking resource access…</AccessNotice>}
+      {identity.isPending && <AccessNotice>Checking provider access…</AccessNotice>}
       {identity.isError && (
         <AccessNotice>
           <span role="alert">Couldn’t verify your access.</span>{" "}

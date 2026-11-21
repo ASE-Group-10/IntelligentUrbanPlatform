@@ -70,6 +70,9 @@ def test_database_url() -> str:
                 f"refusing to reset {name!r}: TEST_DATABASE_URL must name a "
                 "dedicated test database ending in '_test', such as ulop_test"
             )
+        conn.execute("drop schema if exists c08_allocation cascade")
+        conn.execute("drop schema if exists c03_resource_management cascade")
+        conn.execute("drop schema if exists c02_identity_access cascade")
         conn.execute("drop schema if exists c06_city_monitoring cascade")
         conn.execute("drop schema if exists c07_disruption_detection cascade")
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):

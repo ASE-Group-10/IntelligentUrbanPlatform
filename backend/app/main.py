@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.components.c02_identity_access.tokens import SupabaseVerifier
+from app.components.c08_allocation.router import router as allocation_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -131,6 +132,7 @@ def create_app(engine=None, settings=None, *, identity_verifier=None):
         return FileResponse(STATIC / "index.html")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    app.include_router(allocation_router)
     app.include_router(identity_router)
     app.include_router(router)
     return app
