@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+import { ResourceAccess, type ResourceScope } from "@/features/auth/resource-access";
+
 type ResourceType = "vehicle" | "depot" | "warehouse" | "locker";
 
 interface Resource {
@@ -69,8 +71,18 @@ const detailsTemplate: Record<ResourceType, Record<string, unknown>> = {
   },
 };
 
+class ProviderAccessDenied extends Error {}
+
 function ResourcesPage() {
-  const [identity, setIdentity] = useState("dev-manager");
+  return <ResourceAccess>{(scope) => <ResourceWorkspace {...scope} />}</ResourceAccess>;
+}
+
+function ResourceWorkspace({
+  providerId,
+  canRegister,
+  request: authenticatedRequest,
+}: ResourceScope) {
+  const [denied, setDenied] = useState(false);
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [resourceType, setResourceType] = useState<ResourceType>("vehicle");
@@ -81,27 +93,28 @@ function ResourcesPage() {
   const [availability, setAvailability] = useState("available");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [listVersion, setListVersion] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   // Aborted whenever the identity changes, so work started as a previous identity is ignored.
   const sessionRef = useRef(new AbortController());
 
   const request = useCallback(
     async (path: string, init: RequestInit = {}) => {
-      const response = await fetch(path, {
-        ...init,
-        headers: {
-          Authorization: `Bearer ${identity}`,
-          ...(init.headers ?? {}),
-        },
-      });
+      const headers = new Headers(init.headers);
+      headers.set("X-Acting-Provider", providerId);
+      const response = await authenticatedRequest(path, { ...init, headers });
+      init.signal?.throwIfAborted();
+      if (response.status === 403) {
+        throw new ProviderAccessDenied();
+      }
       const body = await response.json();
       if (!response.ok) {
         throw new Error(body.error?.message ?? "Request failed");
       }
       return body;
     },
-    [identity],
+    [authenticatedRequest, providerId],
   );
 
   useEffect(() => {
@@ -109,62 +122,42 @@ function ResourcesPage() {
     return () => sessionRef.current.abort();
   }, []);
 
-  function changeIdentity(next: string) {
-    if (next === identity) return;
-    // Invalidate work started as the previous identity and drop its data.
-    sessionRef.current.abort();
-    sessionRef.current = new AbortController();
-    setResources([]);
-    setIdentifier("");
-    setName("");
-    setMessage("");
-    setError("");
-    setSubmitting(false);
-    setIdentity(next);
-  }
-
-  const refreshAbort = useRef<AbortController | null>(null);
-
-  const refresh = useCallback(async () => {
-    refreshAbort.current?.abort();
-    const controller = new AbortController();
-    refreshAbort.current = controller;
+  function refresh() {
     setLoading(true);
     setError("");
-    try {
-      const data = await request("/api/v1/resources?limit=100", { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      setResources(data.items);
-    } catch (caught) {
-      if (controller.signal.aborted) return;
-      setError(caught instanceof Error ? caught.message : "Unable to load resources");
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }, [request]);
+    setListVersion((version) => version + 1);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
-    request("/api/v1/development/config", { signal: controller.signal })
+    request("/resources?limit=100", { signal: controller.signal })
+      .then((data) => {
+        if (!controller.signal.aborted) setResources(data.items);
+      })
+      .catch((caught) => {
+        if (controller.signal.aborted) return;
+        if (caught instanceof ProviderAccessDenied) setDenied(true);
+        else setError(caught instanceof Error ? caught.message : "Unable to load resources");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [request, listVersion]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    request("/development/config", { signal: controller.signal })
       .then((data) => {
         if (!controller.signal.aborted) setLocations(data.locations);
       })
       .catch((caught) => {
         if (controller.signal.aborted) return;
-        setError(caught instanceof Error ? caught.message : "Unable to load config");
+        if (caught instanceof ProviderAccessDenied) setDenied(true);
+        else setError(caught instanceof Error ? caught.message : "Unable to load config");
       });
     return () => controller.abort();
   }, [request]);
-
-  useEffect(() => {
-    // Identity changed: drop the previous provider's data before loading the new one.
-    void refresh();
-    return () => refreshAbort.current?.abort();
-  }, [refresh]);
-
-  useEffect(() => {
-    setDetails(JSON.stringify(detailsTemplate[resourceType], null, 2));
-  }, [resourceType]);
 
   async function registerResource(event: FormEvent) {
     event.preventDefault();
@@ -178,7 +171,7 @@ function ResourcesPage() {
       const location = locations[locationIndex];
       if (!location) throw new Error("Choose a location");
       const parsedDetails = JSON.parse(details);
-      const resource = await request("/api/v1/resources", {
+      const resource = await request("/resources", {
         method: "POST",
         signal: session.signal,
         headers: {
@@ -201,9 +194,13 @@ function ResourcesPage() {
       setMessage(`${resource.name} registered successfully`);
       setIdentifier("");
       setName("");
-      await refresh();
+      refresh();
     } catch (caught) {
       if (!isCurrent()) return;
+      if (caught instanceof ProviderAccessDenied) {
+        setDenied(true);
+        return;
+      }
       setError(
         caught instanceof SyntaxError
           ? "Details must be valid JSON"
@@ -216,6 +213,13 @@ function ResourcesPage() {
     }
   }
 
+  if (denied)
+    return (
+      <p role="alert" className="p-4 text-destructive">
+        Access denied for this provider.
+      </p>
+    );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -223,24 +227,7 @@ function ResourcesPage() {
         description="Register logistics resources and review their planning eligibility."
         actions={
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              Identity
-              <select
-                value={identity}
-                onChange={(event) => changeIdentity(event.target.value)}
-                className="h-8 rounded-lg border bg-background px-2 text-foreground"
-              >
-                <option value="dev-manager">Provider A · Manager</option>
-                <option value="dev-operator">Provider A · Operator</option>
-                <option value="dev-other-provider">Provider B · Manager</option>
-              </select>
-            </label>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => void refresh()}
-              aria-label="Refresh resources"
-            >
+            <Button variant="outline" size="icon" onClick={refresh} aria-label="Refresh resources">
               <RefreshCw className={loading ? "animate-spin" : ""} />
             </Button>
           </div>
@@ -259,74 +246,82 @@ function ResourcesPage() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Register resource</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={registerResource}>
-              <Field label="Resource type">
-                <select
-                  value={resourceType}
-                  onChange={(event) => setResourceType(event.target.value as ResourceType)}
-                >
-                  <option value="vehicle">Vehicle</option>
-                  <option value="depot">Depot</option>
-                  <option value="warehouse">Warehouse</option>
-                  <option value="locker">Locker</option>
-                </select>
-              </Field>
-              <Field label="Identifier">
-                <input
-                  required
-                  value={identifier}
-                  onChange={(event) => setIdentifier(event.target.value)}
-                  placeholder="VAN-001"
-                />
-              </Field>
-              <Field label="Name">
-                <input
-                  required
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Dublin electric van"
-                />
-              </Field>
-              <Field label="Location">
-                <select
-                  value={locationIndex}
-                  onChange={(event) => setLocationIndex(Number(event.target.value))}
-                >
-                  {locations.map((location, index) => (
-                    <option key={location.address} value={index}>
-                      {location.address}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Observed availability">
-                <select
-                  value={availability}
-                  onChange={(event) => setAvailability(event.target.value)}
-                >
-                  <option value="available">Available</option>
-                  <option value="unavailable">Unavailable</option>
-                  <option value="unknown">Unknown</option>
-                </select>
-              </Field>
-              <Field label="Type-specific details (JSON)">
-                <textarea
-                  value={details}
-                  onChange={(event) => setDetails(event.target.value)}
-                  rows={12}
-                />
-              </Field>
-              <Button type="submit" className="w-full" disabled={submitting}>
-                Register resource
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        {canRegister ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Register resource</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={registerResource}>
+                <Field label="Resource type">
+                  <select
+                    value={resourceType}
+                    onChange={(event) => {
+                      const next = event.target.value as ResourceType;
+                      setResourceType(next);
+                      setDetails(JSON.stringify(detailsTemplate[next], null, 2));
+                    }}
+                  >
+                    <option value="vehicle">Vehicle</option>
+                    <option value="depot">Depot</option>
+                    <option value="warehouse">Warehouse</option>
+                    <option value="locker">Locker</option>
+                  </select>
+                </Field>
+                <Field label="Identifier">
+                  <input
+                    required
+                    value={identifier}
+                    onChange={(event) => setIdentifier(event.target.value)}
+                    placeholder="VAN-001"
+                  />
+                </Field>
+                <Field label="Name">
+                  <input
+                    required
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Dublin electric van"
+                  />
+                </Field>
+                <Field label="Location">
+                  <select
+                    value={locationIndex}
+                    onChange={(event) => setLocationIndex(Number(event.target.value))}
+                  >
+                    {locations.map((location, index) => (
+                      <option key={location.address} value={index}>
+                        {location.address}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Observed availability">
+                  <select
+                    value={availability}
+                    onChange={(event) => setAvailability(event.target.value)}
+                  >
+                    <option value="available">Available</option>
+                    <option value="unavailable">Unavailable</option>
+                    <option value="unknown">Unknown</option>
+                  </select>
+                </Field>
+                <Field label="Type-specific details (JSON)">
+                  <textarea
+                    value={details}
+                    onChange={(event) => setDetails(event.target.value)}
+                    rows={12}
+                  />
+                </Field>
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  Register resource
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        ) : (
+          <p>You don’t have permission to register resources for this provider.</p>
+        )}
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
