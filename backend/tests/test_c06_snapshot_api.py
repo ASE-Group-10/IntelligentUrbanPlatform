@@ -2,9 +2,11 @@
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine
@@ -30,6 +32,10 @@ LIVE = StateScope(scope="live")
 SIMULATION = StateScope(scope="simulation", run_id=RUN_ID)
 NOW = datetime(2026, 11, 20, 8, 14, 35, tzinfo=UTC)
 AUTH = {"Authorization": "Bearer valid"}
+CONTRACT = (
+    Path(__file__).resolve().parents[2]
+    / "contracts/components/c06-city-monitoring/openapi.yaml"
+)
 
 
 class FakeVerifier:
@@ -68,6 +74,7 @@ def make_client(store) -> TestClient:
             "mock_dependencies": True,
             "supabase_url": None,
             "availability_max_age_seconds": 86400,
+            "c06_shared_run_ids": frozenset({RUN_ID}),
         },
     )()
     return TestClient(
@@ -195,11 +202,59 @@ def test_version_newer_than_current_is_not_found(client):
     assert_error(response, 404, "NotFound")
 
 
-def test_no_city_state_yet_is_unavailable(client):
-    response = client.get(
-        URL, params={"segmentKeys": SEGMENT, "runId": str(uuid4())}, headers=AUTH
-    )
+def test_no_city_state_yet_is_unavailable():
+    with make_client(InMemoryCityStateStore()) as client:
+        response = client.get(URL, params={"segmentKeys": SEGMENT}, headers=AUTH)
+
     assert_error(response, 503, "Unavailable")
+
+
+def test_run_that_is_not_shared_is_forbidden(client, store):
+    other_run = uuid4()
+    store.seed_version(StateScope(scope="simulation", run_id=other_run), 3)
+
+    response = client.get(
+        URL, params={"segmentKeys": SEGMENT, "runId": str(other_run)}, headers=AUTH
+    )
+
+    assert_error(response, 403, "Forbidden")
+    assert "snapshotVersion" not in response.text
+
+
+def test_max_age_beyond_timedelta_range_treats_nothing_as_stale(client, store, example):
+    ingest(store, example("observation-closure.json"))
+
+    response = client.get(
+        URL, params={"segmentKeys": SEGMENT, "maxAgeSeconds": 10**18}, headers=AUTH
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["segments"][0]["quality"] == "good"
+
+
+def test_generated_openapi_matches_the_contract(client):
+    """C01 generates its client from /openapi.json, so it must match the contract."""
+    contract = yaml.safe_load(CONTRACT.read_text())
+    expected = contract["paths"]["/api/v1/city-state/snapshot"]["get"]
+    segment_key = contract["components"]["schemas"]["C06SegmentKey"]
+    generated = client.get("/openapi.json").json()["paths"][
+        "/api/v1/city-state/snapshot"
+    ]["get"]
+
+    def comparable(parameter: dict) -> dict:
+        schema = dict(parameter["schema"])
+        if "items" in schema:
+            schema["items"] = {"type": "string", "pattern": segment_key["pattern"]}
+        keep = ("name", "in", "required", "style", "explode")
+        return {**{k: parameter[k] for k in keep if k in parameter}, "schema": schema}
+
+    assert generated["operationId"] == expected["operationId"]
+    assert [comparable(p) for p in generated["parameters"]] == [
+        comparable(p) for p in expected["parameters"]
+    ]
+    assert set(generated["responses"]) == set(expected["responses"])
+    error = generated["responses"]["401"]["content"]["application/json"]["schema"]
+    assert error == {"$ref": "#/components/schemas/C06ErrorResponse"}
 
 
 def test_store_down_is_unavailable_without_details():

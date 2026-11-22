@@ -244,6 +244,10 @@ token. Add `runId` to read a simulation run, such as the demo run below, and
 out, and values older than `maxAgeSeconds` (default 900) come back `degraded`,
 so use `app.demo.feed --fresh` for a closure that shows as current.
 
+Nothing records who owns a simulation run yet, so a `runId` is only readable
+when it is listed in `C06_SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
+the demo run). Any other run returns `403 Forbidden`.
+
 ## C07 worker
 
 Consumes `CityStateUpdated` from `ulop.events` (queue `c07.city-state-updated`)

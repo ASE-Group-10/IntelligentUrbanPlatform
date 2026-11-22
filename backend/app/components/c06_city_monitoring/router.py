@@ -1,7 +1,9 @@
 """UC05 ``getCitySnapshot`` over HTTP for C01 (see c06-city-monitoring/openapi.yaml).
 
 Query parameters are checked here rather than by FastAPI so that bad input gets
-the contract's ``400 Invalid`` instead of the app-wide ``422``.
+the contract's ``400 Invalid`` instead of the app-wide ``422``. Because FastAPI
+does not see them, the operation documents them itself (``_PARAMETERS``) so
+``/openapi.json``, which C01 generates its client from, matches the contract.
 """
 
 import logging
@@ -9,7 +11,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.engine import make_url
 
 from app.components.c06_city_monitoring.contracts import (
@@ -30,9 +32,66 @@ logger = logging.getLogger("ulop.c06.api")
 
 _STATUS = {"Invalid": 400, "Forbidden": 403, "NotFound": 404, "Unavailable": 503}
 
+_PARAMETERS = [
+    {
+        "name": "segmentKeys",
+        "in": "query",
+        "required": True,
+        "description": "Comma-separated segment keys to read.",
+        "style": "form",
+        "explode": False,
+        "schema": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {"type": "string", "pattern": "^seg:[1-9][0-9]*$"},
+        },
+    },
+    {
+        "name": "maxAgeSeconds",
+        "in": "query",
+        "required": False,
+        "description": "Values older than this are returned as `degraded`.",
+        "schema": {"type": "integer", "minimum": 1, "default": 900},
+    },
+    {
+        "name": "atVersion",
+        "in": "query",
+        "required": False,
+        "description": "Read City State as it was at this version (C10, C12).",
+        "schema": {"type": "integer", "minimum": 1},
+    },
+    {
+        "name": "runId",
+        "in": "query",
+        "required": False,
+        "description": "Simulation run to read. Leave out to read live City State.",
+        "schema": {"type": "string", "format": "uuid"},
+    },
+]
+
+
+class _ErrorBody(BaseModel):
+    code: str
+    message: str
+    correlation_id: UUID
+
+
+class C06ErrorResponse(BaseModel):
+    error: _ErrorBody
+
+
+_RESPONSES = {
+    400: "Missing or malformed segment keys or parameters.",
+    401: "Missing, invalid or expired bearer token.",
+    403: "The caller may not read this City State or simulation run.",
+    404: "`atVersion` is newer than the current City State version.",
+    503: "City State, or C02 sign-in, is unavailable.",
+}
+
 
 class _SnapshotParams(ContractModel):
-    segment_keys: list[SegmentKey] = Field(min_length=1)
+    segment_keys: list[SegmentKey] = Field(min_length=1, max_length=200)
     max_age_seconds: Annotated[int, Field(ge=1)] | None = None
     at_version: Version | None = None
     run_id: UUID | None = None
@@ -49,30 +108,40 @@ def libpq_url(url: str) -> str:
     "/snapshot",
     response_model=CitySnapshot,
     operation_id="getCitySnapshot",
-    responses={code: {"description": kind} for kind, code in _STATUS.items()},
+    responses={
+        code: {"description": text, "model": C06ErrorResponse}
+        for code, text in _RESPONSES.items()
+    },
+    openapi_extra={"parameters": _PARAMETERS},
 )
 def get_city_snapshot(
     request: Request,
     _: Annotated[CurrentIdentity, Depends(current_identity)],
-    segmentKeys: str | None = None,  # noqa: N803 - contract parameter names
-    maxAgeSeconds: str | None = None,  # noqa: N803
-    atVersion: str | None = None,  # noqa: N803
-    runId: str | None = None,  # noqa: N803
 ) -> CitySnapshot:
-    """Conditions of the requested segments; any signed-in user may read them."""
+    """Conditions of the requested segments. Live state is open to every
+    signed-in user; a simulation run only when it is a shared run."""
+    query_params = request.query_params
+    segment_keys = query_params.get("segmentKeys")
     try:
         params = _SnapshotParams.model_validate(
             {
-                "segmentKeys": segmentKeys.split(",") if segmentKeys else [],
-                "maxAgeSeconds": maxAgeSeconds,
-                "atVersion": atVersion,
-                "runId": runId,
+                "segmentKeys": segment_keys.split(",") if segment_keys else [],
+                "maxAgeSeconds": query_params.get("maxAgeSeconds"),
+                "atVersion": query_params.get("atVersion"),
+                "runId": query_params.get("runId"),
             }
         )
     except ValidationError as error:
         detail = error.errors(include_url=False, include_input=False)[0]
         field = ".".join(map(str, detail["loc"]))
         raise APIError(400, "Invalid", f"{field}: {detail['msg']}") from error
+
+    # shortcut: no component records who owns a simulation run yet (C12
+    # internal.md lists the owner as pending), so only runs configured as
+    # shared, the thin-slice demo run by default, can be read.
+    shared_runs = request.app.state.settings.c06_shared_run_ids
+    if params.run_id and params.run_id not in shared_runs:
+        raise APIError(403, "Forbidden", "The caller may not read this simulation run.")
 
     scope = (
         StateScope(scope="simulation", run_id=params.run_id)
