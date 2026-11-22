@@ -6,6 +6,8 @@ import { AuthContext, type Auth } from "./auth-context";
 import { identitySchema, sessionRequest } from "./identity";
 import { supabase } from "./supabase";
 
+const NO_CHOICE = { principalId: "", providerId: "" };
+
 /**
  * One Supabase session for the whole app (#96): every screen and the top bar
  * read the same user, acting provider and token.
@@ -18,21 +20,26 @@ export function AuthProvider({
   client?: SupabaseClient | null;
 }) {
   const [session, setSession] = useState<Session | null | undefined>(client ? undefined : null);
-  // The choice belongs to one user; another account starts without one.
-  const [choice, setChoice] = useState({ principalId: "", providerId: "" });
+  // The choice belongs to one signed-in session: another account, a sign-out or
+  // an expired session starts without one. Navigation and token refresh keep it.
+  const [choice, setChoice] = useState(NO_CHOICE);
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!client) return;
     const { data } = client.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
-      if (event === "SIGNED_OUT") queryClient.removeQueries({ queryKey: ["current-identity"] });
+      if (event === "SIGNED_OUT") {
+        setChoice(NO_CHOICE);
+        queryClient.removeQueries({ queryKey: ["current-identity"] });
+      }
     });
     return () => data.subscription.unsubscribe();
   }, [client, queryClient]);
 
   const expire = useCallback(async () => {
     setSession(null);
+    setChoice(NO_CHOICE);
     queryClient.removeQueries({ queryKey: ["current-identity"] });
     await client?.auth.signOut({ scope: "local" }).catch(() => undefined);
   }, [client, queryClient]);

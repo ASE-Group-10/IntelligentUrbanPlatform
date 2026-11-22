@@ -430,4 +430,60 @@ describe("Shell session", () => {
       ?.parentElement as HTMLElement;
     expect(within(header).getByLabelText("Acting provider")).toHaveValue(providerA);
   });
+
+  async function signInAgain(user: ReturnType<typeof userEvent.setup>) {
+    const form = await screen.findByRole("form", { name: "Sign in" });
+    await user.type(within(form).getByLabelText("Email"), "manager@example.test");
+    await user.type(within(form).getByLabelText("Password"), "synthetic-password");
+    await user.click(within(form).getByRole("button", { name: "Sign in" }));
+  }
+
+  beforeEach(() => {
+    auth.signInWithPassword.mockImplementation(async () => {
+      currentSession = session;
+      notify("SIGNED_IN", session);
+      return { error: null };
+    });
+  });
+
+  it("forgets the acting provider after signing out and back in", async () => {
+    mockFetch(() => Promise.resolve(json({ items: [resource("x", "Scoped van")] })));
+    const user = userEvent.setup();
+    await renderResources();
+    expect(await screen.findByText("Scoped van")).toBeVisible();
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Sign out" }));
+    await signInAgain(user);
+
+    expect(await screen.findByText("Choose the provider you’re acting for.")).toBeVisible();
+    expect(screen.getByLabelText("Acting provider")).toHaveValue("");
+    expect(screen.queryByText("Scoped van")).not.toBeInTheDocument();
+  });
+
+  it("forgets the acting provider when the session expires", async () => {
+    auth.refreshSession.mockRejectedValue(new Error("Refresh failed"));
+    mockFetch((_, __, init) =>
+      Promise.resolve(init?.method === "POST" ? json({}, 401) : json({ items: [] })),
+    );
+    const user = userEvent.setup();
+    await renderResources();
+    await submitVan();
+
+    await signInAgain(user);
+
+    expect(await screen.findByLabelText("Acting provider")).toHaveValue("");
+  });
+
+  it("keeps the acting provider across screens and a token refresh", async () => {
+    mockFetch(() => Promise.resolve(json({ items: [resource("x", "Scoped van")] })));
+    const router = await renderResources();
+    expect(await screen.findByText("Scoped van")).toBeVisible();
+
+    await act(() => router.navigate({ to: "/" }));
+    act(() => notify("TOKEN_REFRESHED", { ...session, access_token: "refreshed-token" }));
+    await act(() => router.navigate({ to: "/resources" }));
+
+    expect(await screen.findByLabelText("Acting provider")).toHaveValue(providerA);
+    expect(await screen.findByText("Scoped van")).toBeVisible();
+  });
 });
