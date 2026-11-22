@@ -96,7 +96,10 @@ def get_city_snapshot(
 def _max_age(query: CitySnapshotQuery) -> timedelta:
     policy = query.freshness_policy
     seconds = policy.max_age_seconds if policy and policy.max_age_seconds else None
-    return timedelta(seconds=seconds or DEFAULT_MAX_AGE_SECONDS)
+    try:
+        return timedelta(seconds=seconds or DEFAULT_MAX_AGE_SECONDS)
+    except OverflowError:  # more than timedelta can hold: nothing is too old
+        return timedelta.max
 
 
 def _with_freshness(
