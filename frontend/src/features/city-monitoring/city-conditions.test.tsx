@@ -219,4 +219,32 @@ describe("CityConditionsPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/don’t have access/i);
     expect(screen.queryByRole("region", { name: "Eden Quay" })).not.toBeInTheDocument();
   });
+
+  it.each([
+    [403, { error: { code: "Forbidden", message: "x" } }],
+    [401, UNAUTHENTICATED],
+  ] as const)(
+    "keeps the closure hidden after a %i until a request succeeds again",
+    async (status, body) => {
+      vi.stubGlobal(
+        "fetch",
+        respondInTurn([200, SNAPSHOT], [status, body], [503, UNAVAILABLE], [200, SNAPSHOT]),
+      );
+      const client = newClient();
+      render(wrap(<CityConditionsPanel selectedKey="seg:4471023" />, client));
+      expect(await screen.findByRole("region", { name: "Eden Quay" })).toBeInTheDocument();
+
+      await act(() => client.refetchQueries());
+      await act(() => client.refetchQueries());
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(/conditions unavailable/i);
+      expect(screen.queryByRole("region", { name: "Eden Quay" })).not.toBeInTheDocument();
+      expect(screen.queryByText(/City State v|Last known/)).not.toBeInTheDocument();
+
+      await act(() => client.refetchQueries());
+
+      expect(await screen.findByRole("region", { name: "Eden Quay" })).toHaveTextContent("Closed");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
 });
