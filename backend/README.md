@@ -1,7 +1,7 @@
-# UC01 resource backend
+# Urban Logistics backend
 
 FastAPI application with SQLAlchemy/psycopg persistence in PostgreSQL.
-This increment implements UC01 only. UC02 and other component APIs remain future work.
+The application includes the UC01 resource API and a UC04 driver offer response.
 
 ## Run locally
 
@@ -40,7 +40,7 @@ For shared environments, migrations are run by the database owner from merged
 | Transactions | Resource state, successful audit outcome, idempotency receipt, and outbox commit together |
 | C02 | Supabase ES256/RS256 access tokens verified against project signing keys. Roles and provider scope come from C02 database records. |
 | Mapping | Only three documented synthetic location fixtures; no external map API |
-| C08 | Deterministic in-process result; no real agents, negotiation, or allocation |
+| C08 | UC01 uses mock agent activation. UC04 stores driver responses to existing offers in PostgreSQL. |
 | C10 | Append-only `c03_audit_outcomes` development stand-in; C10 integration pending |
 | Messaging | Unpublished `c03_outbox`; no RabbitMQ consumer/publisher in this increment |
 
@@ -68,6 +68,65 @@ Synthetic fixtures:
 | Dublin Depot (synthetic) | 53.3498 | -6.2603 |
 | Docklands Hub (synthetic) | 53.3480 | -6.2380 |
 | City Centre Locker (synthetic) | 53.3438 | -6.2546 |
+
+## Test a C08 driver offer response
+
+Apply the migrations and start the API with `uv run uvicorn app.main:app` from
+`backend`. In the development database, use a C02 user with a `driver` membership
+for the selected provider. Replace the two UUID placeholders with that provider
+and user's IDs, then seed an offer:
+
+```sql
+INSERT INTO c08_allocation.driver_offers
+    (offer_id, assignment_ref, provider_id, driver_id, expires_at)
+VALUES
+    ('45e85594-bc96-41eb-b370-3a805a914ce8', gen_random_uuid(),
+     '<provider-uuid>', '<driver-uuid>', now() + interval '15 minutes');
+```
+
+```sh
+curl -i http://127.0.0.1:8000/api/v1/driver-offers/45e85594-bc96-41eb-b370-3a805a914ce8/response \
+  -H "Authorization: Bearer $DRIVER_ACCESS_TOKEN" \
+  -H "X-Acting-Provider: $PROVIDER_ID" \
+  -H 'Idempotency-Key: c08-demo-01' \
+  -H 'Content-Type: application/json' \
+  -d '{"response":"accept"}'
+```
+
+Expect HTTP 200 and `acceptanceStatus: accepted`. Repeating the request returns the
+original outcome with `Idempotency-Replayed: true`. Changing the answer with the
+same key returns HTTP 409. Use a fresh offer and key to test rejection.
+The operation records the answer before assignment finalisation. Verify the write
+by querying `response`, `responded_at` and `response_correlation_id` for the seeded offer.
+
+With `TEST_DATABASE_URL` pointing to a dedicated PostgreSQL database ending in
+`_test`, run `uv run pytest tests/test_c08_offer_response.py` from `backend`.
+
+### View C08 in Datadog
+
+Set `DD_API_KEY` and `DD_SITE` for your Datadog organization in the shell or the
+ignored root `.env`. The key is used by the Agent. From the repository root:
+
+```sh
+docker compose up -d datadog-agent
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 \
+  uv run --directory backend uvicorn app.main:app
+```
+
+Send a driver offer response using the above example. In Datadog, look for
+`service:urban-logistics-backend` in APM and for these names in Metrics Explorer:
+
+| Metric | Measures |
+| --- | --- |
+| `ulop.c08.offer_response.requests` | Request count by HTTP status |
+| `ulop.c08.offer_response.duration` | Request duration in milliseconds by HTTP status |
+| `ulop.c08.offer_response.db.duration` | C08 PostgreSQL transaction duration in milliseconds |
+
+Requests that never enter the C08 transaction, such as a missing token, emit
+the HTTP span and metrics. Requests that reach the transaction also emit its
+child span and duration. Metrics are exported every ten seconds and batched
+traces and pending metrics are flushed on application shutdown. Leave
+`OTEL_EXPORTER_OTLP_ENDPOINT` unset to run with telemetry disabled.
 
 ## API contracts
 

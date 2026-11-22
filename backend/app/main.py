@@ -10,9 +10,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.routing import compile_path
 
 from app.components.c02_identity_access.tokens import SupabaseVerifier
+from app.components.c08_allocation.router import OFFER_RESPONSE_PATH
+from app.components.c08_allocation.router import router as c08_router
+from app.components.c08_allocation.telemetry import C08Telemetry
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -23,6 +28,7 @@ from app.integrations.mocks import LOCATIONS
 
 STATIC = Path(__file__).parent / "static"
 logger = logging.getLogger("urban.resources")
+offer_response_route, _, _ = compile_path(OFFER_RESPONSE_PATH)
 
 
 def create_app(engine=None, settings=None, *, identity_verifier=None):
@@ -43,9 +49,18 @@ def create_app(engine=None, settings=None, *, identity_verifier=None):
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
         )
-        yield
-        if engine is None:
-            app.state.engine.dispose()
+        endpoint = getattr(app.state.settings, "otel_exporter_otlp_endpoint", None)
+        telemetry = C08Telemetry(str(endpoint), app.version) if endpoint else None
+        app.state.c08_telemetry = telemetry
+        try:
+            yield
+        finally:
+            try:
+                if telemetry is not None:
+                    await run_in_threadpool(telemetry.shutdown)
+            finally:
+                if engine is None:
+                    app.state.engine.dispose()
 
     app = FastAPI(
         title="Urban Logistics · UC01 Resource API",
@@ -65,7 +80,17 @@ def create_app(engine=None, settings=None, *, identity_verifier=None):
             request.state.correlation_id = str(UUID(supplied))
         except ValueError:
             request.state.correlation_id = str(uuid4())
-        response = await call_next(request)
+        telemetry = request.app.state.c08_telemetry
+        if (
+            telemetry is not None
+            and request.method == "POST"
+            and offer_response_route.fullmatch(request.url.path)
+        ):
+            response = await telemetry.observe_request(
+                request, call_next, OFFER_RESPONSE_PATH
+            )
+        else:
+            response = await call_next(request)
         response.headers["X-Correlation-ID"] = request.state.correlation_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -132,6 +157,7 @@ def create_app(engine=None, settings=None, *, identity_verifier=None):
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.include_router(identity_router)
+    app.include_router(c08_router)
     app.include_router(router)
     return app
 

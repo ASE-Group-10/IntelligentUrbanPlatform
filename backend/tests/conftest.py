@@ -52,7 +52,7 @@ def example():
 
 def _migrate_up_sql(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
-    match = re.search(r"--\s*migrate:up\s*\n(.*?)--\s*migrate:down", text, re.S)
+    match = re.search(r"--\s*migrate:up\s*\n(.*?)--\s*migrate:down", text, re.DOTALL)
     if match is None:
         raise ValueError(f"{path.name} has no migrate:up/migrate:down sections")
     return match.group(1)
@@ -72,6 +72,9 @@ def test_database_url() -> str:
             )
         conn.execute("drop schema if exists c06_city_monitoring cascade")
         conn.execute("drop schema if exists c07_disruption_detection cascade")
+        conn.execute("drop schema if exists c08_allocation cascade")
+        conn.execute("drop schema if exists c02_identity_access cascade")
+        conn.execute("drop schema if exists c03_resource_management cascade")
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
             conn.execute(_migrate_up_sql(migration))
     return TEST_DATABASE_URL

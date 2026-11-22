@@ -1,0 +1,29 @@
+{
+  "code": "confirmed",
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+  "negotiationId": "4f5b6c7d-8e9f-4012-babc-2d3e4f5a6b7c",
+  "allocations": [
+    {
+      "allocationId": "2b3c4d5e-6f70-4819-9a0b-1c2d3e4f5a6b",
+      "allocationVersion": 1,
+      "assignmentRef": "4ccdbdad-004a-490a-8cf8-d365f6d2be47",
+      "planId": "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c",
+      "planVersion": 4,
+      "deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493",
+      "resourceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "capacity": {
+        "amount": 12.5,
+        "unit": "kg"
+      },
+      "commitmentStatus": "committed",
+      "acceptanceStatus": "accepted",
+      "receiptStatus": "pending"
+    }
+  ],
+  "resultingPlanVersion": 4,
+  "resultingResourceVersions": {
+    "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d": 8
+  },
+  "receiptStatus": "pending",
+  "reason": null
+}

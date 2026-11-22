@@ -1,0 +1,44 @@
+{
+  "context": {
+    "principalId": "9f0b1c2d-3e4f-4567-8abc-7d8e9f0a1b2c",
+    "roles": [
+      "planner"
+    ],
+    "providerScope": [
+      "8f9b0c1d-2e3f-4456-babc-6d7e8f9a0b1c"
+    ],
+    "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+    "scope": "live"
+  },
+  "allocationProblem": {
+    "planId": "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c",
+    "planVersion": 3,
+    "requirements": [
+      {
+        "deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493",
+        "resourceKind": "van",
+        "capacity": {
+          "amount": 12.5,
+          "unit": "kg"
+        }
+      }
+    ],
+    "candidateResources": [
+      {
+        "resourceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "providerId": "8f9b0c1d-2e3f-4456-babc-6d7e8f9a0b1c",
+        "kind": "van",
+        "resourceVersion": 7,
+        "eligible": true,
+        "available": true,
+        "totalCapacity": {
+          "amount": 100,
+          "unit": "kg"
+        },
+        "committedCapacity": 20
+      }
+    ],
+    "proposalDeadline": "2026-11-20T08:15:00Z"
+  },
+  "key": "negotiate-demo-plan-v3"
+}

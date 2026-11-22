@@ -1,0 +1,13 @@
+{
+  "code": "assigned",
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e",
+  "assignmentRef": "4ccdbdad-004a-490a-8cf8-d365f6d2be47",
+  "allocationId": "2b3c4d5e-6f70-4819-9a0b-1c2d3e4f5a6b",
+  "resourceId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+  "resultingPlanVersion": 4,
+  "resultingResourceVersions": {
+    "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d": 8
+  },
+  "acceptanceStatus": "accepted",
+  "receiptStatus": "pending"
+}

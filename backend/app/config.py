@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import AnyUrl, SecretStr, UrlConstraints
+from pydantic import AnyHttpUrl, AnyUrl, SecretStr, UrlConstraints
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ) = None
     mock_dependencies: bool = True
     availability_max_age_seconds: int = 86400
+    otel_exporter_otlp_endpoint: AnyHttpUrl | None = None
 
 
 def get_settings() -> Settings:
