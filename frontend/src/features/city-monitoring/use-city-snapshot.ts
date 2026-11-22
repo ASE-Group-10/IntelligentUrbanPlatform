@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { LIVE_REFRESH_MS } from "@/lib/query-client";
 
-import { fetchCitySnapshot } from "./city-snapshot";
+import { CitySnapshotError, fetchCitySnapshot } from "./city-snapshot";
 import { DEMO_RUN_ID, DEMO_SEGMENTS } from "./demo-segments";
 
 /** Layer that takes clicks; wider than the drawn line so roads are easy to hit. */
@@ -19,4 +19,17 @@ export function useCitySnapshot(accessToken?: string) {
     refetchInterval: LIVE_REFRESH_MS,
     retry: false,
   });
+}
+
+/**
+ * What the map may show. The open/good fallback for absent segments only holds
+ * for a snapshot C06 returned, so there is nothing to draw before the first
+ * one. A 401 or 403 drops the previous snapshot; any other failure keeps it as
+ * last known.
+ */
+export function useCityConditions(accessToken?: string) {
+  const { data, error, isPending } = useCitySnapshot(accessToken);
+  const errorKind = error instanceof CitySnapshotError ? error.kind : error ? "failed" : null;
+  const snapshot = errorKind === "signin" || errorKind === "forbidden" ? undefined : data;
+  return { snapshot, errorKind, lastKnown: Boolean(snapshot && errorKind), isPending };
 }

@@ -32,8 +32,11 @@ export type CitySnapshot = z.infer<typeof citySnapshotSchema>;
 export type SegmentStatus = SegmentCondition["status"];
 export type Quality = SegmentCondition["quality"];
 
-/** `signin`: no or expired session; `unavailable`: C06 has no data or is down. */
-export type CitySnapshotErrorKind = "signin" | "unavailable" | "failed";
+/**
+ * `signin`: no or expired session; `forbidden`: the session may not read this
+ * run; `unavailable`: C06 has no data or is down.
+ */
+export type CitySnapshotErrorKind = "signin" | "forbidden" | "unavailable" | "failed";
 
 export class CitySnapshotError extends Error {
   constructor(readonly kind: CitySnapshotErrorKind) {
@@ -66,6 +69,7 @@ export async function fetchCitySnapshot({
     signal,
   });
   if (response.status === 401) throw new CitySnapshotError("signin");
+  if (response.status === 403) throw new CitySnapshotError("forbidden");
   if (response.status >= 500) throw new CitySnapshotError("unavailable");
   if (!response.ok) throw new CitySnapshotError("failed");
 

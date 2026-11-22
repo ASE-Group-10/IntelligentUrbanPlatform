@@ -3,9 +3,9 @@ import { Layer, Source } from "react-map-gl/maplibre";
 import { ConditionLegend } from "@/components/map/condition-legend";
 import { useTheme } from "@/lib/theme";
 
-import { CitySnapshotError, type SegmentStatus } from "./city-snapshot";
+import type { SegmentStatus } from "./city-snapshot";
 import { conditionOf, DEMO_SEGMENTS, toFeatures } from "./demo-segments";
-import { SEGMENT_HIT_LAYER, useCitySnapshot } from "./use-city-snapshot";
+import { SEGMENT_HIT_LAYER, useCityConditions } from "./use-city-snapshot";
 
 /** Hex versions of the --status-* tokens in index.css; MapLibre can't read CSS variables. */
 const STATUS_COLOURS = {
@@ -21,7 +21,7 @@ const STATUS_LABELS: Record<SegmentStatus, string> = {
 
 export function CityConditionsLayer({ accessToken }: { accessToken?: string }) {
   const { resolvedTheme } = useTheme();
-  const { data } = useCitySnapshot(accessToken);
+  const { snapshot } = useCityConditions(accessToken);
   const colours = STATUS_COLOURS[resolvedTheme];
   const lineColor = [
     "match",
@@ -33,8 +33,10 @@ export function CityConditionsLayer({ accessToken }: { accessToken?: string }) {
     colours.open,
   ] as const;
 
+  if (!snapshot) return null;
+
   return (
-    <Source id="city-segments" type="geojson" data={toFeatures(DEMO_SEGMENTS, data?.segments)}>
+    <Source id="city-segments" type="geojson" data={toFeatures(DEMO_SEGMENTS, snapshot.segments)}>
       <Layer
         id="city-segments"
         type="line"
@@ -75,6 +77,7 @@ function formatTime(value: string | null | undefined) {
 
 const ERROR_TEXT = {
   signin: "Sign in to see live road conditions.",
+  forbidden: "You don’t have access to these road conditions.",
   unavailable: "Conditions unavailable right now. Retrying every few seconds.",
   failed: "Couldn’t read road conditions.",
 } as const;
@@ -86,28 +89,27 @@ export function CityConditionsPanel({
   accessToken?: string;
   selectedKey?: string;
 }) {
-  const { data, error, isPending } = useCitySnapshot(accessToken);
-  const kind = error instanceof CitySnapshotError ? error.kind : error ? "failed" : null;
+  const { snapshot, errorKind, lastKnown, isPending } = useCityConditions(accessToken);
   const selected = DEMO_SEGMENTS.find((segment) => segment.segmentKey === selectedKey);
-  const condition = selected && conditionOf(selected.segmentKey, data?.segments);
+  const condition = snapshot && selected && conditionOf(selected.segmentKey, snapshot.segments);
 
   return (
     <div className="space-y-3 text-xs">
       <ConditionLegend />
-      {kind ? (
+      {errorKind ? (
         <p role="alert" className="text-destructive">
-          {ERROR_TEXT[kind]}
+          {ERROR_TEXT[errorKind]}
         </p>
-      ) : isPending ? (
-        <p className="text-muted-foreground">Loading road conditions…</p>
       ) : (
-        data && (
-          <p className="text-muted-foreground">
-            City State v{data.snapshotVersion} · demo run · {formatTime(data.generatedAt)}
-            {data.staleSources.length > 0 &&
-              ` · old data from ${data.staleSources.join(", ")} shown dashed`}
-          </p>
-        )
+        isPending && <p className="text-muted-foreground">Loading road conditions…</p>
+      )}
+      {snapshot && (
+        <p className="text-muted-foreground">
+          {lastKnown ? "Last known: " : ""}City State v{snapshot.snapshotVersion} · demo run ·{" "}
+          {formatTime(snapshot.generatedAt)}
+          {snapshot.staleSources.length > 0 &&
+            ` · old data from ${snapshot.staleSources.join(", ")} shown dashed`}
+        </p>
       )}
       {selected && condition ? (
         <section aria-label={selected.name} className="space-y-1 rounded-lg border p-3">
@@ -129,7 +131,7 @@ export function CityConditionsPanel({
           )}
         </section>
       ) : (
-        <p className="text-muted-foreground">Click a road to see its details.</p>
+        snapshot && <p className="text-muted-foreground">Click a road to see its details.</p>
       )}
     </div>
   );

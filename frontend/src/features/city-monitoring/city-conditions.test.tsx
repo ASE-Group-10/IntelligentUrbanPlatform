@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 import { CityConditionsPanel } from "./city-conditions";
@@ -35,10 +35,25 @@ function respond(status: number, body: unknown) {
   return vi.fn(async () => new Response(JSON.stringify(body), { status }));
 }
 
-function wrap(children: ReactNode) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function wrap(children: ReactNode, client = newClient()) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
+
+function newClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+/** One response per poll, in order; the last one repeats. */
+function respondInTurn(...replies: [number, unknown][]) {
+  let call = 0;
+  return vi.fn(async () => {
+    const [status, body] = replies[Math.min(call++, replies.length - 1)] ?? [500, null];
+    return new Response(JSON.stringify(body), { status });
+  });
+}
+
+const UNAVAILABLE = { error: { code: "Unavailable", message: "down" } };
+const UNAUTHENTICATED = { error: { code: "UNAUTHENTICATED", message: "x" } };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -81,6 +96,7 @@ describe("fetchCitySnapshot", () => {
 
   it.each([
     [401, "signin"],
+    [403, "forbidden"],
     [503, "unavailable"],
     [500, "unavailable"],
     [400, "failed"],
@@ -129,7 +145,7 @@ describe("CityConditionsPanel", () => {
 
     render(wrap(<CityConditionsPanel selectedKey="seg:4471023" />));
 
-    const details = screen.getByRole("region", { name: "Eden Quay" });
+    const details = await screen.findByRole("region", { name: "Eden Quay" });
     await waitFor(() => expect(details).toHaveTextContent(/Uncertain: last observed/));
     expect(screen.getByText(/old data from sim-traffic/)).toBeInTheDocument();
   });
@@ -157,5 +173,50 @@ describe("CityConditionsPanel", () => {
     render(wrap(<CityConditionsPanel />));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/sign in/i);
+  });
+
+  it("shows no road state before C06 has returned a snapshot", async () => {
+    vi.stubGlobal("fetch", respond(503, UNAVAILABLE));
+
+    render(wrap(<CityConditionsPanel selectedKey="seg:4471023" />));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/conditions unavailable/i);
+    expect(screen.queryByRole("region", { name: "Eden Quay" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Status")).not.toBeInTheDocument();
+  });
+
+  it("drops the closure when the next poll needs sign-in", async () => {
+    vi.stubGlobal("fetch", respondInTurn([200, SNAPSHOT], [401, UNAUTHENTICATED]));
+    const client = newClient();
+    render(wrap(<CityConditionsPanel selectedKey="seg:4471023" />, client));
+    expect(await screen.findByRole("region", { name: "Eden Quay" })).toHaveTextContent("roadworks");
+
+    await act(() => client.refetchQueries());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/sign in/i);
+    expect(screen.queryByRole("region", { name: "Eden Quay" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/roadworks|City State v/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the closure as last known when the next poll is unavailable", async () => {
+    vi.stubGlobal("fetch", respondInTurn([200, SNAPSHOT], [503, UNAVAILABLE]));
+    const client = newClient();
+    render(wrap(<CityConditionsPanel selectedKey="seg:4471023" />, client));
+    expect(await screen.findByText(/^City State v42/)).toBeInTheDocument();
+
+    await act(() => client.refetchQueries());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/conditions unavailable/i);
+    expect(screen.getByText(/Last known: City State v42/)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Eden Quay" })).toHaveTextContent("Closed");
+  });
+
+  it("says the session can't read the run on a 403", async () => {
+    vi.stubGlobal("fetch", respond(403, { error: { code: "Forbidden", message: "x" } }));
+
+    render(wrap(<CityConditionsPanel selectedKey="seg:4471023" />));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/don’t have access/i);
+    expect(screen.queryByRole("region", { name: "Eden Quay" })).not.toBeInTheDocument();
   });
 });
