@@ -18,9 +18,10 @@ class Settings(BaseSettings):
     ) = None
     mock_dependencies: bool = True
     availability_max_age_seconds: int = 86400
-    # Simulation runs every signed-in user may read through C06 until C12 records
-    # run owners. Default: the thin-slice demo run (fixtures/dublin-scenario.json).
-    c06_shared_run_ids: frozenset[UUID] = frozenset(
+    # Simulation runs every signed-in user may read through C06 and C07 until C12
+    # records run owners. Default: the thin-slice demo run
+    # (fixtures/dublin-scenario.json). See app/shared/run_access.py.
+    shared_run_ids: frozenset[UUID] = frozenset(
         {UUID("c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b")}
     )
 

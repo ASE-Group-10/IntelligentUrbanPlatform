@@ -245,8 +245,16 @@ out, and values older than `maxAgeSeconds` (default 900) come back `degraded`,
 so use `app.demo.feed --fresh` for a closure that shows as current.
 
 Nothing records who owns a simulation run yet, so a `runId` is only readable
-when it is listed in `C06_SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
+when it is listed in `SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
 the demo run). Any other run returns `403 Forbidden`.
+
+## C07 Disruptions API
+
+`GET /api/v1/disruptions?runId=<uuid>` returns the disruptions C07 recorded for a
+simulation run, most recently updated first; leave out `runId` for live ones
+(`listDisruptions` in `contracts/components/c07-disruption-detection/openapi.yaml`).
+It needs a C02 bearer token and reads the same Postgres tables as the C07
+worker. Runs follow the `SHARED_RUN_IDS` rule above.
 
 ## C07 worker
 
