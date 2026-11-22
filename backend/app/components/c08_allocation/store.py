@@ -87,7 +87,7 @@ class AllocationStore:
                 or Decimal(str(need.capacity.amount)) != plan["required_kg"]
             ):
                 return "unsupported requirements"
-            # Separate plans competing for the same vehicle see each other's committed kg.
+            # Serialize capacity checks for plans competing for the same vehicle.
             lock_key(conn, f"c08:capacity:{plan['resource_id']}")
             vehicle = self.vehicle(conn, plan["provider_id"], plan["resource_id"])
             if (
@@ -130,8 +130,9 @@ class AllocationStore:
             return (
                 conn.execute(
                     text("""
-                SELECT plan_id, plan_version, delivery_id, assignment_ref, resource_name,
-                       resource_id, offer_id, driver_id, status, correlation_id
+                SELECT plan_id, plan_version, delivery_id, assignment_ref,
+                       resource_name, resource_id, offer_id, driver_id,
+                       status, correlation_id
                 FROM c08_allocation.allocations WHERE provider_id=:provider
                   AND (:operator OR (driver_id=:actor AND offer_id IS NOT NULL))
                 ORDER BY plan_id, delivery_id
@@ -162,7 +163,8 @@ class AllocationStore:
                 conn.execute(
                     text("""
                 SELECT command, outcome FROM c08_allocation.command_receipts
-                WHERE (provider_id,principal_id,operation,key)=(:provider,:actor,:operation,:key)
+                WHERE (provider_id, principal_id, operation, key)
+                    = (:provider, :actor, :operation, :key)
             """),
                     receipt,
                 )
@@ -179,7 +181,8 @@ class AllocationStore:
             conn.execute(
                 text("""
                 INSERT INTO c08_allocation.command_receipts VALUES
-                (:provider,:actor,:operation,:key,CAST(:command AS jsonb),CAST(:outcome AS jsonb))
+                (:provider, :actor, :operation, :key,
+                 CAST(:command AS jsonb), CAST(:outcome AS jsonb))
             """),
                 {
                     **receipt,
@@ -192,7 +195,8 @@ class AllocationStore:
     def check_current(self, conn, row):
         version = conn.execute(
             text("""
-            SELECT plan_version FROM c08_allocation.demo_plans WHERE plan_id=:plan FOR SHARE
+            SELECT plan_version FROM c08_allocation.demo_plans
+            WHERE plan_id=:plan FOR SHARE
         """),
             {"plan": row["plan_id"]},
         ).scalar()
@@ -209,7 +213,8 @@ class AllocationStore:
             row = (
                 conn.execute(
                     text("""
-                SELECT * FROM c08_allocation.allocations WHERE plan_id=:plan AND delivery_id=:delivery
+                SELECT * FROM c08_allocation.allocations
+                WHERE plan_id=:plan AND delivery_id=:delivery
                 AND provider_id=:provider FOR UPDATE
             """),
                     {
@@ -231,7 +236,8 @@ class AllocationStore:
             if row["status"] == "allocated":
                 conn.execute(
                     text("""
-                    UPDATE c08_allocation.allocations SET status='offered',offer_id=gen_random_uuid()
+                    UPDATE c08_allocation.allocations
+                    SET status='offered', offer_id=gen_random_uuid()
                     WHERE assignment_ref=:ref
                 """),
                     {"ref": row["assignment_ref"]},
@@ -248,7 +254,8 @@ class AllocationStore:
                 conn.execute(
                     text("""
                 SELECT * FROM c08_allocation.allocations
-                WHERE offer_id=:offer AND provider_id=:provider AND driver_id=:actor FOR UPDATE
+                WHERE offer_id=:offer AND provider_id=:provider
+                  AND driver_id=:actor FOR UPDATE
             """),
                     {
                         "offer": offer,
@@ -269,7 +276,8 @@ class AllocationStore:
             status = "accepted" if accepted else "rejected"
             conn.execute(
                 text("""
-                UPDATE c08_allocation.allocations SET status=:status WHERE offer_id=:offer
+                UPDATE c08_allocation.allocations SET status=:status
+                WHERE offer_id=:offer
             """),
                 {"offer": offer, "status": status},
             )

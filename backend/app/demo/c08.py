@@ -101,7 +101,8 @@ def main():
         publisher.publish(event)
         publisher.publish(event)
         print(
-            f"Published PlanReady twice: eventId={event.event_id} planId={event.payload.plan_id} correlationId={event.correlation_id}"
+            f"Published PlanReady twice: eventId={event.event_id} "
+            f"planId={event.payload.plan_id} correlationId={event.correlation_id}"
         )
     finally:
         publisher.close()

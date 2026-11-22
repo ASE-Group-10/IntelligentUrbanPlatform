@@ -3,7 +3,7 @@ import logging
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Path, Request
 
 from app.infrastructure.errors import APIError
 from app.integrations.identity import authenticate
@@ -110,8 +110,12 @@ def assign_vehicle(body: AssignmentRequest, request: Request, ctx: Identity, key
     operation_id="recordOfferResponse",
 )
 def record_offer_response(
-    offerId: UUID, body: OfferResponse, request: Request, ctx: Identity, key: Key
+    offer_id: Annotated[UUID, Path(alias="offerId")],
+    body: OfferResponse,
+    request: Request,
+    ctx: Identity,
+    key: Key,
 ):
     if "driver" not in ctx.roles:
         raise denied()
-    return traced(request, store(request).respond(ctx, offerId, body.response, key))
+    return traced(request, store(request).respond(ctx, offer_id, body.response, key))

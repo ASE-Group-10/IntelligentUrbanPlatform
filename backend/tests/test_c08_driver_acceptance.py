@@ -165,7 +165,8 @@ def test_plan_ready_to_driver_acceptance(scenario):
         with store.engine.connect() as conn:
             assert conn.execute(
                 text(
-                    "SELECT count(*),sum(capacity_kg) FROM c08_allocation.allocations WHERE resource_id=:resource"
+                    "SELECT count(*), sum(capacity_kg) "
+                    "FROM c08_allocation.allocations WHERE resource_id=:resource"
                 ),
                 {"resource": scenario.resource},
             ).one() == (1, 12.5)
@@ -196,7 +197,8 @@ def test_competing_plans_cannot_overbook_one_vehicle(scenario):
         assert (
             conn.execute(
                 text(
-                    "SELECT sum(capacity_kg) FROM c08_allocation.allocations WHERE resource_id=:resource"
+                    "SELECT sum(capacity_kg) FROM c08_allocation.allocations "
+                    "WHERE resource_id=:resource"
                 ),
                 {"resource": scenario.resource},
             ).scalar_one()
