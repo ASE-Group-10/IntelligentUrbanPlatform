@@ -13,6 +13,26 @@ npm run dev         # http://localhost:5173
 The dev server forwards `/api/*` to the FastAPI backend at
 `http://127.0.0.1:8000` (override with `API_PROXY_TARGET`).
 
+## Sign in to Resources
+
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in
+`.env.local`, then restart Vite. Use the same Supabase development project
+as the backend. Provision a synthetic manager and provider using the
+[backend setup](../backend/README.md#api-contracts).
+
+1. Open `/resources` and sign in with the synthetic account. The page loads
+   the provider choices from C02. Multi-provider users and platform admins
+   select an acting provider before viewing resources.
+2. Choose a provider you manage, enter a unique identifier and name for a
+   synthetic van, select a location, and register it. Check the success message
+   and the new entry in that provider’s list.
+3. Switch providers and check the list again. An operator can view their
+   provider’s resources. Registration requires a manager or platform admin.
+4. Sign out and confirm that the sign-in form replaces the list and draft.
+
+The route tests exercise expired sessions and a server-side permission denial
+with synthetic sessions. Run `npm test -- src/test/resources-page.test.tsx`.
+
 ## Checks
 
 Run all of these before opening a PR:

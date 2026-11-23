@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -13,6 +14,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.components.c02_identity_access.tokens import SupabaseVerifier
+from app.components.c06_city_monitoring.ingestion import CityMonitoring
+from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
+from app.components.c06_city_monitoring.router import libpq_url
+from app.components.c06_city_monitoring.router import router as city_state_router
+from app.components.c08_allocation.router import router as allocation_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -25,7 +31,14 @@ STATIC = Path(__file__).parent / "static"
 logger = logging.getLogger("urban.resources")
 
 
-def create_app(engine=None, settings=None, *, identity_verifier=None):
+def create_app(
+    engine=None,
+    settings=None,
+    *,
+    identity_verifier=None,
+    city_state_store=None,
+    clock=None,
+):
     @asynccontextmanager
     async def lifespan(app):
         app.state.settings = settings or get_settings()
@@ -42,6 +55,13 @@ def create_app(engine=None, settings=None, *, identity_verifier=None):
         )
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
+        )
+        app.state.city_monitoring = CityMonitoring(
+            store=city_state_store
+            or PostgresCityStateStore(
+                libpq_url(app.state.settings.database_url.get_secret_value())
+            ),
+            clock=clock or (lambda: datetime.now(UTC)),
         )
         yield
         if engine is None:
@@ -131,8 +151,10 @@ def create_app(engine=None, settings=None, *, identity_verifier=None):
         return FileResponse(STATIC / "index.html")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    app.include_router(allocation_router)
     app.include_router(identity_router)
     app.include_router(router)
+    app.include_router(city_state_router)
     return app
 
 
