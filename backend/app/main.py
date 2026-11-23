@@ -35,6 +35,7 @@ from app.infrastructure.database import make_engine
 from app.infrastructure.errors import APIError, api_error_handler
 from app.integrations.identity import router as identity_router
 from app.integrations.mocks import LOCATIONS
+from app.shared.logging import configure_logging
 
 STATIC = Path(__file__).parent / "static"
 logger = logging.getLogger("urban.resources")
@@ -51,6 +52,7 @@ def create_app(
 ):
     @asynccontextmanager
     async def lifespan(app):
+        configure_logging("API")
         app.state.settings = settings or get_settings()
         if not app.state.settings.mock_dependencies:
             raise RuntimeError(

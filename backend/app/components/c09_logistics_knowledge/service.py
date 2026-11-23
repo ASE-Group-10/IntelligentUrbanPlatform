@@ -208,7 +208,11 @@ class LogisticsKnowledge:
             len(passages),
             snapshot.snapshot_id,
             # C09 always answers from the live corpus; replay reads C10 snapshots
-            extra={"correlationId": ctx.correlation_id, "scope": "live"},
+            extra={
+                "component": "C09",
+                "correlationId": ctx.correlation_id,
+                "scope": "live",
+            },
         )
         return Ok(
             KnowledgeResult(

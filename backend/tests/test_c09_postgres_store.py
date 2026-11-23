@@ -181,3 +181,51 @@ def test_hello_world_query_logs_the_correlation_id(service, caplog):
     [record] = caplog.records
     assert str(record.correlationId) == line.rsplit(" ", 1)[1]
     assert record.scope == "live"
+
+
+def test_api_runtime_emits_the_c09_json_trace(service):
+    """Through the real API lifespan and app.state.knowledge, no caplog."""
+    import io
+    import json
+    import logging
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+    from sqlalchemy import create_engine
+
+    from app.components.c09_logistics_knowledge.demo_corpus import (
+        hello_world_query,
+        load,
+    )
+    from app.main import create_app
+
+    root = logging.getLogger()
+    saved = root.handlers[:], root.level
+    settings = SimpleNamespace(
+        database_url=SecretStr(DSN),
+        mock_dependencies=True,
+        supabase_url=None,
+        availability_max_age_seconds=86400,
+    )
+    out = io.StringIO()
+    try:
+        with TestClient(create_app(create_engine("sqlite://"), settings)) as client:
+            [handler] = root.handlers  # installed by the API lifespan
+            handler.setStream(out)
+            knowledge = client.app.state.knowledge
+            assert all(isinstance(r, Ok) for r in load(knowledge))
+            line = hello_world_query(knowledge)
+    finally:
+        root.handlers[:], level = saved
+        root.setLevel(level)
+
+    [trace] = [
+        json.loads(raw)
+        for raw in out.getvalue().splitlines()
+        if raw.startswith("{") and "queryKnowledge" in raw
+    ]
+    assert trace["component"] == "C09"
+    assert trace["level"] == "INFO"
+    assert trace["scope"] == "live"
+    assert trace["correlationId"] == line.rsplit(" ", 1)[1]

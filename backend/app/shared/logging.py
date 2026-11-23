@@ -22,7 +22,8 @@ class JsonFormatter(logging.Formatter):
         line = {
             "time": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
-            "component": self._component,
+            # one process (the API) hosts several components; a line may name its own
+            "component": getattr(record, "component", self._component),
             "logger": record.name,
             "message": record.getMessage(),
         }
