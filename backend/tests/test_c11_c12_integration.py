@@ -277,7 +277,13 @@ def test_http_uses_c02_scope_and_rejects_wrong_roles(integration_engine, context
         assert http.post("/api/v1/analytics/kpis/query", json=body).status_code == 403
     driver = context.model_copy(update={"roles": ("driver",)})
     with client(integration_engine, driver) as http:
-        assert http.get("/api/v1/simulation-runs").status_code == 403
+        assert (
+            http.get(
+                "/api/v1/simulation-runs",
+                params={"providerId": str(context.acting_provider_id)},
+            ).status_code
+            == 403
+        )
         assert (
             http.post(
                 "/api/v1/analytics/kpis/query",
@@ -363,6 +369,23 @@ def test_replay_http_start_controls_and_provider_filter(
     ReplayRepository(integration_engine).import_archive(data)
     with client(integration_engine, context) as http:
         url = "/api/v1/simulation-runs"
+        assert http.get(url).status_code == 422
+        assert (
+            http.get(
+                url,
+                params={
+                    "providerId": str(context.acting_provider_id),
+                    "cursor": "",
+                },
+            ).status_code
+            == 422
+        )
+        assert (
+            http.get(
+                "/api/v1/replay-sessions/00000000-0000-1000-8000-000000000001"
+            ).status_code
+            == 422
+        )
         assert http.get(url, params={"providerId": str(uuid4())}).status_code == 403
         page = http.get(
             url, params={"providerId": str(context.acting_provider_id)}

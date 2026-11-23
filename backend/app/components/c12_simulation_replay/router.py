@@ -1,10 +1,9 @@
 """Authorised, provider-bound replay HTTP controls. No recording write route."""
 
 from typing import Annotated, Literal
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
-from pydantic import Field
+from pydantic import UUID4, Field
 
 from app.components.c12_simulation_replay.contracts import (
     CannotReplay,
@@ -49,11 +48,11 @@ def repository(request, context):
 def list_runs(
     request: Request,
     context: Identity,
+    provider_id: Annotated[UUID4, Query(alias="providerId")],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    cursor: str | None = None,
-    provider_id: Annotated[UUID | None, Query(alias="providerId")] = None,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
     scenario_id: Annotated[
-        str | None, Query(alias="scenarioId", max_length=200)
+        str | None, Query(alias="scenarioId", min_length=1, max_length=200)
     ] = None,
     status: Literal["recording", "completed", "incomplete"] | None = None,
     start: UtcDatetime | None = None,
@@ -111,7 +110,7 @@ def start_replay(
     response_model=ReplayFrame,
     operation_id="c12GetReplayFrame",
 )
-def get_frame(session_id: UUID, request: Request, context: Identity):
+def get_frame(session_id: UUID4, request: Request, context: Identity):
     repo = repository(request, context)
     return outcome(
         request,
@@ -125,7 +124,7 @@ def get_frame(session_id: UUID, request: Request, context: Identity):
     operation_id="c12ControlReplay",
 )
 def control(
-    body: ControlBody, session_id: UUID, request: Request, context: Identity, key: Key
+    body: ControlBody, session_id: UUID4, request: Request, context: Identity, key: Key
 ):
     repo = repository(request, context)
     if isinstance(repo, Failure):
@@ -139,7 +138,7 @@ def control(
     response_model=ReplayFrame,
     operation_id="c12AdvanceReplay",
 )
-def advance(body: AdvanceBody, session_id: UUID, request: Request, context: Identity):
+def advance(body: AdvanceBody, session_id: UUID4, request: Request, context: Identity):
     """One explicit timeline tick. GET polling never mutates a session."""
     repo = repository(request, context)
     return outcome(
