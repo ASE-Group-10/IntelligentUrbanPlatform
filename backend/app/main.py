@@ -19,6 +19,8 @@ from app.components.c06_city_monitoring.postgres_store import PostgresCityStateS
 from app.components.c06_city_monitoring.router import libpq_url
 from app.components.c06_city_monitoring.router import router as city_state_router
 from app.components.c08_allocation.router import router as allocation_router
+from app.components.c11_kpi_analytics.router import router as analytics_router
+from app.components.c12_simulation_replay.router import router as replay_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -56,6 +58,10 @@ def create_app(
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
         )
+        replay_url = getattr(app.state.settings, "replay_database_url", None)
+        app.state.replay_engine = (
+            make_engine(replay_url.get_secret_value()) if replay_url else None
+        )
         app.state.city_monitoring = CityMonitoring(
             store=city_state_store
             or PostgresCityStateStore(
@@ -64,6 +70,8 @@ def create_app(
             clock=clock or (lambda: datetime.now(UTC)),
         )
         yield
+        if app.state.replay_engine is not None:
+            app.state.replay_engine.dispose()
         if engine is None:
             app.state.engine.dispose()
 
@@ -155,6 +163,8 @@ def create_app(
     app.include_router(identity_router)
     app.include_router(router)
     app.include_router(city_state_router)
+    app.include_router(analytics_router)
+    app.include_router(replay_router)
     return app
 
 

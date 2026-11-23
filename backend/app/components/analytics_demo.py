@@ -1,0 +1,99 @@
+"""Local synthetic C04 fixture -> RabbitMQ -> C11/C12 -> saved replay demo.
+
+No real C04 service or complete simulation is claimed. Refuses remote services.
+Run against a fresh local database/broker with C11/C12 migrations applied.
+"""
+
+import argparse
+import json
+import os
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from urllib.parse import urlparse
+from uuid import uuid4
+
+from app.components.analytics_admin import uuid4 as uuid4_argument
+from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
+from app.components.c11_kpi_analytics.store import ObservationStore
+from app.components.c11_kpi_analytics.worker import make_consumer as c11_consumer
+from app.components.c12_simulation_replay.recording import CaptureRecorder
+from app.components.c12_simulation_replay.worker import make_consumer as c12_consumer
+from app.config import get_settings
+from app.infrastructure.database import make_engine
+from app.shared.contracts import EventEnvelope
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--provider-id", type=uuid4_argument, required=True)
+    parser.add_argument("--run-id", type=uuid4_argument, required=True)
+    args = parser.parse_args()
+    engine = make_engine(get_settings().database_url.get_secret_value())
+    broker = os.environ["RABBITMQ_URL"]
+    local = {"localhost", "127.0.0.1", "db", "rabbitmq"}
+    if engine.url.host not in local or urlparse(broker).hostname not in local:
+        raise ValueError("Synthetic demo requires local PostgreSQL and RabbitMQ")
+    folder = (
+        Path(__file__).resolve().parents[3]
+        / "contracts/components/c04-delivery-management/examples"
+    )
+    now = datetime.now(UTC)
+    capture = CaptureRecorder(engine)
+    capture.begin(
+        args.run_id,
+        args.provider_id,
+        now - timedelta(minutes=2),
+        {
+            "initialState": {"deliveries": {}},
+            "source": "labelled synthetic C04 examples",
+        },
+        True,
+    )
+    subscribers = [c11_consumer(engine, broker), c12_consumer(engine, broker)]
+    publisher = RabbitMQPublisher(broker)
+    delivery_id = uuid4()
+    try:
+        for subscriber in subscribers:
+            subscriber.declare()
+        for version, name in enumerate(
+            ["delivery-submitted-event.json", "delivery-progress-changed-event.json"], 1
+        ):
+            raw = json.loads((folder / name).read_text())
+            when = now - timedelta(minutes=1) if version == 1 else now
+            raw.update(
+                eventId=str(uuid4()),
+                scope="simulation",
+                runId=str(args.run_id),
+                observedAt=when.isoformat(),
+                emittedAt=when.isoformat(),
+                entityVersions={str(delivery_id): version},
+            )
+            payload = raw["payload"]
+            payload.update(deliveryId=str(delivery_id), deliveryVersion=version)
+            payload["delivery"].update(deliveryId=str(delivery_id), version=version)
+            payload["delivery"]["progress"]["updatedAt"] = when.isoformat()
+            message = EventEnvelope.model_validate(raw)
+            if version == 1:
+                ObservationStore(engine).bind_delivery(
+                    args.provider_id, delivery_id, "simulation", args.run_id
+                )
+            publisher.publish(message)
+        for subscriber in subscribers:
+            subscriber.consume_available()
+        capture.seal(args.run_id, now + timedelta(minutes=1))
+        print("Synthetic C04-only recording saved (incomplete platform coverage).")
+        print(f"runId: {args.run_id}")
+        print(f"providerId: {args.provider_id}")
+        print(
+            f"UTC query range: {now - timedelta(minutes=2)} "
+            f"to {now + timedelta(minutes=1)}"
+        )
+    finally:
+        publisher.close()
+        for subscriber in subscribers:
+            subscriber.close()
+        engine.dispose()
+
+
+if __name__ == "__main__":
+    main()

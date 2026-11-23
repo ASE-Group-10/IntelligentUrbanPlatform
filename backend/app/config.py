@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     )
 
     database_url: SecretStr
+    # Separate least-privilege role: SELECT saved runs, write C12 sessions only.
+    replay_database_url: SecretStr | None = None
     supabase_url: (
         Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"], host_required=True)]
         | None

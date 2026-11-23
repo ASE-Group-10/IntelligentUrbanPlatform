@@ -3,8 +3,8 @@ info:
   title: C12 Simulation and Replay HTTP API
   version: 1.0.0
   summary: C01-facing simulation and replay contract proposal.
-  description: 'Proposal for Julian and Oscar review under #48; no runtime endpoints are implemented
-    by this change. Bearer identity is resolved by C02. Client provider/run/resource IDs are requested
+  description: 'Proposal for Julian and Oscar review under #48; current runtime provides saved-run replay endpoints and C04-only incomplete captures;
+    simulation creation and full producer recording remain pending. Bearer identity is resolved by C02. Client provider/run/resource IDs are requested
     filters, not authorisation. Every operation enforces roles, provider scope and session ownership
     server-side. Success responses contain the domain value directly; Failure kinds map to HTTP error
     responses. All examples are synthetic. Errors/auth details and transport-only paging/idempotency
@@ -577,6 +577,48 @@ paths:
           type: string
           minLength: 1
           maxLength: 200
+  /api/v1/replay-sessions/{sessionId}/advance:
+    post:
+      operationId: c12AdvanceReplay
+      security:
+      - c12BearerAuth: []
+      tags:
+      - C12 Simulation and Replay
+      summary: Advance one private recorded outcome
+      description: >-
+        Explicit authenticated presentation tick; GET polling never advances.
+        Require analyst/provider access and session ownership. expectedCursor must
+        match the stored cursor and status must be playing. Apply one recorded
+        outcome or complete at range end. Duplicate/stale ticks return Conflict;
+        after an uncertain response read GET session before retrying. No live
+        writes, planner calls or broker publication. UI pacing is one tick/second.
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedCursor]
+              properties:
+                expectedCursor: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: Updated private frame or completed frame.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/C12ReplayFrame'}
+        '401': {$ref: '#/components/responses/C12Unauthenticated'}
+        '403': {$ref: '#/components/responses/C12Forbidden'}
+        '404': {$ref: '#/components/responses/C12NotFound'}
+        '409': {$ref: '#/components/responses/C12Conflict'}
+        '422': {$ref: '#/components/responses/C12Invalid'}
+        '503': {$ref: '#/components/responses/C12Unavailable'}
 components:
   securitySchemes:
     c12BearerAuth:
