@@ -1,11 +1,58 @@
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/theme";
 import { routeTree } from "@/routeTree.gen";
+
+const auth = vi.hoisted(() => ({
+  onAuthStateChange: vi.fn(),
+  signInWithPassword: vi.fn(),
+  getSession: vi.fn(),
+  refreshSession: vi.fn(),
+  signOut: vi.fn(),
+}));
+vi.mock("@/features/auth/supabase", () => ({ supabase: { auth } }));
+
+const providerA = "10000000-0000-4000-8000-000000000001";
+const providerB = "10000000-0000-4000-8000-000000000002";
+const session = {
+  user: { id: "20000000-0000-4000-8000-000000000001" },
+  access_token: "synthetic-token",
+};
+const providers = [
+  { providerId: providerA, providerName: "Provider A" },
+  { providerId: providerB, providerName: "Provider B" },
+];
+const defaultProfile = {
+  principalId: session.user.id,
+  principalType: "user",
+  displayName: "Test manager",
+  availableProviders: providers,
+  memberships: providers.map((provider) => ({ ...provider, roles: ["manager"] })),
+  platformRoles: [] as string[],
+};
+let profile: typeof defaultProfile;
+let currentSession: typeof session | null;
+type AuthEvent = (event: string, value: typeof currentSession) => void;
+let notify: AuthEvent;
+beforeEach(() => {
+  vi.resetAllMocks();
+  currentSession = session;
+  profile = structuredClone(defaultProfile);
+  auth.onAuthStateChange.mockImplementation((callback: AuthEvent) => {
+    notify = callback;
+    callback("INITIAL_SESSION", currentSession);
+    return { data: { subscription: { unsubscribe: vi.fn() } } };
+  });
+  auth.getSession.mockImplementation(async () => ({ data: { session: currentSession } }));
+  auth.signOut.mockImplementation(async () => {
+    currentSession = null;
+    notify("SIGNED_OUT", null);
+    return { error: null };
+  });
+});
 
 const resource = (id: string, name: string) => ({
   id,
@@ -27,11 +74,12 @@ const resource = (id: string, name: string) => ({
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-async function renderResources() {
+async function renderResources(selectFirst = true, path = "/resources") {
+  const queryClient = new QueryClient();
   const router = createRouter({
     routeTree,
     context: { queryClient },
-    history: createMemoryHistory({ initialEntries: ["/resources"] }),
+    history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(
     <ThemeProvider>
@@ -42,6 +90,9 @@ async function renderResources() {
     { reactStrictMode: true },
   );
   await act(() => router.load());
+  if (selectFirst)
+    await userEvent.selectOptions(await screen.findByLabelText("Acting provider"), providerA);
+  return router;
 }
 
 type Handler = (
@@ -54,22 +105,26 @@ function mockFetch(listHandler: Handler) {
   vi.stubGlobal(
     "fetch",
     vi.fn((path: string, init: RequestInit = {}) => {
-      const identity = String((init.headers as Record<string, string>).Authorization).replace(
-        "Bearer ",
-        "",
-      );
+      const headers = new Headers(init.headers);
+      expect(headers.get("Authorization")).toBe(`Bearer ${currentSession?.access_token}`);
+      if (path.endsWith("/identity/me")) {
+        expect(headers.has("X-Acting-Provider")).toBe(false);
+        return Promise.resolve(json(profile));
+      }
+      const provider = headers.get("X-Acting-Provider");
+      if (!provider) throw new Error("Missing acting provider");
       if (path.includes("/development/config"))
         return Promise.resolve(
           json({ locations: [{ address: "Dublin Depot", latitude: 53.3, longitude: -6.2 }] }),
         );
-      return listHandler(identity, init.signal, { ...init, ...{ method: init.method ?? "GET" } });
+      return listHandler(provider, init.signal, { ...init, ...{ method: init.method ?? "GET" } });
     }),
   );
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Resources page identity switching", () => {
+describe("Resources page provider switching", () => {
   it("registers a resource on the initial identity under StrictMode", async () => {
     let abortedAtSubmit: boolean | undefined;
     mockFetch((_identity, signal, init) => {
@@ -94,7 +149,7 @@ describe("Resources page identity switching", () => {
   it("ignores a slow response from the previous identity", async () => {
     let resolveA: (response: Response) => void = () => {};
     mockFetch((identity) =>
-      identity === "dev-manager"
+      identity === providerA
         ? new Promise<Response>((resolve) => {
             resolveA = resolve;
           })
@@ -103,7 +158,7 @@ describe("Resources page identity switching", () => {
     const user = userEvent.setup();
     await renderResources();
 
-    await user.selectOptions(await screen.findByLabelText("Identity"), "dev-other-provider");
+    await user.selectOptions(await screen.findByLabelText("Acting provider"), providerB);
     expect(await screen.findByText("Provider B van")).toBeInTheDocument();
 
     resolveA(json({ items: [resource("a1", "Provider A van")] }));
@@ -115,7 +170,7 @@ describe("Resources page identity switching", () => {
   it("clears the previous list and shows the error when the new identity fails", async () => {
     mockFetch((identity) =>
       Promise.resolve(
-        identity === "dev-manager"
+        identity === providerA
           ? json({ items: [resource("a1", "Provider A van")] })
           : json({ error: { message: "Provider B failed" } }, 500),
       ),
@@ -124,7 +179,7 @@ describe("Resources page identity switching", () => {
     await renderResources();
     expect(await screen.findByText("Provider A van")).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Identity"), "dev-other-provider");
+    await user.selectOptions(screen.getByLabelText("Acting provider"), providerB);
 
     expect(await screen.findByText("Provider B failed")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("Provider A van")).not.toBeInTheDocument());
@@ -140,7 +195,7 @@ describe("Resources page identity switching", () => {
         });
       }
       return Promise.resolve(
-        json({ items: identity === "dev-manager" ? [] : [resource("b1", "Provider B van")] }),
+        json({ items: identity === providerA ? [] : [resource("b1", "Provider B van")] }),
       );
     });
     const user = userEvent.setup();
@@ -151,7 +206,7 @@ describe("Resources page identity switching", () => {
     await user.type(screen.getByPlaceholderText("Dublin electric van"), "A van");
     await user.click(screen.getByRole("button", { name: "Register resource" }));
 
-    await user.selectOptions(screen.getByLabelText("Identity"), "dev-other-provider");
+    await user.selectOptions(screen.getByLabelText("Acting provider"), providerB);
     expect(await screen.findByText("Provider B van")).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText("VAN-001"), "VAN-B");
 
@@ -180,7 +235,7 @@ describe("Resources page identity switching", () => {
     await user.type(screen.getByPlaceholderText("VAN-001"), "VAN-A");
     await user.type(screen.getByPlaceholderText("Dublin electric van"), "A van");
     await user.click(screen.getByRole("button", { name: "Register resource" }));
-    await user.selectOptions(screen.getByLabelText("Identity"), "dev-other-provider");
+    await user.selectOptions(screen.getByLabelText("Acting provider"), providerB);
     await screen.findByText("0 saved");
 
     rejectPost(json({ error: { message: "Duplicate identifier" } }, 409));
@@ -196,8 +251,239 @@ describe("Resources page identity switching", () => {
     await renderResources();
     await user.type(await screen.findByPlaceholderText("VAN-001"), "VAN-A");
 
-    await user.selectOptions(screen.getByLabelText("Identity"), "dev-other-provider");
+    await user.selectOptions(screen.getByLabelText("Acting provider"), providerB);
 
     await waitFor(() => expect(screen.getByPlaceholderText("VAN-001")).toHaveValue(""));
+  });
+});
+
+async function submitVan() {
+  const user = userEvent.setup();
+  await user.type(await screen.findByPlaceholderText("VAN-001"), "SYN-001");
+  await user.type(screen.getByPlaceholderText("Dublin electric van"), "Synthetic van");
+  await user.click(screen.getByRole("button", { name: "Register resource" }));
+}
+
+it("signs in, limits registration by role, and clears the workspace on sign-out", async () => {
+  currentSession = null;
+  profile.memberships = providers.map((provider) => ({
+    ...provider,
+    roles: [provider.providerId === providerB ? "operator" : "manager"],
+  }));
+  auth.signInWithPassword.mockImplementation(async () => {
+    currentSession = session;
+    notify("SIGNED_IN", session);
+    return { error: null };
+  });
+  mockFetch(() => Promise.resolve(json({ items: [resource("x", "Scoped van")] })));
+  await renderResources(false);
+  expect(fetch).not.toHaveBeenCalled();
+  const user = userEvent.setup();
+  const form = await screen.findByRole("form", { name: "Sign in" });
+  await user.type(within(form).getByLabelText("Email"), "manager@example.test");
+  await user.type(within(form).getByLabelText("Password"), "synthetic-password");
+  await user.click(within(form).getByRole("button", { name: "Sign in" }));
+  expect(auth.signInWithPassword).toHaveBeenCalledWith({
+    email: "manager@example.test",
+    password: "synthetic-password",
+  });
+  const chooser = await screen.findByLabelText("Acting provider");
+  expect(screen.queryByText("Scoped van")).not.toBeInTheDocument();
+  await user.selectOptions(chooser, providerB);
+  expect(await screen.findByText("Scoped van")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Register resource" })).not.toBeInTheDocument();
+  // the picker moves into the page header once a provider is chosen
+  await user.selectOptions(screen.getByLabelText("Acting provider"), providerA);
+  await user.type(await screen.findByPlaceholderText("VAN-001"), "draft");
+  await user.click(screen.getByRole("button", { name: "Sign out" }));
+  expect(await screen.findByLabelText("Email")).toBeVisible();
+  expect(screen.queryByText("Scoped van")).not.toBeInTheDocument();
+  expect(screen.queryByDisplayValue("draft")).not.toBeInTheDocument();
+});
+
+it("requires an admin with no memberships to select even a single available provider", async () => {
+  profile.memberships = [];
+  profile.platformRoles = ["admin"];
+  profile.availableProviders = providers.slice(1);
+  mockFetch((provider, _, init) => {
+    expect(provider).toBe(providerB);
+    return Promise.resolve(
+      init?.method === "POST" ? json(resource("x", "Synthetic van"), 201) : json({ items: [] }),
+    );
+  });
+  await renderResources(false);
+  const chooser = await screen.findByLabelText("Acting provider");
+  expect(screen.queryByRole("button", { name: "Register resource" })).not.toBeInTheDocument();
+  await userEvent.selectOptions(chooser, providerB);
+  await submitVan();
+  expect(await screen.findByText("Synthetic van registered successfully")).toBeVisible();
+});
+
+it("refreshes an expired token and retries a registration with the same idempotency key", async () => {
+  profile.availableProviders = providers.slice(0, 1);
+  const attempts: Headers[] = [];
+  auth.refreshSession.mockImplementation(async () => {
+    currentSession = { ...session, access_token: "refreshed-token" };
+    notify("TOKEN_REFRESHED", currentSession);
+    return { data: { session: currentSession } };
+  });
+  mockFetch((provider, _, init) => {
+    expect(provider).toBe(providerA);
+    if (init?.method !== "POST") return Promise.resolve(json({ items: [] }));
+    attempts.push(new Headers(init.headers));
+    return Promise.resolve(
+      attempts.length === 1 ? json({}, 401) : json(resource("x", "Synthetic van"), 201),
+    );
+  });
+  await renderResources(false);
+  await submitVan();
+  expect(await screen.findByText("Synthetic van registered successfully")).toBeVisible();
+  expect(attempts.map((h) => h.get("Authorization"))).toEqual([
+    "Bearer synthetic-token",
+    "Bearer refreshed-token",
+  ]);
+  expect(attempts[0]?.get("Idempotency-Key")).toBeTruthy();
+  expect(attempts[1]?.get("Idempotency-Key")).toBe(attempts[0]?.get("Idempotency-Key"));
+});
+
+it("returns to sign-in when an expired registration session cannot be refreshed", async () => {
+  auth.refreshSession.mockRejectedValue(new Error("Refresh failed"));
+  mockFetch((_, __, init) =>
+    Promise.resolve(
+      init?.method === "POST" ? json({}, 401) : json({ items: [resource("x", "Scoped van")] }),
+    ),
+  );
+  await renderResources();
+  await submitVan();
+  expect(await screen.findByLabelText("Email")).toBeVisible();
+  expect(screen.queryByText("Scoped van")).not.toBeInTheDocument();
+  expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+});
+
+it("clears restricted data and reports a server denial without revealing its body", async () => {
+  mockFetch((_, __, init) =>
+    Promise.resolve(
+      init?.method === "POST"
+        ? json({ error: { message: "Restricted detail" } }, 403)
+        : json({ items: [resource("x", "Scoped van")] }),
+    ),
+  );
+  await renderResources();
+  expect(await screen.findByText("Scoped van")).toBeVisible();
+  await submitVan();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Access denied for this provider.");
+  expect(screen.queryByText("Restricted detail")).not.toBeInTheDocument();
+  expect(screen.queryByText("Scoped van")).not.toBeInTheDocument();
+  expect(screen.queryByText(/registered successfully/)).not.toBeInTheDocument();
+});
+
+describe("Shell session", () => {
+  const identityCalls = () =>
+    vi.mocked(fetch).mock.calls.filter(([path]) => String(path).endsWith("/identity/me"));
+
+  it("keeps one session across screens and signs out from the top bar", async () => {
+    mockFetch(() => Promise.resolve(json({ items: [resource("x", "Scoped van")] })));
+    const user = userEvent.setup();
+    const router = await renderResources();
+    expect(await screen.findByText("Scoped van")).toBeVisible();
+
+    await act(() => router.navigate({ to: "/" }));
+
+    const banner = screen.getByRole("banner");
+    expect(await within(banner).findByText("Test manager")).toBeVisible();
+    expect(identityCalls()).toHaveLength(1);
+    await user.click(within(banner).getByRole("button", { name: "Sign out" }));
+    expect(await within(banner).findByRole("button", { name: "Sign in" })).toBeVisible();
+
+    await act(() => router.navigate({ to: "/resources" }));
+    expect(await screen.findByRole("heading", { name: "Sign in to Resources" })).toBeVisible();
+    expect(screen.queryByText("Scoped van")).not.toBeInTheDocument();
+  });
+
+  it("signs in from the top bar on a screen that doesn't need it", async () => {
+    currentSession = null;
+    auth.signInWithPassword.mockImplementation(async () => {
+      currentSession = session;
+      notify("SIGNED_IN", session);
+      return { error: null };
+    });
+    mockFetch(() => Promise.resolve(json({ items: [] })));
+    const user = userEvent.setup();
+    await renderResources(false, "/");
+
+    const banner = screen.getByRole("banner");
+    await user.click(await within(banner).findByRole("button", { name: "Sign in" }));
+    const form = await screen.findByRole("form", { name: "Sign in" });
+    await user.type(within(form).getByLabelText("Email"), "manager@example.test");
+    await user.type(within(form).getByLabelText("Password"), "synthetic-password");
+    await user.click(within(form).getByRole("button", { name: "Sign in" }));
+
+    expect(await within(banner).findByText("Test manager")).toBeVisible();
+    expect(within(banner).getByRole("button", { name: "Sign out" })).toBeVisible();
+  });
+
+  it("shows the acting-provider picker in the Resources page header", async () => {
+    mockFetch(() => Promise.resolve(json({ items: [] })));
+    await renderResources();
+
+    const header = (await screen.findByRole("heading", { name: "Resources" })).closest("div")
+      ?.parentElement as HTMLElement;
+    expect(within(header).getByLabelText("Acting provider")).toHaveValue(providerA);
+  });
+
+  async function signInAgain(user: ReturnType<typeof userEvent.setup>) {
+    const form = await screen.findByRole("form", { name: "Sign in" });
+    await user.type(within(form).getByLabelText("Email"), "manager@example.test");
+    await user.type(within(form).getByLabelText("Password"), "synthetic-password");
+    await user.click(within(form).getByRole("button", { name: "Sign in" }));
+  }
+
+  beforeEach(() => {
+    auth.signInWithPassword.mockImplementation(async () => {
+      currentSession = session;
+      notify("SIGNED_IN", session);
+      return { error: null };
+    });
+  });
+
+  it("forgets the acting provider after signing out and back in", async () => {
+    mockFetch(() => Promise.resolve(json({ items: [resource("x", "Scoped van")] })));
+    const user = userEvent.setup();
+    await renderResources();
+    expect(await screen.findByText("Scoped van")).toBeVisible();
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Sign out" }));
+    await signInAgain(user);
+
+    expect(await screen.findByText("Choose the provider you’re acting for.")).toBeVisible();
+    expect(screen.getByLabelText("Acting provider")).toHaveValue("");
+    expect(screen.queryByText("Scoped van")).not.toBeInTheDocument();
+  });
+
+  it("forgets the acting provider when the session expires", async () => {
+    auth.refreshSession.mockRejectedValue(new Error("Refresh failed"));
+    mockFetch((_, __, init) =>
+      Promise.resolve(init?.method === "POST" ? json({}, 401) : json({ items: [] })),
+    );
+    const user = userEvent.setup();
+    await renderResources();
+    await submitVan();
+
+    await signInAgain(user);
+
+    expect(await screen.findByLabelText("Acting provider")).toHaveValue("");
+  });
+
+  it("keeps the acting provider across screens and a token refresh", async () => {
+    mockFetch(() => Promise.resolve(json({ items: [resource("x", "Scoped van")] })));
+    const router = await renderResources();
+    expect(await screen.findByText("Scoped van")).toBeVisible();
+
+    await act(() => router.navigate({ to: "/" }));
+    act(() => notify("TOKEN_REFRESHED", { ...session, access_token: "refreshed-token" }));
+    await act(() => router.navigate({ to: "/resources" }));
+
+    expect(await screen.findByLabelText("Acting provider")).toHaveValue(providerA);
+    expect(await screen.findByText("Scoped van")).toBeVisible();
   });
 });

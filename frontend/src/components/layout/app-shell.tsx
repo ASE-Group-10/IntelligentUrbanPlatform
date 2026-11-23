@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DESKTOP_QUERY } from "./breakpoints";
 import { NAV_ITEMS } from "./nav-items";
 import { ThemeToggle } from "./theme-toggle";
+import { UserMenu } from "./user-menu";
 
 /** Open state for the phone menu; it closes itself once the sidebar takes over. */
 function usePhoneMenu() {
@@ -127,6 +128,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <TooltipContent>Showing simulated data. No live commands are sent.</TooltipContent>
               </Tooltip>
               <ThemeToggle />
+              <UserMenu />
             </div>
           </header>
 
