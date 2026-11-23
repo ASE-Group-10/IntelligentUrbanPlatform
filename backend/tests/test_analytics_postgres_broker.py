@@ -1,6 +1,7 @@
 """Real PostgreSQL/RabbitMQ checks in the existing isolated CI services."""
 
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -125,6 +126,124 @@ def test_real_broker_reaches_c11_store_and_deduplicates(test_database_url):
         connection = pika.BlockingConnection(pika.URLParameters(broker))
         channel = connection.channel()
         channel.queue_delete(queue)
+        channel.exchange_delete(exchange)
+        connection.close()
+        engine.dispose()
+
+
+def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
+    test_database_url, monkeypatch
+):
+    """Real transports/storage; HTTP uses the explicitly trusted C02 test double."""
+    broker = os.environ.get("TEST_RABBITMQ_URL")
+    if not broker:
+        pytest.skip("TEST_RABBITMQ_URL not set")
+    import pika
+
+    from app.components.analytics_demo import fixture_events, wait_for_recording
+    from app.components.analytics_verify import verify_http
+    from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
+    from app.components.c11_kpi_analytics.store import ObservationStore
+    from app.components.c12_simulation_replay.recording import CaptureRecorder
+    from app.shared.auth import AuthContext
+    from app.shared.events import EventConsumer
+    from tests.test_c11_c12_integration import client
+
+    engine = create_engine(
+        test_database_url.replace("postgres://", "postgresql+psycopg://")
+    )
+    context = AuthContext(
+        principal_id=uuid4(),
+        principal_type="user",
+        acting_provider_id=uuid4(),
+        provider_ids=[],
+        roles=["analyst"],
+        platform_roles=[],
+        correlation_id=uuid4(),
+    )
+    context = context.model_copy(update={"provider_ids": [context.acting_provider_id]})
+    now, run_id, delivery_id = datetime.now(UTC), uuid4(), uuid4()
+    events = fixture_events(run_id, delivery_id, context.correlation_id, now)
+    exchange = "analytics.trace." + uuid4().hex
+    queues = {
+        exchange + ".c11": [e.event_type for e in events],
+        exchange + ".c12": [e.event_type for e in events],
+    }
+    store, recorder = ObservationStore(engine), CaptureRecorder(engine)
+    consumers = [
+        EventConsumer(broker, queue, types, handler, exchange)
+        for (queue, types), handler in zip(
+            queues.items(), [store.consume, recorder.consume], strict=True
+        )
+    ]
+    publisher = RabbitMQPublisher(broker, exchange, queues)
+    try:
+        recorder.begin(
+            run_id,
+            context.acting_provider_id,
+            now - timedelta(minutes=2),
+            {"initialState": {"deliveries": {}}},
+            True,
+        )
+        store.bind_delivery(
+            context.acting_provider_id, delivery_id, "simulation", run_id
+        )
+        for event in events:
+            publisher.publish(event)
+            publisher.publish(event)  # both consumers must deduplicate retries
+        for consumer in consumers:
+            assert consumer.consume_available(max_messages=4) == 4
+        wait_for_recording(engine, run_id, events, timeout=0)
+        recorder.seal(run_id, now + timedelta(minutes=1))
+
+        def live_snapshot():
+            with engine.connect() as conn:
+                return [
+                    conn.execute(
+                        text(
+                            "SELECT row_to_json(t)::text AS body "
+                            f"FROM {table} t ORDER BY body"
+                        )
+                    )
+                    .scalars()
+                    .all()
+                    for table in [
+                        "c03_resource_management.resources",
+                        "c08_allocation.allocations",
+                        "c12_simulation_replay.captures",
+                        "c12_simulation_replay.runs",
+                    ]
+                ]
+
+        before = live_snapshot()
+
+        def no_publish(*args, **kwargs):
+            pytest.fail("Replay attempted to publish an event")
+
+        monkeypatch.setattr(RabbitMQPublisher, "publish", no_publish)
+        with client(engine, context) as http:
+            http.app.state.settings.c06_shared_run_ids = (run_id,)
+
+            def call(method, path, body=None, key=None):
+                response = http.request(
+                    method,
+                    path,
+                    json=body,
+                    headers={"Idempotency-Key": key} if key else {},
+                )
+                assert response.is_success, response.text
+                return response.json()
+
+            verify_http(call, context.acting_provider_id, run_id, events, now)
+        assert live_snapshot() == before
+    finally:
+        publisher.close()
+        for consumer in consumers:
+            consumer.close()
+        connection = pika.BlockingConnection(pika.URLParameters(broker))
+        channel = connection.channel()
+        for queue in queues:
+            channel.queue_delete(queue)
         channel.exchange_delete(exchange)
         connection.close()
         engine.dispose()

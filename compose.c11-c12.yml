@@ -1,0 +1,45 @@
+# Add to the shared stack AFTER #79 (backend/Dockerfile, api and migrate).
+# docker compose -f docker-compose.yml -f compose.c11-c12.yml up -d --build
+# Reuses #79's image. Does not replace or copy another pair's Compose services.
+x-analytics-worker: &analytics-worker
+  image: ulop-backend:dev
+  restart: unless-stopped
+  environment: &analytics-env
+    DATABASE_URL: postgresql+psycopg://ulop:ulop@db:5432/ulop
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:-ulop}:${RABBITMQ_PASSWORD:-ulop}@rabbitmq:5672/%2F
+  depends_on:
+    api:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+    rabbitmq:
+      condition: service_healthy
+
+services:
+  c11-worker:
+    <<: *analytics-worker
+    command: ["python", "-m", "app.components.c11_kpi_analytics.worker"]
+
+  c12-worker:
+    <<: *analytics-worker
+    command: ["python", "-m", "app.components.c12_simulation_replay.worker"]
+
+  analytics-demo:
+    <<: *analytics-worker
+    profiles: ["demo"]
+    restart: "no"
+    entrypoint: ["python", "-m", "app.components.analytics_demo"]
+    command: ["--help"]
+    environment:
+      <<: *analytics-env
+      # Deliberately no token default or automatic identity/role provisioning.
+      ANALYTICS_DEMO_TOKEN: ${ANALYTICS_DEMO_TOKEN:-}
+    volumes:
+      - ./contracts:/srv/contracts:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      c11-worker:
+        condition: service_started
+      c12-worker:
+        condition: service_started

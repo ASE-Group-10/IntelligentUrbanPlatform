@@ -6,6 +6,7 @@ trusted contexts in these API tests; existing C02 tests cover token verification
 """
 
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -266,6 +267,67 @@ def client(engine, context):
     app.include_router(c11_router.router)
     app.include_router(c12_router.router)
     return TestClient(app)
+
+
+def test_synthetic_trace_verifies_http_and_fails_if_a_worker_is_missing(
+    integration_engine, context
+):
+    from app.components.analytics_demo import fixture_events, wait_for_recording
+    from app.components.analytics_verify import verify_http
+
+    now = datetime.now(UTC)
+    run_id = uuid4()
+    events = fixture_events(run_id, uuid4(), context.correlation_id, now)
+    assert {e.correlation_id for e in events} == {context.correlation_id}
+    assert events[1].causation_id == events[0].event_id
+    recorder = CaptureRecorder(integration_engine)
+    recorder.begin(
+        run_id,
+        context.acting_provider_id,
+        now - timedelta(minutes=2),
+        {"initialState": {"deliveries": {}}},
+        True,
+    )
+    store = ObservationStore(integration_engine)
+    bind(store, events[0], context)
+    for event in events:
+        assert store.consume(event) == "ack"
+    with pytest.raises(RuntimeError, match="worker evidence missing"):
+        wait_for_recording(integration_engine, run_id, events, timeout=0)
+    for event in events:
+        assert recorder.consume(event) == "ack"
+    wait_for_recording(integration_engine, run_id, events, timeout=0)
+    recorder.seal(run_id, now + timedelta(minutes=1))
+    with client(integration_engine, context) as http:
+        http.app.state.settings.c06_shared_run_ids = (run_id,)
+
+        def call(method, path, body=None, key=None):
+            response = http.request(
+                method,
+                path,
+                json=body,
+                headers={"Idempotency-Key": key} if key else {},
+            )
+            assert response.is_success, response.text
+            return response.json()
+
+        verify_http(call, context.acting_provider_id, run_id, events, now)
+
+
+@pytest.mark.parametrize(
+    "url,token",
+    [
+        ("https://example.com", "synthetic-test-token"),
+        ("http://localhost@other.invalid", "synthetic-test-token"),
+        ("http://localhost?forward=other", "synthetic-test-token"),
+        ("http://localhost", ""),
+    ],
+)
+def test_demo_verifier_refuses_remote_destinations_and_missing_identity(url, token):
+    from app.components.analytics_verify import LocalAPI
+
+    with pytest.raises(ValueError):
+        LocalAPI(url, token, uuid4(), uuid4())
 
 
 def test_http_uses_c02_scope_and_rejects_wrong_roles(integration_engine, context):

@@ -75,12 +75,71 @@ printed UTC range/run ID and refresh. Observations appear while metrics explicit
 remain unavailable. Load `partial-c04-capture`, open/play/pause/seek/stop and inspect
 recorded delivery state. No live delivery/allocation operation is called.
 
-Long-running workers (started separately; pending Compose PR #79 is unchanged):
+Long-running workers, when running without Compose:
 
 ```sh
 uv run python -m app.components.c11_kpi_analytics.worker
 uv run python -m app.components.c12_simulation_replay.worker
 ```
+
+## Walking-skeleton hops 9/10 and the shared Compose stack (#72)
+
+`compose.c11-c12.yml` extends the shared stack from **PR #79**. That PR must be
+merged or combined in an integration checkout first: the current base stack has
+no `api`, `migrate` or backend image. This overlay reuses `ulop-backend:dev`; it
+does not duplicate another pair's Dockerfile or replace their services. It adds
+C11/C12 workers with the shared event consumer and JSON trace logging. Do not
+also run local workers against the same queues.
+
+With #79 available, configure the API's optional `backend/.env` with C02's local
+sign-in settings and the database owner's restricted `REPLAY_DATABASE_URL`
+(inside Compose, the database hostname is `db`). Set `C06_SHARED_RUN_IDS` to a
+JSON array containing the simulation UUID below if it is not already allowed.
+The overlay never falls back to a business-writer login for playback, creates
+roles, or changes shared/cloud credentials. Then:
+
+```sh
+docker compose -f docker-compose.yml -f compose.c11-c12.yml up -d --build
+```
+
+For a local hop-9/10 check, set `ANALYTICS_DEMO_TOKEN` in your shell to an existing
+C02 analyst bearer token for the selected provider. Keep it out of Git, command
+arguments and screenshots. From the repository root, run (replace the provider
+placeholder; use a fresh run ID or fresh local DB on repeat):
+
+```sh
+docker compose -f docker-compose.yml -f compose.c11-c12.yml run --rm analytics-demo \
+  --external-workers --api-url http://api:8000 \
+  --provider-id <C02-authorised-provider-UUID> \
+  --run-id c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b \
+  --correlation-id 835ffac5-9411-4f5f-87bf-a466a84bf820
+```
+
+Unlike the default in-process demo, `--external-workers` only publishes; the
+separate C11/C12 processes must persist both events within 20 seconds. Missing
+or rejected outcomes fail the command without sealing the capture. Both messages
+use the supplied `correlationId`, with a causal link between them. The optional
+HTTP stage uses the same trace and real C02 token, verifies exact C11 source
+event IDs and unavailable metrics, finds the saved partial run, retries session
+creation, checks read-only GETs, and plays both original outcomes to completion.
+It fails on missing data, denied access, unconfigured replay storage or lost
+HTTP correlation IDs. It does not follow redirects or send tokens to remote hosts.
+The demo's contract examples are mounted read-only because #79's image does not
+bundle `contracts/`.
+
+Without `--api-url`, output explicitly says HTTP verification was not run.
+Without `--external-workers`, subscribers run inside the demo process, so that
+mode is not evidence that the deployed workers are running.
+
+This remains a **synthetic C04-only component check**, not `scripts/hello-world.sh`
+for the entire platform. The #72 coordinator still needs to connect hops 0–8 to
+these consumers, agree the event set for the recorded demonstration, and run the
+same trace on the demo deployment. C04 production integration/provider binding
+requires Julian's review; C01 pacing and access need Julian/Oscar's review;
+Compose, migration application and the restricted playback login need the
+infrastructure/database owners. A complete KPI formula or polished UI is not a
+#72 acceptance condition; fixed behaviour must be labelled. Indicators remain
+unconfigured rather than inventing production formulas.
 
 Trusted operator commands, before/after the feed:
 
@@ -106,8 +165,16 @@ and ranges; max 50 MB / 10000 outcomes) and never overwrites a saved run.
 Run existing backend pytest/Ruff and frontend lint/test/build commands. Portable
 checks use SQLite and explicit trusted C02 context doubles. The same adapters run
 against dedicated PostgreSQL in CI, with extra migration rollback/reapply, restricted
-SQL-role and RabbitMQ delivery/deduplication tests. Existing C02 tests cover token
+SQL-role and RabbitMQ delivery/deduplication tests. A two-consumer trace test sends
+both C04 outcomes and duplicates through real RabbitMQ, verifies persistence and
+HTTP replay, and checks that C03/C08 data and frozen recordings remain unchanged;
+publishing during replay fails the test. Its HTTP identity is an explicit C02
+test double, not deployment sign-in evidence. Existing C02 tests cover token
 verification. Fixture results are not real provider sign-in evidence.
+
+Compose configuration was validated with Docker Compose 5.8.0 against #79's
+`e0518b7a` configuration plus this overlay. This checks service/dependency merging;
+it is not an image build or a running-container/deployment demonstration.
 
 Still needed: metric definitions/populations and producer/provider mapping, actual
 C04 production events, complete C05/C08/C10 recording and saved explanations,
