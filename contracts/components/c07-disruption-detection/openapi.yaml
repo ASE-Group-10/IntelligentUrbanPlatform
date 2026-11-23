@@ -1,0 +1,228 @@
+openapi: 3.1.0
+info:
+  title: C07 Disruption Detection API
+  version: 1.0.0
+  summary: Read the disruptions C07 recorded and the replans they triggered.
+  description: |
+    Synchronous HTTP contract for C07 Disruption Detection (UC06).
+
+    C07 records a `Disruption` when a City State change hits planned work and
+    asks C05 to replan each affected plan (see `internal.md`). This API lets C01
+    show those records. It is read-only: disruptions are created only by C07's
+    own event processing.
+
+    Simulation runs keep their own disruptions: pass `runId` to read a run, and
+    leave it out to read live disruptions. A run's records are never mixed with
+    live ones.
+  contact:
+    name: C07 Disruption Detection
+servers:
+  - url: /
+    description: Relative URL for the deployed platform
+tags:
+  - name: C07 Disruption Detection
+    description: C07 disruptions and the replans they triggered
+paths:
+  /api/v1/disruptions:
+    get:
+      operationId: listDisruptions
+      summary: List disruptions
+      description: |
+        Returns every disruption recorded in one scope, most recently updated
+        first. A run that has no disruptions yet returns an empty list.
+
+        Until C12 records who owns a simulation run, only runs the platform
+        lists as shared (the thin-slice demo run by default) can be read;
+        other runs return `403`.
+      tags: [C07 Disruption Detection]
+      security:
+        - c07BearerAuth: []
+      parameters:
+        - name: runId
+          in: query
+          required: false
+          description: Simulation run to read. Leave out to read live disruptions.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Disruptions in this scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C07DisruptionList'
+              example:
+                disruptions:
+                  - disruptionId: d4c3b2a1-0f9e-4d8c-b7a6-5e4d3c2b1a0f
+                    version: 1
+                    status: active
+                    cause: roadworks
+                    severity: high
+                    segmentKeys: [seg:4471023]
+                    resourceIds: []
+                    affectedPlans:
+                      - planId: 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+                        planVersion: 3
+                        replanRequested: true
+                        replanOutcome: PlanSaved
+                    triggerEventIds: [5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e]
+                    quality: good
+                    createdAt: '2026-11-20T08:14:32Z'
+                    updatedAt: '2026-11-20T08:14:33Z'
+        '400':
+          $ref: '#/components/responses/C07Invalid'
+        '401':
+          $ref: '#/components/responses/C07Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C07Forbidden'
+        '503':
+          $ref: '#/components/responses/C07Unavailable'
+components:
+  securitySchemes:
+    c07BearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token issued through C02 Identity and Access.
+  responses:
+    C07Invalid:
+      description: Malformed `runId`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C07ErrorResponse'
+    C07Unauthenticated:
+      description: Authentication missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C07ErrorResponse'
+    C07Forbidden:
+      description: The caller may not read this simulation run.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C07ErrorResponse'
+    C07Unavailable:
+      description: The disruption store, or C02 sign-in, is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C07ErrorResponse'
+  schemas:
+    C07DisruptionList:
+      type: object
+      required: [disruptions]
+      additionalProperties: false
+      properties:
+        disruptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/C07Disruption'
+    C07Disruption:
+      type: object
+      description: The `Disruption` record C07 owns (`internal.md`, `examples/disruption.json`).
+      required:
+        - disruptionId
+        - version
+        - status
+        - cause
+        - severity
+        - segmentKeys
+        - resourceIds
+        - affectedPlans
+        - triggerEventIds
+        - quality
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+      properties:
+        disruptionId:
+          type: string
+          format: uuid
+          description: Stable across updates.
+        version:
+          type: integer
+          minimum: 1
+          description: Bumped only on a material change (status, severity, or a new affected plan).
+        status:
+          type: string
+          enum: [active, resolved, unknown]
+        cause:
+          type: string
+          enum: [traffic, roadworks, event, weather, incident, manual, resource, operational]
+        severity:
+          type: string
+          enum: [low, medium, high]
+        segmentKeys:
+          type: array
+          items:
+            type: string
+            pattern: '^seg:[1-9][0-9]*$'
+        resourceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        affectedPlans:
+          type: array
+          items:
+            $ref: '#/components/schemas/C07AffectedPlan'
+        triggerEventIds:
+          type: array
+          description: Events that created or updated this disruption.
+          items:
+            type: string
+            format: uuid
+        quality:
+          type: string
+          enum: [good, degraded, unknown]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    C07AffectedPlan:
+      type: object
+      required: [planId, planVersion, replanRequested]
+      additionalProperties: false
+      properties:
+        planId:
+          type: string
+          format: uuid
+        planVersion:
+          type: integer
+          minimum: 1
+          description: Plan version the disruption was judged against.
+        replanRequested:
+          type: boolean
+          description: Whether C05 accepted the replan request.
+        replanOutcome:
+          description: C05's answer; `null` while the replan is still pending.
+          oneOf:
+            - type: string
+              enum: [NoChange, ReviewRequired, PlanSaved]
+            - type: 'null'
+    C07ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              enum: [Invalid, Forbidden, Unavailable, UNAUTHENTICATED, IDENTITY_UNAVAILABLE]
+              description: |
+                The shared `Result` failure kind. Sign-in failures (`401`) and a
+                C02 outage (`503`) keep C02's codes, since C02 checks the token.
+            message:
+              type: string
+            correlation_id:
+              type: string
+              format: uuid
+              description: Same field name as C02, C03 and C06, so C01 has one error handler.

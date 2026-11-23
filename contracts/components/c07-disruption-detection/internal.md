@@ -1,8 +1,9 @@
 # C07 Disruption Detection: internal interfaces
 
-C07 evaluates disruptions (UC06) and requests separate replanning. It has no
-HTTP operations. The events it consumes are in `events.yaml`, and its
-`evaluateChange` handler is triggered by them. This file covers the calls C07
+C07 evaluates disruptions (UC06) and requests separate replanning. Its only
+HTTP operation, `listDisruptions`, is a read for C01 (`openapi.yaml`). The events
+it consumes are in `events.yaml`, and its `evaluateChange` handler is triggered
+by them. This file covers the calls C07
 makes to other components and the record it owns.
 
 Typed models: `backend/app/components/c07_disruption_detection/contracts.py`.
@@ -11,8 +12,13 @@ see `../c06-city-monitoring/internal.md`.
 
 ## Provided interfaces
 
-None. Other components learn about disruptions through the replan requests C07
-sends to C05.
+- `listDisruptions` (HTTP, `openapi.yaml`): the `Disruption` records of live
+  state or one simulation run, for the C01 Disruptions screen (#103). Served by
+  `backend/app/components/c07_disruption_detection/router.py` from the Postgres
+  store.
+
+Other components learn about disruptions through the replan requests C07 sends
+to C05.
 
 ### Owned record: Disruption
 
