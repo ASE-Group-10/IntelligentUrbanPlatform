@@ -92,3 +92,19 @@ it.each([undefined, demoRun])(
     expect(mutations[0]?.[1].body).toBe(JSON.stringify({ response: "accept" }));
   },
 );
+
+it("shows a released commitment on v4 without offer or acceptance actions", async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json([
+        { ...row, planVersion: 4, status: "unresolved", canOffer: false, canRespond: false },
+      ]),
+    );
+  render(<AssignmentList providerId="provider-1" canRegister={false} request={request} />);
+  expect(await screen.findByText("Revised plan needs a new allocation")).toBeVisible();
+  expect(screen.getByText(/Plan version 4/)).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: /send driver offer|accept offer|decline offer/i }),
+  ).toBeNull();
+});

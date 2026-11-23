@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import select, text
 
+from app.components.c08_allocation.revisions import matches_event, route_fits
 from app.components.resources.service import ResourceService
 from app.infrastructure.database import resources
 from app.infrastructure.errors import APIError
@@ -66,6 +67,30 @@ class AllocationStore:
                 return "outside configured demo"
             if payload.plan_version > plan["plan_version"]:
                 return "plan unavailable"
+            # Lock before inspecting the existing commitment. An operator or driver
+            # may be changing its state while this event is being delivered.
+            lock_key(conn, f"c08:capacity:{event.run_id}:{plan['resource_id']}")
+            existing = (
+                conn.execute(
+                    text("""
+                    SELECT * FROM c08_allocation.allocations
+                    WHERE run_id IS NOT DISTINCT FROM :run_id AND plan_id=:plan_id
+                      AND delivery_id=:delivery_id FOR UPDATE
+                """),
+                    plan,
+                )
+                .mappings()
+                .first()
+            )
+            saved = plan["saved_revision"]
+            if (
+                existing
+                and existing["plan_version"] < payload.plan_version
+                and payload.plan_version == plan["plan_version"]
+                and saved is None
+            ):
+                return "plan unavailable"
+
             seen = conn.execute(
                 text("""
                 INSERT INTO c08_allocation.processed_events VALUES (:event,:correlation)
@@ -77,34 +102,41 @@ class AllocationStore:
                 return "duplicate"
             if payload.plan_version < plan["plan_version"]:
                 return "superseded"
-            if len(payload.requirements) != 1:
-                return "unsupported requirements"
-            need = payload.requirements[0]
-            if (
-                need.delivery_id != plan["delivery_id"]
-                or need.capacity.unit != "kg"
-                or Decimal(str(need.capacity.amount)) != plan["required_kg"]
-            ):
-                return "unsupported requirements"
-            # Serialize capacity checks for plans competing for the same vehicle.
-            lock_key(conn, f"c08:capacity:{event.run_id}:{plan['resource_id']}")
+            if saved and not matches_event(saved, event):
+                return "event differs from saved plan"
+            if existing and existing["plan_version"] >= payload.plan_version:
+                return "already committed"
+
+            needs = payload.requirements
             vehicle = self.vehicle(conn, plan["provider_id"], plan["resource_id"])
-            if (
-                not vehicle
-                or vehicle["details"]["vehicle_category"] != need.resource_kind
-            ):
-                return "ineligible vehicle"
-            used = conn.execute(
-                text("""
-                SELECT coalesce(sum(capacity_kg),0) FROM c08_allocation.allocations
-                WHERE resource_id=:resource AND run_id IS NOT DISTINCT FROM :run
-                  AND status <> 'rejected'
-            """),
-                {"resource": vehicle["id"], "run": event.run_id},
-            ).scalar_one()
-            kg = Decimal(str(need.capacity.amount))
-            if used + kg > Decimal(str(vehicle["details"]["max_weight_kg"])):
-                return "insufficient capacity"
+            problem = self.commitment_problem(conn, plan, needs, vehicle, existing)
+            if existing:
+                status = existing["status"]
+                if problem or status in {"rejected", "unresolved"}:
+                    status = "unresolved"
+                conn.execute(
+                    text("""
+                        UPDATE c08_allocation.allocations
+                        SET plan_version=:version, event_id=:event,
+                            correlation_id=:trace, resource_version=:resource_version,
+                            status=:status
+                        WHERE allocation_id=:id
+                    """),
+                    {
+                        "version": payload.plan_version,
+                        "event": event.event_id,
+                        "trace": event.correlation_id,
+                        "id": existing["allocation_id"],
+                        "resource_version": vehicle["version"]
+                        if vehicle
+                        else existing["resource_version"],
+                        "status": status,
+                    },
+                )
+                return "unresolved" if status == "unresolved" else "carried forward"
+            if problem:
+                return problem
+            kg = Decimal(str(needs[0].capacity.amount))
             created = conn.execute(
                 text("""
                 INSERT INTO c08_allocation.allocations
@@ -125,6 +157,50 @@ class AllocationStore:
                 },
             ).scalar()
             return "allocated" if created else "already committed"
+
+    def commitment_problem(self, conn, plan, needs, vehicle, existing):
+        if len(needs) != 1:
+            return "unsupported requirements"
+        need = needs[0]
+        kg = Decimal(str(need.capacity.amount))
+        if (
+            need.delivery_id != plan["delivery_id"]
+            or need.capacity.unit != "kg"
+            or kg != plan["required_kg"]
+        ):
+            return "unsupported requirements"
+        if not vehicle or vehicle["details"]["vehicle_category"] != need.resource_kind:
+            return "ineligible vehicle"
+        if existing and (
+            existing["capacity_kg"] != kg
+            or existing["resource_id"] != vehicle["id"]
+            or existing["driver_id"] != plan["driver_id"]
+            or existing["provider_id"] != plan["provider_id"]
+        ):
+            return "changed commitment"
+        if plan["saved_revision"] and not route_fits(
+            plan["saved_revision"],
+            need.delivery_id,
+            vehicle["details"],
+            plan["departure_at"],
+        ):
+            return "incompatible route"
+        used = conn.execute(
+            text("""
+            SELECT coalesce(sum(capacity_kg),0) FROM c08_allocation.allocations
+            WHERE resource_id=:resource AND run_id IS NOT DISTINCT FROM :run
+              AND status IN ('allocated','offered','accepted')
+              AND allocation_id IS DISTINCT FROM :own
+        """),
+            {
+                "resource": vehicle["id"],
+                "run": plan["run_id"],
+                "own": existing["allocation_id"] if existing else None,
+            },
+        ).scalar_one()
+        if used + kg > Decimal(str(vehicle["details"]["max_weight_kg"])):
+            return "insufficient capacity"
+        return None
 
     def assignments(self, ctx, operator, run_id):
         with self.engine.connect() as conn:

@@ -24,6 +24,9 @@ FIXTURE = (
 )
 
 
+C05_EXAMPLES = FIXTURE.parents[2] / "c05-planning/examples"
+
+
 def new_plan():
     data = json.loads(FIXTURE.read_text())
     plan = str(uuid4())
@@ -43,9 +46,7 @@ def new_plan():
 def shared_plan():
     """Build the initial event for C05's saved v3 plan in the Dublin run."""
     scenario = load_scenario()
-    confirmed = json.loads(
-        (FIXTURE.parents[2] / "c05-planning/examples/confirmed-plan.json").read_text()
-    )
+    confirmed = json.loads((C05_EXAMPLES / "confirmed-plan.json").read_text())
     data = json.loads(FIXTURE.read_text())
     plan = confirmed["planId"]
     version = confirmed["version"]
@@ -130,11 +131,43 @@ def seed_plan(store, event, provider, resource, driver):
                 )
 
 
+def save_demo_revision(store, saved, departure):
+    """Fixture adapter for the C05 saved-version lookup, separate from delivery."""
+    with store.engine.begin() as conn:
+        current = conn.execute(
+            text("""
+            UPDATE c08_allocation.demo_plans
+            SET plan_version=:version, saved_revision=CAST(:saved AS jsonb),
+                departure_at=:departure
+            WHERE plan_id=:plan AND run_id IS NOT DISTINCT FROM :run AND
+                (plan_version < :version OR
+                 (plan_version = :version AND saved_revision=CAST(:saved AS jsonb)
+                  AND departure_at IS NOT DISTINCT FROM :departure))
+            RETURNING plan_id
+        """),
+            {
+                "version": saved["version"],
+                "saved": json.dumps(saved),
+                "departure": departure,
+                "plan": saved["planId"],
+                "run": saved["runScope"].get("runId"),
+            },
+        ).scalar()
+        if current is None:
+            raise ValueError(
+                "Seed the initial plan first. A saved version cannot be replaced."
+            )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("provider", "resource", "driver"):
-        parser.add_argument(f"--{name}", type=UUID, required=True)
-    parser.add_argument(
+        parser.add_argument(f"--{name}", type=UUID)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--revision", action="store_true", help="Save the Dublin detour and publish v4."
+    )
+    source.add_argument(
         "--live", action="store_true", help="Publish a fresh standalone live plan."
     )
     parser.add_argument(
@@ -143,17 +176,23 @@ def main():
         help="Prepare the saved-plan lookup and let C05 publish the event.",
     )
     args = parser.parse_args()
+    if not args.revision and not all((args.provider, args.resource, args.driver)):
+        parser.error(
+            "--provider, --resource and --driver are required for the initial plan"
+        )
     settings = get_settings()
     engine = make_engine(settings.database_url.get_secret_value())
-    event = new_plan() if args.live else shared_plan()
+    store = AllocationStore(engine, settings.availability_max_age_seconds)
     try:
-        seed_plan(
-            AllocationStore(engine, settings.availability_max_age_seconds),
-            event,
-            args.provider,
-            args.resource,
-            args.driver,
-        )
+        if args.revision:
+            event = PlanReadyEvent.model_validate_json(
+                (C05_EXAMPLES / "plan-ready-revision-event.json").read_text()
+            )
+            saved = json.loads((C05_EXAMPLES / "revised-plan.json").read_text())
+            save_demo_revision(store, saved, load_scenario().start_time)
+        else:
+            event = new_plan() if args.live else shared_plan()
+            seed_plan(store, event, args.provider, args.resource, args.driver)
         if args.seed_only:
             print(f"Prepared planId={event.payload.plan_id} runId={event.run_id}")
             return

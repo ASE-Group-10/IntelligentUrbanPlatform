@@ -10,7 +10,7 @@ interface Assignment {
   assignmentRef: string;
   offerId: string | null;
   resourceName: string;
-  status: "allocated" | "offered" | "accepted" | "rejected";
+  status: "allocated" | "offered" | "accepted" | "rejected" | "unresolved";
   canOffer: boolean;
   canRespond: boolean;
 }
@@ -19,6 +19,7 @@ const statusLabel = {
   offered: "Awaiting driver response",
   accepted: "Driver accepted",
   rejected: "Driver declined",
+  unresolved: "Revised plan needs a new allocation",
 };
 type Action = "offer" | "accept" | "reject";
 
@@ -75,7 +76,7 @@ export function AssignmentList({ providerId, request, runId }: ResourceScope & {
 
   async function submit(row: Assignment, action: Action) {
     const { signal } = scope.current;
-    const key = row.assignmentRef + action;
+    const key = `${row.assignmentRef}:${row.planVersion}:${action}`;
     const idempotencyKey = keys.current.get(key) ?? crypto.randomUUID();
     keys.current.set(key, idempotencyKey);
     setBusy(true);
