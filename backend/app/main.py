@@ -23,6 +23,11 @@ from app.components.c07_disruption_detection.postgres_store import (
 )
 from app.components.c07_disruption_detection.router import router as disruptions_router
 from app.components.c08_allocation.router import router as allocation_router
+from app.components.c09_logistics_knowledge.demo_corpus import DEMO_ZONES
+from app.components.c09_logistics_knowledge.postgres_store import (
+    PostgresKnowledgeStore,
+)
+from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -70,6 +75,14 @@ def create_app(
         )
         app.state.disruption_store = disruption_store or PostgresDisruptionStore(
             libpq_url(app.state.settings.database_url.get_secret_value())
+        )
+        # C09 runs in-process; C05 calls app.state.knowledge.query_knowledge
+        app.state.knowledge = LogisticsKnowledge(
+            PostgresKnowledgeStore(
+                libpq_url(app.state.settings.database_url.get_secret_value()),
+                DEMO_ZONES,
+            ),
+            clock=clock or (lambda: datetime.now(UTC)),
         )
         yield
         if engine is None:

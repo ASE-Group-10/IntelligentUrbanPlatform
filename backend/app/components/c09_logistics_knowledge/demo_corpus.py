@@ -1,8 +1,10 @@
 """Load the synthetic demo corpus in ``fixtures/c09_knowledge`` (thin slice).
 
-Run ``python -m app.components.c09_logistics_knowledge.demo_corpus [--conflict]``
-from ``backend/`` with ``DATABASE_URL`` set; it publishes through the C09 service
-so the same validation, embedding and versioning run as for a real curator.
+Run ``python -m app.components.c09_logistics_knowledge.demo_corpus [--conflict]
+[--query]`` from ``backend/`` with ``DATABASE_URL`` set; it publishes through the
+C09 service so the same validation, embedding and versioning run as for a real
+curator. ``--query`` then asks the hello-world question (#85): HGV delivery in
+``dublin-D2``, as C05 would.
 """
 
 import argparse
@@ -12,7 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from app.components.c09_logistics_knowledge.contracts import PublishKnowledgeRequest
+from app.components.c09_logistics_knowledge.contracts import (
+    PolicyQuery,
+    PublishKnowledgeRequest,
+)
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.shared.c09_c10_common import AuthContext
 from app.shared.result import Ok
@@ -57,16 +62,51 @@ def load(service: LogisticsKnowledge, include_conflict: bool = False) -> list:
     ]
 
 
+HELLO_WORLD_QUERY = {
+    "area": {"zoneIds": ["dublin-D2"]},
+    "timeWindow": {"start": "2026-11-20T07:30:00Z", "end": "2026-11-20T09:00:00Z"},
+    "vehicleClass": "truck",
+    "activity": "Delivery",
+    "maxPassages": 20,
+}
+
+
+def hello_world_query(service: LogisticsKnowledge) -> str:
+    """Query as C05 would and summarise the result in one line."""
+    ctx = AuthContext(
+        principal_id="service:c05",
+        principal_type="Service",
+        roles=["Service:C05"],
+        correlation_id=uuid4(),
+    )
+    result = service.query_knowledge(ctx, PolicyQuery.model_validate(HELLO_WORLD_QUERY))
+    if not isinstance(result, Ok):
+        return f"query FAILED {result.kind}: {result.message}"
+    r = result.value
+    return (
+        f"query {r.status.value}: {len(r.passages)} passages, "
+        f"snapshot {r.evidence_snapshot.snapshot_id}, "
+        f"correlationId: {ctx.correlation_id}"
+    )
+
+
 def main() -> None:
+    from app.components.c06_city_monitoring.router import libpq_url
     from app.components.c09_logistics_knowledge.postgres_store import (
         PostgresKnowledgeStore,
     )
+    from app.shared.logging import configure_logging
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--conflict", action="store_true", help="add the amendment")
+    parser.add_argument("--query", action="store_true", help="run the HGV D2 query")
     args = parser.parse_args()
-    dsn = os.environ.get(
-        "DATABASE_URL", "postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable"
+    configure_logging("C09")
+    # the API container's DATABASE_URL is SQLAlchemy's form; psycopg needs libpq's
+    dsn = libpq_url(
+        os.environ.get(
+            "DATABASE_URL", "postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable"
+        )
     )
     service = LogisticsKnowledge(
         PostgresKnowledgeStore(dsn, DEMO_ZONES), clock=lambda: datetime.now(UTC)
@@ -80,6 +120,8 @@ def main() -> None:
             )
         else:
             print(f"FAILED {result.kind}: {result.message}")
+    if args.query:
+        print(hello_world_query(service))
 
 
 if __name__ == "__main__":

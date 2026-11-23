@@ -159,3 +159,25 @@ def test_locked_recheck_compares_the_request_hash(service):
         store.publish(_new_publication("another-body"))
     again = store.publish(_new_publication(stored_hash))
     assert again.duplicate is True and again.corpus_version == first.corpus_version
+
+
+# ---- #85: hop 4 hello-world query over Postgres ----
+
+
+def test_hello_world_query_logs_the_correlation_id(service, caplog):
+    from app.components.c09_logistics_knowledge.demo_corpus import (
+        DEMO_ZONES,
+        hello_world_query,
+        load,
+    )
+
+    demo = LogisticsKnowledge(
+        PostgresKnowledgeStore(DSN, DEMO_ZONES), clock=lambda: NOW
+    )
+    assert all(isinstance(r, Ok) for r in load(demo))
+    with caplog.at_level("INFO", logger="app.components.c09_logistics_knowledge"):
+        line = hello_world_query(demo)
+    assert line.startswith("query Ok: ") and "snapshot " in line
+    [record] = caplog.records
+    assert str(record.correlationId) == line.rsplit(" ", 1)[1]
+    assert record.scope == "live"

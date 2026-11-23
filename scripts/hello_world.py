@@ -153,6 +153,25 @@ def has_consumer(queues: dict[str, int], prefix: str) -> bool:
     return any(name.startswith(prefix) and count > 0 for name, count in queues.items())
 
 
+def c09_note() -> str:
+    """Load the C09 demo corpus and run C05's query in-process (#85). Only a
+    note: hop 4's status stays C05's, the caller that doesn't exist yet."""
+    try:
+        out = compose(
+            "exec",
+            "-T",
+            "api",
+            "python",
+            "-m",
+            "app.components.c09_logistics_knowledge.demo_corpus",
+            "--query",
+        )
+    except RuntimeError as error:
+        return f"C09: demo corpus/query failed: {error}"
+    query = [line for line in out.splitlines() if line.startswith("query ")]
+    return f"C09: {query[-1] if query else 'no query result printed'}"
+
+
 # ---- the hops ---------------------------------------------------------------
 
 _EVALUATED = re.compile(r"evaluated: (\w+), (\d+) replan request")
@@ -255,6 +274,7 @@ def main() -> int:
             hops[n].set("WIRED", f"{what} is served; this script doesn't call it yet")
         else:
             hops[n].set("MISSING", f"{what} ({method} {path}) isn't served")
+    hops[4].notes.append(c09_note())
 
     # Hop 6: C08 consumes PlanReady and serves the assignment routes.
     if (
