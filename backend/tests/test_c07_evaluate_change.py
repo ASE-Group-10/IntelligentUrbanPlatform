@@ -17,6 +17,9 @@ from app.components.c07_disruption_detection.contracts import (
     ReplanRequest,
 )
 from app.components.c07_disruption_detection.detection import DisruptionDetection
+from app.components.c07_disruption_detection.postgres_store import (
+    PostgresDisruptionStore,
+)
 from app.components.c07_disruption_detection.store import (
     DisruptionStoreUnavailableError,
     InMemoryDisruptionStore,
@@ -84,9 +87,12 @@ def planning(affected_work) -> FakePlanning:
     )
 
 
-@pytest.fixture
-def store() -> InMemoryDisruptionStore:
-    return InMemoryDisruptionStore()
+@pytest.fixture(params=["memory", "postgres"])
+def store(request):
+    """Each test runs against the in-memory double and the Postgres store."""
+    if request.param == "memory":
+        return InMemoryDisruptionStore()
+    return PostgresDisruptionStore(request.getfixturevalue("c07_database"))
 
 
 def test_closure_on_used_segment_creates_high_disruption_and_one_replan(

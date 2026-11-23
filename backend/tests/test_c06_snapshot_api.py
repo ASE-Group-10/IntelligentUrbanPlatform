@@ -74,7 +74,7 @@ def make_client(store) -> TestClient:
             "mock_dependencies": True,
             "supabase_url": None,
             "availability_max_age_seconds": 86400,
-            "c06_shared_run_ids": frozenset({RUN_ID}),
+            "shared_run_ids": frozenset({RUN_ID}),
         },
     )()
     return TestClient(

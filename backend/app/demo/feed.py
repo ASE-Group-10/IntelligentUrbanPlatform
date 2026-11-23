@@ -19,10 +19,10 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import UUID4
+from pydantic import UUID4, Field
 
 from app.components.c06_city_monitoring.contracts import (
     CitySnapshotQuery,
@@ -52,6 +52,23 @@ class ScenarioClosure(ContractModel):
     valid_until: UtcDatetime | None = None
 
 
+class LineString(ContractModel):
+    """GeoJSON LineString: ``[lon, lat]`` pairs, as in OpenStreetMap."""
+
+    type: Literal["LineString"]
+    coordinates: list[tuple[float, float]] = Field(min_length=2)
+
+
+class ScenarioSegment(ContractModel):
+    """A demo road segment with the geometry the C01 map draws (#43)."""
+
+    segment_key: SegmentKey
+    name: str
+    role: str
+    osm_way_ids: list[int] = Field(min_length=1)
+    geometry: LineString
+
+
 class Scenario(ContractModel):
     """Shared demo data (``fixtures/dublin-scenario.json``)."""
 
@@ -61,7 +78,7 @@ class Scenario(ContractModel):
     start_time: UtcDatetime
     correlation_id: UUID4
     closure: ScenarioClosure
-    segments: list[dict[str, Any]]
+    segments: list[ScenarioSegment]
 
 
 class FeedReport(ContractModel):

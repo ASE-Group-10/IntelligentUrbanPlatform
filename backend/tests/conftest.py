@@ -28,6 +28,10 @@ C06_TABLES = (
     "c06_city_monitoring.segment_conditions",
     "c06_city_monitoring.city_state",
 )
+C07_TABLES = (
+    "c07_disruption_detection.processed_events",
+    "c07_disruption_detection.disruptions",
+)
 
 
 def read_example(name: str) -> dict[str, Any]:
@@ -86,6 +90,14 @@ def c06_database(test_database_url: str) -> str:
     """Empty C06 tables before each Postgres-backed test."""
     with psycopg.connect(test_database_url, autocommit=True) as conn:
         conn.execute(f"truncate {', '.join(C06_TABLES)}")
+    return test_database_url
+
+
+@pytest.fixture
+def c07_database(test_database_url: str) -> str:
+    """Empty C07 tables before each Postgres-backed test."""
+    with psycopg.connect(test_database_url, autocommit=True) as conn:
+        conn.execute(f"truncate {', '.join(C07_TABLES)}")
     return test_database_url
 
 
