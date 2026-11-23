@@ -80,6 +80,48 @@ def test_concurrent_deliveries_of_one_event_record_one_disruption(
     assert len({request.key for request, _ in planning.replan_calls}) == 1
 
 
+def test_overlapping_redeliveries_preserve_both_replans(example, closure, c07_database):
+    work = AffectedWork.model_validate(example("find-affected-work-response.json"))
+    first = work.items[0]
+    second = first.model_copy(update={"plan_id": uuid4()})
+    work = AffectedWork(items=[first, second])
+
+    class SecondWorkerPlanning(FakePlanning):
+        def request_replan(self, request, correlation_id):
+            self.replan_unavailable = request.plan_id != second.plan_id
+            return super().request_replan(request, correlation_id)
+
+    other = detection(
+        SecondWorkerPlanning(work_by_segment={SEGMENT: work}), c07_database
+    )
+
+    class FirstWorkerPlanning(FakePlanning):
+        def request_replan(self, request, correlation_id):
+            if request.plan_id == first.plan_id:
+                # The duplicate finishes while this worker is waiting for C05.
+                duplicate = other.evaluate_change(closure)
+                assert isinstance(duplicate, Ok) and duplicate.value.kind == "duplicate"
+                assert [r.plan_id for r in duplicate.value.replan_requests] == [
+                    second.plan_id
+                ]
+            self.replan_unavailable = request.plan_id != first.plan_id
+            return super().request_replan(request, correlation_id)
+
+    worker = detection(
+        FirstWorkerPlanning(work_by_segment={SEGMENT: work}), c07_database
+    )
+    original = worker.evaluate_change(closure)
+    assert isinstance(original, Ok)
+    assert [r.plan_id for r in original.value.replan_requests] == [first.plan_id]
+    (saved,) = PostgresDisruptionStore(c07_database).disruptions("simulation", RUN_ID)
+    assert {p.plan_id: p.replan_outcome for p in saved.affected_plans} == {
+        first.plan_id: "NoChange",
+        second.plan_id: "NoChange",
+    }
+    again = worker.evaluate_change(closure)
+    assert isinstance(again, Ok) and again.value.replan_requests == []
+
+
 def test_failed_transaction_leaves_nothing_behind(closure, c07_database):
     store = PostgresDisruptionStore(c07_database)
 
