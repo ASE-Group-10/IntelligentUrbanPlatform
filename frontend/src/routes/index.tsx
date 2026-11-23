@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { CityMap } from "@/components/map/city-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/features/auth/auth-context";
 import {
   CityConditionsLayer,
   CityConditionsPanel,
@@ -16,6 +17,8 @@ export const Route = createFileRoute("/")({
 
 function CityMapScreen() {
   const [selectedKey, setSelectedKey] = useState<string>();
+  // C06 needs a signed-in user; the token comes from the shell session (#96).
+  const { accessToken } = useAuth();
 
   return (
     <div className="relative min-h-[calc(100dvh-3.5rem)] flex-1">
@@ -27,7 +30,7 @@ function CityMapScreen() {
           setSelectedKey(typeof key === "string" ? key : undefined);
         }}
       >
-        <CityConditionsLayer />
+        <CityConditionsLayer accessToken={accessToken} />
       </CityMap>
       <Card className="absolute top-3 left-3 w-[min(20rem,calc(100%-4.5rem))] gap-3 bg-card/90 py-4 shadow-lg backdrop-blur">
         <CardHeader className="px-4">
@@ -37,7 +40,7 @@ function CityMapScreen() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4">
-          <CityConditionsPanel selectedKey={selectedKey} />
+          <CityConditionsPanel accessToken={accessToken} selectedKey={selectedKey} />
         </CardContent>
       </Card>
     </div>
