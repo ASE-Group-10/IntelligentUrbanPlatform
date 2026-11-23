@@ -1,6 +1,7 @@
 """C09 service API: UC09 publishKnowledge, queryKnowledge, notifyKnowledgeConflict."""
 
 import hashlib
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -36,6 +37,8 @@ from app.components.c09_logistics_knowledge.store import (
 )
 from app.shared.c09_c10_common import AuthContext
 from app.shared.result import Failure, Ok, Result
+
+logger = logging.getLogger(__name__)
 
 QUERY_ROLES = {"Service:C05", "Service:C08", "LogisticsOperator"}
 CURATOR_ROLE = "KnowledgeCurator"
@@ -198,6 +201,18 @@ class LogisticsKnowledge:
             retrieval_status=status,
             items=passages,
             **common,
+        )
+        logger.info(
+            "queryKnowledge: %s, %d passages, snapshot %s",
+            status.value,
+            len(passages),
+            snapshot.snapshot_id,
+            # C09 always answers from the live corpus; replay reads C10 snapshots
+            extra={
+                "component": "C09",
+                "correlationId": ctx.correlation_id,
+                "scope": "live",
+            },
         )
         return Ok(
             KnowledgeResult(

@@ -29,3 +29,10 @@ def test_fields_that_are_not_set_are_left_out():
     line = json.loads(JsonFormatter("C06").format(record))
 
     assert "correlationId" not in line
+
+
+def test_a_line_may_name_its_own_component():
+    record = logging.LogRecord("c09", logging.INFO, __file__, 1, "query", None, None)
+    record.component = "C09"
+
+    assert json.loads(JsonFormatter("API").format(record))["component"] == "C09"
