@@ -155,6 +155,39 @@ def has_consumer(queues: dict[str, int], prefix: str) -> bool:
 
 # ---- the hops ---------------------------------------------------------------
 
+_EVALUATED = re.compile(r"evaluated: (\w+), (\d+) replan request")
+
+
+def judge_hop8(
+    cid: str, message: str | None, listing: tuple[int, bool, str] | None
+) -> tuple[str, list[str]]:
+    """Hop 8 counts only if C07 created a disruption, sent C05 at least one
+    replan request for this correlationId and, when checked, lists it over HTTP.
+
+    ``message`` is C07's ``evaluated: …`` log line (``None`` if it never came);
+    ``listing`` is ``(HTTP status, event listed?, event ID)`` when ULOP_TOKEN
+    let the script call ``listDisruptions``.
+    """
+    if message is None:
+        return "MISSING", [f"C07 didn't evaluate {cid} within {WAIT_SECONDS}s"]
+    match = _EVALUATED.search(message)
+    if not match or match.group(1) != "created":
+        return "MISSING", [f"C07 {message} for {cid} (no disruption)"]
+    if int(match.group(2)) < 1:
+        return "MISSING", [f"C07 {message} for {cid}: no replan request reached C05"]
+    status, notes = (
+        "STUB",
+        [f"C07 {message} for {cid}; C05 replan is the labelled stub until #59"],
+    )
+    if listing is not None:
+        http_status, listed, event_id = listing
+        if listed:
+            notes.append("listDisruptions shows it")
+        else:
+            status = "MISSING"
+            notes.append(f"listDisruptions → {http_status} without event {event_id}")
+    return status, notes
+
 
 def main() -> int:
     hops = {
@@ -256,16 +289,7 @@ def main() -> int:
             hops[7].set("MISSING", f"C06 didn't publish {cid} within {WAIT_SECONDS}s")
 
         evaluated = wait_for_log("c07-worker", since, cid, "evaluated")
-        if evaluated and "created" in evaluated["message"]:
-            hops[8].set(
-                "STUB",
-                f"C07 {evaluated['message']} for {cid}; "
-                "C05 replan is the labelled stub until #59",
-            )
-        elif evaluated:
-            hops[8].set("MISSING", f"C07 {evaluated['message']} (no disruption)")
-        else:
-            hops[8].set("MISSING", f"C07 didn't evaluate {cid} within {WAIT_SECONDS}s")
+        listing = None
         if evaluated and TOKEN and event:
             status, body = http(
                 "GET", f"/api/v1/disruptions?runId={DEMO_RUN}", auth=True
@@ -274,9 +298,12 @@ def main() -> int:
                 event.group(1) in d.get("triggerEventIds", [])
                 for d in body.get("disruptions", [])
             )
-            hops[8].notes.append(
-                "listDisruptions shows it" if listed else f"listDisruptions → {status}"
-            )
+            listing = (status, listed, event.group(1))
+        status8, notes8 = judge_hop8(
+            cid, evaluated["message"] if evaluated else None, listing
+        )
+        hops[8].set(status8)
+        hops[8].notes.extend(notes8)
     elif not hops[7].notes:
         hops[7].set("MISSING", "demo-feed printed no correlationId")
 
