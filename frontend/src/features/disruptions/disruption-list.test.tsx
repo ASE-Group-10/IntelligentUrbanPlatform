@@ -5,7 +5,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 
 import { AuthContext, type Auth } from "@/features/auth/auth-context";
 import { SessionError } from "@/features/auth/identity";
@@ -149,6 +149,19 @@ describe("DisruptionList", () => {
 
     const link = await screen.findByRole("link", { name: /Show Eden Quay on the map/ });
     expect(link).toHaveAttribute("href", "/?segment=seg%3A4471023");
+  });
+
+  it("only links mapped roads on a card with mapped and unmapped segments", async () => {
+    const mixed = { ...DISRUPTION, segmentKeys: ["seg:999", "seg:4471023"] };
+    renderList(signedIn(replies([200, { disruptions: [mixed] }])));
+
+    const card = within(await screen.findByRole("region", { name: /Roadworks on/ }));
+    expect(card.getAllByRole("link")).toHaveLength(1);
+    expect(card.getByRole("link", { name: "Show Eden Quay on the map" })).toHaveAttribute(
+      "href",
+      "/?segment=seg%3A4471023",
+    );
+    expect(card.getByText("seg:999 · Map unavailable")).toBeVisible();
   });
 
   it("says a replan is still pending when C05 hasn't taken it", async () => {
