@@ -20,6 +20,9 @@ export const identitySchema = z.object({
 
 export type SessionRequest = (path: string, init: RequestInit) => Promise<Response>;
 
+/** The session expired or changed account; anything else thrown is a failed request. */
+export class SessionError extends Error {}
+
 // Retry the same request once, retaining the acting provider and idempotency key.
 export function sessionRequest(
   client: SupabaseClient,
@@ -43,16 +46,16 @@ export function sessionRequest(
       const refreshed = await client.auth.refreshSession().catch(() => null);
       signal?.throwIfAborted();
       const next = refreshed?.data.session;
-      if (next && next.user.id !== principalId) throw new Error("Account changed.");
+      if (next && next.user.id !== principalId) throw new SessionError("Account changed.");
       if (next) {
         const retry = await send(next.access_token);
         if (retry.status !== 401) return retry;
       }
     } else if (data.session) {
-      throw new Error("Account changed.");
+      throw new SessionError("Account changed.");
     }
     signal?.throwIfAborted();
     await expire();
-    throw new Error("Session expired. Sign in again.");
+    throw new SessionError("Session expired. Sign in again.");
   };
 }

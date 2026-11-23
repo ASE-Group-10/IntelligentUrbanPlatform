@@ -41,6 +41,18 @@ def test_shared_scenario_uses_the_agreed_demo_values(scenario, example):
     assert str(scenario.closure.observation_id) == observation["observationId"]
 
 
+def test_scenario_segments_can_be_drawn_on_the_dublin_map(scenario, example):
+    keys = [segment.segment_key for segment in scenario.segments]
+    revised = example("revised-plan.json")["routes"][0]["segmentKeys"]
+
+    assert scenario.closure.segment_key in keys
+    assert set(revised) <= set(keys), "the C05 detour must be drawable too"
+    assert len(keys) == len(set(keys))
+    for segment in scenario.segments:
+        for lon, lat in segment.geometry.coordinates:
+            assert -6.40 < lon < -6.10 and 53.25 < lat < 53.45, segment.segment_key
+
+
 def test_first_feed_closes_the_segment_and_queues_an_event(store, scenario):
     result = feed_closure(store, scenario, clock=lambda: NOW)
 
