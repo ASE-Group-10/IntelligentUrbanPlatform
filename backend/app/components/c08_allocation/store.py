@@ -1,4 +1,4 @@
-"""PostgreSQL transactions for the single-vehicle, live PlanReady slice."""
+"""PostgreSQL transactions for the single-vehicle, run-scoped PlanReady slice."""
 
 import json
 from decimal import Decimal
@@ -49,16 +49,15 @@ class AllocationStore:
         return None
 
     def consume(self, event):
-        if event.scope != "live":
-            return "ignored simulation"
         payload = event.payload
         with self.engine.begin() as conn:
             plan = (
                 conn.execute(
                     text("""
-                SELECT * FROM c08_allocation.demo_plans WHERE plan_id=:plan FOR SHARE
+                SELECT * FROM c08_allocation.demo_plans WHERE plan_id=:plan
+                AND run_id IS NOT DISTINCT FROM :run FOR SHARE
             """),
-                    {"plan": payload.plan_id},
+                    {"plan": payload.plan_id, "run": event.run_id},
                 )
                 .mappings()
                 .first()
@@ -88,7 +87,7 @@ class AllocationStore:
             ):
                 return "unsupported requirements"
             # Serialize capacity checks for plans competing for the same vehicle.
-            lock_key(conn, f"c08:capacity:{plan['resource_id']}")
+            lock_key(conn, f"c08:capacity:{event.run_id}:{plan['resource_id']}")
             vehicle = self.vehicle(conn, plan["provider_id"], plan["resource_id"])
             if (
                 not vehicle
@@ -98,9 +97,10 @@ class AllocationStore:
             used = conn.execute(
                 text("""
                 SELECT coalesce(sum(capacity_kg),0) FROM c08_allocation.allocations
-                WHERE resource_id=:resource AND status <> 'rejected'
+                WHERE resource_id=:resource AND run_id IS NOT DISTINCT FROM :run
+                  AND status <> 'rejected'
             """),
-                {"resource": vehicle["id"]},
+                {"resource": vehicle["id"], "run": event.run_id},
             ).scalar_one()
             kg = Decimal(str(need.capacity.amount))
             if used + kg > Decimal(str(vehicle["details"]["max_weight_kg"])):
@@ -108,11 +108,12 @@ class AllocationStore:
             created = conn.execute(
                 text("""
                 INSERT INTO c08_allocation.allocations
-                    (event_id,correlation_id,plan_id,plan_version,delivery_id,
+                    (run_id,event_id,correlation_id,plan_id,plan_version,delivery_id,
                      provider_id,resource_id,resource_name,resource_version,driver_id,capacity_kg)
-                VALUES (:event,:correlation,:plan_id,:plan_version,:delivery_id,
+                VALUES (:run_id,:event,:correlation,:plan_id,:plan_version,:delivery_id,
                      :provider_id,:resource_id,:name,:version,:driver_id,:kg)
-                ON CONFLICT (plan_id,delivery_id) DO NOTHING RETURNING assignment_ref
+                ON CONFLICT (run_id,plan_id,delivery_id) DO NOTHING
+                RETURNING assignment_ref
             """),
                 {
                     **plan,
@@ -125,7 +126,7 @@ class AllocationStore:
             ).scalar()
             return "allocated" if created else "already committed"
 
-    def assignments(self, ctx, operator):
+    def assignments(self, ctx, operator, run_id):
         with self.engine.connect() as conn:
             return (
                 conn.execute(
@@ -134,6 +135,7 @@ class AllocationStore:
                        resource_name, resource_id, offer_id, driver_id,
                        status, correlation_id
                 FROM c08_allocation.allocations WHERE provider_id=:provider
+                  AND run_id IS NOT DISTINCT FROM :run
                   AND (:operator OR (driver_id=:actor AND offer_id IS NOT NULL))
                 ORDER BY plan_id, delivery_id
             """),
@@ -141,17 +143,19 @@ class AllocationStore:
                         "provider": ctx.acting_provider_id,
                         "actor": ctx.principal_id,
                         "operator": operator,
+                        "run": run_id,
                     },
                 )
                 .mappings()
                 .all()
             )
 
-    def command(self, ctx, key, operation, command, apply):
+    def command(self, ctx, run_id, key, operation, command, apply):
         receipt = {
             "provider": ctx.acting_provider_id,
             "actor": ctx.principal_id,
             "operation": operation,
+            "run": run_id,
             "key": key,
         }
         with self.engine.begin() as conn:
@@ -165,6 +169,7 @@ class AllocationStore:
                 SELECT command, outcome FROM c08_allocation.command_receipts
                 WHERE (provider_id, principal_id, operation, key)
                     = (:provider, :actor, :operation, :key)
+                  AND run_id IS NOT DISTINCT FROM :run
             """),
                     receipt,
                 )
@@ -180,9 +185,10 @@ class AllocationStore:
             outcome = apply(conn)
             conn.execute(
                 text("""
-                INSERT INTO c08_allocation.command_receipts VALUES
-                (:provider, :actor, :operation, :key,
-                 CAST(:command AS jsonb), CAST(:outcome AS jsonb))
+                INSERT INTO c08_allocation.command_receipts
+                (provider_id, principal_id, operation, key, command, outcome, run_id)
+                VALUES (:provider, :actor, :operation, :key,
+                 CAST(:command AS jsonb), CAST(:outcome AS jsonb), :run)
             """),
                 {
                     **receipt,
@@ -196,9 +202,9 @@ class AllocationStore:
         version = conn.execute(
             text("""
             SELECT plan_version FROM c08_allocation.demo_plans
-            WHERE plan_id=:plan FOR SHARE
+            WHERE plan_id=:plan AND run_id IS NOT DISTINCT FROM :run FOR SHARE
         """),
-            {"plan": row["plan_id"]},
+            {"plan": row["plan_id"], "run": row["run_id"]},
         ).scalar()
         vehicle = self.vehicle(conn, row["provider_id"], row["resource_id"])
         if (
@@ -208,18 +214,20 @@ class AllocationStore:
         ):
             raise conflict("The saved plan or vehicle has changed.")
 
-    def offer(self, ctx, body, key):
+    def offer(self, ctx, body, key, run_id):
         def apply(conn):
             row = (
                 conn.execute(
                     text("""
                 SELECT * FROM c08_allocation.allocations
                 WHERE plan_id=:plan AND delivery_id=:delivery
-                AND provider_id=:provider FOR UPDATE
+                AND provider_id=:provider AND run_id IS NOT DISTINCT FROM :run
+                FOR UPDATE
             """),
                     {
                         "plan": body.plan_id,
                         "delivery": body.delivery_id,
+                        "run": run_id,
                         "provider": ctx.acting_provider_id,
                     },
                 )
@@ -245,20 +253,26 @@ class AllocationStore:
             return outcome(row, "awaiting_acceptance", "awaiting_uc04_acceptance")
 
         return self.command(
-            ctx, key, "assign", body.model_dump(mode="json", by_alias=True), apply
+            ctx,
+            run_id,
+            key,
+            "assign",
+            body.model_dump(mode="json", by_alias=True),
+            apply,
         )
 
-    def respond(self, ctx, offer, response, key):
+    def respond(self, ctx, offer, response, key, run_id):
         def apply(conn):
             row = (
                 conn.execute(
                     text("""
                 SELECT * FROM c08_allocation.allocations
                 WHERE offer_id=:offer AND provider_id=:provider
-                  AND driver_id=:actor FOR UPDATE
+                  AND driver_id=:actor AND run_id IS NOT DISTINCT FROM :run FOR UPDATE
             """),
                     {
                         "offer": offer,
+                        "run": run_id,
                         "provider": ctx.acting_provider_id,
                         "actor": ctx.principal_id,
                     },
@@ -284,7 +298,12 @@ class AllocationStore:
             return outcome(row, "assigned" if accepted else "unassigned", status)
 
         return self.command(
-            ctx, key, "respond", {"offerId": str(offer), "response": response}, apply
+            ctx,
+            run_id,
+            key,
+            "respond",
+            {"offerId": str(offer), "response": response},
+            apply,
         )
 
 

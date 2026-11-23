@@ -3,7 +3,7 @@ import logging
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Path, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 
 from app.infrastructure.errors import APIError
 from app.integrations.identity import authenticate
@@ -16,6 +16,12 @@ from .store import AllocationStore
 router = APIRouter(prefix="/api/v1", tags=["C08 Allocation and Resource Agents"])
 Identity = Annotated[AuthContext, Depends(authenticate)]
 Key = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)]
+
+
+RunId = Annotated[
+    UUID | None,
+    Query(alias="runId", description="Simulation run; omit for live assignments."),
+]
 
 
 class AssignmentRequest(ContractModel):
@@ -62,12 +68,12 @@ def denied():
     response_model=list[AssignmentView],
     operation_id="listVehicleAssignments",
 )
-def list_assignments(request: Request, ctx: Identity):
+def list_assignments(request: Request, ctx: Identity, run_id: RunId = None):
     operator = is_operator(ctx)
     if not operator and "driver" not in ctx.roles:
         raise denied()
     views = []
-    for entry in store(request).assignments(ctx, operator):
+    for entry in store(request).assignments(ctx, operator, run_id):
         data = dict(entry)
         recipient = data.pop("driver_id") == ctx.principal_id and "driver" in ctx.roles
         views.append(
@@ -97,10 +103,16 @@ def traced(request, result):
     response_model_exclude_none=True,
     operation_id="assignVehicle",
 )
-def assign_vehicle(body: AssignmentRequest, request: Request, ctx: Identity, key: Key):
+def assign_vehicle(
+    body: AssignmentRequest,
+    request: Request,
+    ctx: Identity,
+    key: Key,
+    run_id: RunId = None,
+):
     if not is_operator(ctx):
         raise denied()
-    return traced(request, store(request).offer(ctx, body, key))
+    return traced(request, store(request).offer(ctx, body, key, run_id))
 
 
 @router.post(
@@ -115,7 +127,10 @@ def record_offer_response(
     request: Request,
     ctx: Identity,
     key: Key,
+    run_id: RunId = None,
 ):
     if "driver" not in ctx.roles:
         raise denied()
-    return traced(request, store(request).respond(ctx, offer_id, body.response, key))
+    return traced(
+        request, store(request).respond(ctx, offer_id, body.response, key, run_id)
+    )

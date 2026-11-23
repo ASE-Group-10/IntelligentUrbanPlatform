@@ -22,7 +22,8 @@ const statusLabel = {
 };
 type Action = "offer" | "accept" | "reject";
 
-export function AssignmentList({ providerId, request }: ResourceScope) {
+export function AssignmentList({ providerId, request, runId }: ResourceScope & { runId?: string }) {
+  const query = runId ? `?runId=${encodeURIComponent(runId)}` : "";
   const [rows, setRows] = useState<Assignment[]>([]);
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export function AssignmentList({ providerId, request }: ResourceScope) {
     const controller = new AbortController();
     async function load() {
       try {
-        const response = await request("/vehicle-assignments", {
+        const response = await request(`/vehicle-assignments${query}`, {
           headers: { "X-Acting-Provider": providerId },
           signal: controller.signal,
         });
@@ -64,7 +65,7 @@ export function AssignmentList({ providerId, request }: ResourceScope) {
     }
     void load();
     return () => controller.abort();
-  }, [providerId, request, revision]);
+  }, [providerId, request, revision, query]);
 
   function reload() {
     setLoading(true);
@@ -82,7 +83,7 @@ export function AssignmentList({ providerId, request }: ResourceScope) {
     try {
       const offer = action === "offer";
       const response = await request(
-        offer ? "/vehicle-assignments" : `/driver-offers/${row.offerId}/response`,
+        offer ? `/vehicle-assignments${query}` : `/driver-offers/${row.offerId}/response${query}`,
         {
           method: "POST",
           signal,

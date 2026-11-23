@@ -17,7 +17,7 @@ from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
 from app.components.c08_allocation.store import AllocationStore
 from app.components.c08_allocation.worker import make_consumer
 from app.config import Settings
-from app.demo.c08 import new_plan, seed_plan
+from app.demo.c08 import new_plan, seed_plan, shared_plan
 from app.infrastructure.database import make_engine
 from app.main import create_app
 from tests.test_resources import PAYLOAD
@@ -89,11 +89,14 @@ def scenario(test_database_url):
 @pytest.mark.skipif(
     not os.getenv("TEST_RABBITMQ_URL"), reason="needs a test RabbitMQ broker"
 )
-def test_plan_ready_to_driver_acceptance(scenario):
+@pytest.mark.parametrize(
+    "plan_factory", [new_plan, shared_plan], ids=["live", "dublin"]
+)
+def test_plan_ready_to_driver_acceptance(scenario, plan_factory):
     broker = os.environ["TEST_RABBITMQ_URL"]
     client, store = scenario.client, scenario.store
     operator, driver, other = scenario.operator, scenario.driver, scenario.other
-    event = new_plan()
+    event = plan_factory()
     exchange, queue = f"c08.test.{uuid4()}", f"c08.test.{uuid4()}"
     publisher = RabbitMQPublisher(broker, exchange, {queue: ["PlanReady"]})
 
@@ -105,9 +108,14 @@ def test_plan_ready_to_driver_acceptance(scenario):
         finally:
             consumer.close()
 
-    path = "/api/v1/vehicle-assignments"
+    query = f"?runId={event.run_id}" if event.run_id else ""
+    live_path = "/api/v1/vehicle-assignments"
+    path = live_path + query
     try:
         seed_plan(store, event, scenario.provider, scenario.resource, driver)
+        seed_plan(
+            store, event, scenario.provider, scenario.resource, driver
+        )  # rerun demo
         old = json.loads(event.model_dump_json(by_alias=True))
         old["eventId"] = str(uuid4())
         old["payload"]["planVersion"] -= 1
@@ -120,6 +128,8 @@ def test_plan_ready_to_driver_acceptance(scenario):
         publisher.publish(event)
         consume_one()  # New consumer connection, same durable state.
         [allocated] = client.get(path, headers=headers(operator)).json()
+        if event.run_id:
+            assert client.get(live_path, headers=headers(operator)).json() == []
         assert allocated["status"] == "allocated" and allocated["canOffer"]
         assert client.get(path, headers=headers(driver)).json() == []
         command = {key: allocated[key] for key in ("planId", "deliveryId")}
@@ -129,7 +139,8 @@ def test_plan_ready_to_driver_acceptance(scenario):
         assert offer.status_code == 200, offer.text
         assert offer.json()["assignmentRef"] == allocated["assignmentRef"]
         [pending] = client.get(path, headers=headers(driver)).json()
-        respond = f"/api/v1/driver-offers/{pending['offerId']}/response"
+        live_respond = f"/api/v1/driver-offers/{pending['offerId']}/response"
+        respond = live_respond + query
         assert pending["canRespond"]
         assert client.get(path, headers=headers(other)).json() == []
         assert (
@@ -144,6 +155,18 @@ def test_plan_ready_to_driver_acceptance(scenario):
         key = headers(driver)
         accepted = client.post(respond, headers=key, json={"response": "accept"})
         assert accepted.status_code == 200, accepted.text
+        if event.run_id:
+            # Even a previously successful command key cannot replay across scopes.
+            assert (
+                client.post(live_path, headers=offer_headers, json=command).status_code
+                == 409
+            )
+            assert (
+                client.post(
+                    live_respond, headers=key, json={"response": "accept"}
+                ).status_code
+                == 403
+            )
         assert accepted.json()["code"] == "assigned"
         assert accepted.headers["X-Correlation-ID"] == str(event.correlation_id)
         assert (
@@ -169,7 +192,7 @@ def test_plan_ready_to_driver_acceptance(scenario):
                     "FROM c08_allocation.allocations WHERE resource_id=:resource"
                 ),
                 {"resource": scenario.resource},
-            ).one() == (1, 12.5)
+            ).one() == (1, event.payload.requirements[0].capacity.amount)
     finally:
         publisher.close()
         with pika.BlockingConnection(pika.URLParameters(broker)) as connection:
@@ -204,3 +227,29 @@ def test_competing_plans_cannot_overbook_one_vehicle(scenario):
             ).scalar_one()
             == 500
         )
+
+
+def test_capacity_and_plan_identity_are_isolated_per_run(scenario):
+    store = scenario.store
+    live = new_plan()
+    live.payload.requirements[0].capacity.amount = 800  # entire test vehicle
+    for run_id in (uuid4(), uuid4(), None):
+        event = live.model_copy(
+            update={
+                "scope": "simulation" if run_id else "live",
+                "run_id": run_id,
+                "event_id": uuid4(),
+            }
+        )
+        assert store.consume(event) == "outside configured demo"
+        seed_plan(store, event, scenario.provider, scenario.resource, scenario.driver)
+        assert store.consume(event) == "allocated"
+        assert store.consume(event) == "duplicate"
+        params = {"runId": str(run_id)} if run_id else {}
+        rows = scenario.client.get(
+            "/api/v1/vehicle-assignments",
+            params=params,
+            headers=headers(scenario.operator),
+        ).json()
+        assert len(rows) == 1
+        assert rows[0]["correlationId"] == str(event.correlation_id)

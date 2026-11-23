@@ -298,7 +298,7 @@ Run the FastAPI backend and C01 frontend as usual. In the local C02 database,
 provision an operator and a driver for the same provider using the Supabase
 user IDs and the `operator` and `driver` provider roles. Register a synthetic
 van with the C03 Resources workflow as a manager. It needs active agent status,
-fresh observed availability, and at least 12.5 kg of available payload.
+fresh observed availability, and at least 10 kg of available payload for the Dublin simulation.
 
 From `backend/`, run the worker with the same `DATABASE_URL` as the API:
 
@@ -314,16 +314,19 @@ provider UUID, the registered C03 resource UUID and the driver's Supabase UID:
 uv run python -m app.demo.c08 --provider "$PROVIDER_ID" --resource "$RESOURCE_ID" --driver "$DRIVER_ID"
 ```
 
-Each invocation seeds a fresh synthetic confirmed plan and publishes its
-contract-valid live `PlanReady` twice. This explicitly substitutes a saved
-plan and a fixed candidate/driver for the pending C05 producer and planner
-lookup. C08 reads real C03 vehicle data and serialises commitments per vehicle.
-Simulation events never change live capacity. The live slice handles one
-unfinished delivery and a vehicle capacity expressed in kg.
+By default this seeds C05’s confirmed v3 plan in the Dublin simulation and
+publishes the same `PlanReady` twice with the closure feed’s correlation ID.
+Running it again with the same provider, vehicle and driver replays the event.
+When C05 publishes the event, run the same command with `--seed-only` before
+confirming the plan. This prepares the saved-plan lookup and driver mapping. C08 reads
+the C03 vehicle and reserves capacity separately in each run. Add `--live`
+for the original standalone demo with a fresh plan and a 12.5 kg reservation.
+The assignment endpoints take an optional `runId` query parameter on reads
+and commands. Omitting it selects live state.
 
-1. Open **Plans** as the operator, select the provider, then choose **Send driver offer**.
-2. Sign in as the intended driver, open **Plans**, and accept the offer.
-3. Reload as either participant. The assignment shows **Driver accepted**.
+1. Open **Plans** as the operator, select the provider and **Dublin simulation**, then choose **Send driver offer**.
+2. Sign in as the intended driver, open **Plans**, select **Dublin simulation**, and accept the offer.
+3. Reload as either participant and select the same scope. The assignment shows **Driver accepted**.
    The API and worker logs include the correlation ID printed by the demo.
 
 To run the automated demonstration, configure a dedicated `TEST_DATABASE_URL`

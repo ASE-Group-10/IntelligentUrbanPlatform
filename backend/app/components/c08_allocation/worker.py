@@ -30,7 +30,12 @@ def make_consumer(store, url, exchange=DEFAULT_EXCHANGE, queue=QUEUE):
             log.warning("Invalid PlanReady", extra=trace(envelope))
             return "reject"
         result = store.consume(event)
-        log.info("PlanReady: %s", result, extra=trace(event))
+        level = (
+            logging.WARNING
+            if result in {"ineligible vehicle", "insufficient capacity"}
+            else logging.INFO
+        )
+        log.log(level, "PlanReady: %s", result, extra=trace(event))
         return "retry" if result == "plan unavailable" else "ack"
 
     return EventConsumer(url, queue, list(SUBSCRIBER_QUEUES[QUEUE]), handle, exchange)

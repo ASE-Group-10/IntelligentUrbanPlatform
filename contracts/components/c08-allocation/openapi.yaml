@@ -19,6 +19,7 @@ paths:
       security:
         - c08BearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/C08RunId'
         - $ref: '#/components/parameters/C08ActingProvider'
       responses:
         '200':
@@ -41,6 +42,7 @@ paths:
       security:
         - c08BearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/C08RunId'
         - $ref: '#/components/parameters/C08ActingProvider'
         - $ref: '#/components/parameters/C08IdempotencyKey'
       requestBody:
@@ -86,6 +88,7 @@ paths:
           schema:
             type: string
             format: uuid
+        - $ref: '#/components/parameters/C08RunId'
         - $ref: '#/components/parameters/C08ActingProvider'
         - $ref: '#/components/parameters/C08IdempotencyKey'
       requestBody:
@@ -115,6 +118,14 @@ components:
       type: http
       scheme: bearer
   parameters:
+    C08RunId:
+      name: runId
+      in: query
+      required: false
+      description: Select the simulation run for this operation. Omit to use live assignments.
+      schema:
+        type: string
+        format: uuid
     C08ActingProvider:
       name: X-Acting-Provider
       in: header
