@@ -352,3 +352,32 @@ def test_rules_on_different_overlapping_weekdays_still_conflict():
     assert result.status is RetrievalStatus.CONFLICT
     assert "07:00-10:30 Mon/Tue" in result.conflicts[0].reason
     assert len(store._warnings) == 1
+
+
+# ---- TseGong's review of #87 (0076c58): empty list means every day ----
+
+ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def test_empty_days_and_all_seven_days_are_the_same_schedule():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _truck_ban(_request(), []))
+    service.publish_knowledge(CURATOR, _truck_ban(_amendment(), ALL_DAYS))
+
+    result = service.query_knowledge(PLANNER, _monday_query()).value
+    assert len(result.passages) == 2
+    assert result.status is RetrievalStatus.OK
+    assert result.conflicts == []
+    assert store._warnings == {}  # no curator warning
+
+
+def test_every_day_and_a_single_day_still_conflict():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _truck_ban(_request(), []))
+    service.publish_knowledge(CURATOR, _truck_ban(_amendment(), ["Mon"]))
+
+    result = service.query_knowledge(PLANNER, _monday_query()).value
+    assert result.status is RetrievalStatus.CONFLICT
+    assert len(store._warnings) == 1

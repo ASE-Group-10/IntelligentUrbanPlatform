@@ -50,12 +50,13 @@ def _segments_overlap(a: Constraint, b: Constraint) -> bool:
 
 def _rule(c: Constraint) -> str:
     """Canonical text of what the rule imposes, so equal rules compare equal
-    whatever order their weekdays were listed in."""
+    whatever order their weekdays were listed in, and an empty list and all
+    seven weekdays both mean every day (contract: empty = every day)."""
     parts = []
     if c.time_of_day:
         parts.append(f"{c.time_of_day.from_}-{c.time_of_day.to}")
-    if c.days_of_week:
-        days = [d for d in Weekday if d in set(c.days_of_week)]  # calendar order
+    days = [d for d in Weekday if d in set(c.days_of_week)]  # calendar order
+    if days and len(days) < len(Weekday):
         parts.append("/".join(days))
     if c.value is not None:
         parts.append(json.dumps(c.value, sort_keys=True))
