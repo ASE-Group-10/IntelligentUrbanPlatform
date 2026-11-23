@@ -246,7 +246,8 @@ so use `app.demo.feed --fresh` for a closure that shows as current.
 
 Nothing records who owns a simulation run yet, so a `runId` is only readable
 when it is listed in `SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
-the demo run). Any other run returns `403 Forbidden`.
+the demo run). Any other run returns `403 Forbidden`. The old name
+`C06_SHARED_RUN_IDS` is still read when `SHARED_RUN_IDS` is not set.
 
 ## C07 Disruptions API
 

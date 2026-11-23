@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import AnyUrl, SecretStr, UrlConstraints
+from pydantic import AliasChoices, AnyUrl, Field, SecretStr, UrlConstraints
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,8 +21,11 @@ class Settings(BaseSettings):
     # Simulation runs every signed-in user may read through C06 and C07 until C12
     # records run owners. Default: the thin-slice demo run
     # (fixtures/dublin-scenario.json). See app/shared/run_access.py.
-    shared_run_ids: frozenset[UUID] = frozenset(
-        {UUID("c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b")}
+    # SHARED_RUN_IDS wins; C06_SHARED_RUN_IDS (its name before #105) is still read
+    # when it is the only one set, so existing configs keep their meaning.
+    shared_run_ids: frozenset[UUID] = Field(
+        default=frozenset({UUID("c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b")}),
+        validation_alias=AliasChoices("SHARED_RUN_IDS", "C06_SHARED_RUN_IDS"),
     )
 
 
