@@ -16,7 +16,6 @@ from app.components.c06_city_monitoring.publisher import (
 )
 from app.components.c06_city_monitoring.store import StateScope
 from app.components.c07_disruption_detection.detection import DisruptionDetection
-from app.components.c07_disruption_detection.planning import PlanningUnavailableError
 from app.components.c07_disruption_detection.planning_stub import (
     DEMO_PLAN_ID,
     DEMO_SEGMENT,
@@ -32,6 +31,7 @@ from app.components.c07_disruption_detection.worker import (
     make_consumer,
 )
 from app.shared.contracts import EventEnvelope
+from app.shared.result import Failure
 
 NOW = datetime(2026, 11, 20, 8, 15, tzinfo=UTC)
 
@@ -102,7 +102,7 @@ class FlakyPlanning(DemoPlanningStub):
 
     def find_affected_work(self, scope):
         if self.down:
-            raise PlanningUnavailableError("C05 is down")
+            return Failure("Unavailable", "C05 is down")
         return super().find_affected_work(scope)
 
 
@@ -130,7 +130,7 @@ class ReplanDown(DemoPlanningStub):
 
     def request_replan(self, request, correlation_id):
         if self.down:
-            raise PlanningUnavailableError("C05 is down")
+            return Failure("Unavailable", "C05 is down")
         return super().request_replan(request, correlation_id)
 
 
@@ -147,6 +147,21 @@ def test_replan_refused_by_c05_is_retried_until_c05_takes_it(closure_event):
     assert handle(closure_event) == "ack"
     assert handle(closure_event) == "ack"
     assert len(planning.replan_calls) == 1
+
+
+class PlanGone(DemoPlanningStub):
+    """The demo stub, but C05 no longer knows the plan."""
+
+    def request_replan(self, request, correlation_id):
+        return Failure("NotFound", "plan does not exist")
+
+
+def test_plan_that_c05_does_not_know_is_acked_and_not_retried(closure_event):
+    detection = DisruptionDetection(
+        planning=PlanGone(), store=InMemoryDisruptionStore(), clock=lambda: NOW
+    )
+
+    assert c07_handler(detection)(closure_event) == "ack"
 
 
 def test_unknown_outcome_that_a_retry_cannot_fix_is_acked(handler, closure_event):
