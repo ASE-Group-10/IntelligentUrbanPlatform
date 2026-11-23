@@ -28,6 +28,7 @@ from app.components.c08_allocation.models import (
     ResourceRequirement,
     ResourceSnapshot,
 )
+from app.components.c08_allocation.revisions import route_fits
 from app.shared.contracts import EventEnvelope
 
 
@@ -222,4 +223,29 @@ def test_plan_ready_accepts_c05_route_only_revision() -> None:
     assert (
         revision.payload.model_dump(mode="json")["requirements"]
         == previous["resourceNeeds"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("departure", "fits"),
+    [
+        ("2026-11-20T08:14:00Z", True),
+        ("2026-11-20T09:14:00+01:00", True),
+        ("2026-11-20T08:14:00", False),
+        ("2026-11-20T08:15:00Z", False),
+    ],
+)
+def test_saved_route_uses_planned_departure_in_vehicle_timezone(
+    example, departure, fits
+):
+    saved = example("revised-plan.json")
+    details = {
+        "timezone": "Europe/Dublin",
+        "operating_hours": [{"day": "friday", "opens": "08:14", "closes": "08:22"}],
+    }
+    assert (
+        route_fits(
+            saved, saved["requestIds"][0], details, datetime.fromisoformat(departure)
+        )
+        is fits
     )

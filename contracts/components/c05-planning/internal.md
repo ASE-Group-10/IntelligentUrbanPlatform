@@ -146,6 +146,19 @@ committing resources. The `requirements` list describes all resource needs for
 unfinished deliveries in that plan version. C08 checks which existing
 commitments still satisfy those needs against the revised route and timing.
 
+For the C05 → C08 handoff in #107, the scoped lookup takes the event's
+`planId`, `planVersion` and run scope, plus the unfinished `deliveryId`.
+It returns the matching route and its `plannedDepartureAt` together from
+that confirmed version. The result identifies the scope, plan and version.
+`plannedDepartureAt` is an RFC 3339 timestamp with an explicit offset
+(`Z` or `±HH:MM`). For example, the Dublin v4 lookup returns the route via
+`seg:4471024`, its 480-second duration and `2026-11-20T08:14:00Z`.
+C08 uses this instant when checking the vehicle's local operating hours and
+rechecks the version before committing. A superseded version cannot advance
+the commitment. The Dublin fixture supplies the scenario start time for this
+demo lookup. C05 supplies the route's persisted departure in the integrated
+lookup.
+
 For mutating HTTP calls, a retry with the same caller, operation, run scope, key
 and request returns the first committed response. Reusing that key with a
 different request gives `Conflict`. Concurrent writes use expected-version checks.

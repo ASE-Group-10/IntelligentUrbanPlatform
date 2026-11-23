@@ -22,7 +22,9 @@ finalisation and UC08 negotiation are internal C08 operations.
 - The C05 [confirmed simulation v3](../c05-planning/examples/confirmed-plan.json)
   and [route-only revision event v4](../c05-planning/examples/plan-ready-revision-event.json) share a
   plan and run ID. The route and schedule are read from the saved C05 version
-  for that run. The requirements stay the same; C08 reuses commitments that
+  for that run. The [C05 lookup](../c05-planning/internal.md#planning-and-persistence-rules)
+  supplies the delivery's route and offset-aware `plannedDepartureAt` together
+  from the same confirmed version. The requirements stay the same; C08 reuses commitments that
   still fit the revised route and schedule and checks that the plan version
   is current before committing resources.
   For the single-vehicle slice C08 verifies the confirmed revision, driver,

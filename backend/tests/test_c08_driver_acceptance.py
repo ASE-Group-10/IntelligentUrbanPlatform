@@ -3,6 +3,7 @@
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from threading import Barrier
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -315,7 +316,12 @@ def test_route_only_revision_preserves_commitment(
     previous_offer = allocation()["offerId"]
     assert store.consume(revision) == "plan unavailable"
     revised_plan["runScope"]["runId"] = str(run_id)
-    save_demo_revision(store, revised_plan, load_scenario().start_time)
+    departure = load_scenario().start_time
+    with pytest.raises(ValueError, match="UTC offset"):
+        save_demo_revision(store, revised_plan, departure.replace(tzinfo=None))
+    save_demo_revision(store, revised_plan, departure)
+    with pytest.raises(ValueError, match="cannot be replaced"):
+        save_demo_revision(store, revised_plan, departure + timedelta(minutes=1))
     conflicting = revision.model_copy(deep=True, update={"event_id": uuid4()})
     conflicting.payload.decision_id = uuid4()
     assert store.consume(conflicting) == "event differs from saved plan"

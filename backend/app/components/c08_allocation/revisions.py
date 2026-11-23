@@ -24,7 +24,7 @@ def matches_event(saved, event):
 
 def route_fits(saved, delivery_id, details, departure):
     routes = [r for r in saved["routes"] if str(delivery_id) in r["deliveryIds"]]
-    if len(routes) != 1:
+    if len(routes) != 1 or departure is None or departure.utcoffset() is None:
         return False
     route = routes[0]
     distance, duration = route["distanceMetres"], route["estimatedDurationSeconds"]
@@ -38,8 +38,6 @@ def route_fits(saved, delivery_id, details, departure):
     hours = details.get("operating_hours", [])
     if not hours:
         return True
-    if departure is None:
-        return False
     zone = ZoneInfo(details["timezone"])
     start = departure.astimezone(zone)
     for slot in hours:

@@ -131,8 +131,12 @@ def seed_plan(store, event, provider, resource, driver):
                 )
 
 
-def save_demo_revision(store, saved, departure):
-    """Fixture adapter for the C05 saved-version lookup, separate from delivery."""
+def save_demo_revision(store, saved, departure: datetime):
+    """Save the demo route and its planned departure as one confirmed version."""
+    if saved["status"] != "confirmed":
+        raise ValueError("The saved plan must be confirmed.")
+    if departure.utcoffset() is None:
+        raise ValueError("Planned departure must have a UTC offset.")
     with store.engine.begin() as conn:
         current = conn.execute(
             text("""
