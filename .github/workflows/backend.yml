@@ -7,6 +7,7 @@ on:
       - 'fixtures/**'
       - 'database/migrations/**'
       - 'scripts/**'
+      - '.dockerignore'
       - '.github/workflows/backend.yml'
   push:
     branches:
@@ -15,6 +16,7 @@ on:
       - 'backend/**'
       - 'fixtures/**'
       - 'scripts/**'
+      - '.dockerignore'
       - '.github/workflows/backend.yml'
 
 permissions:
