@@ -7,6 +7,7 @@ x-analytics-worker: &analytics-worker
   environment: &analytics-env
     DATABASE_URL: postgresql+psycopg://ulop:ulop@db:5432/ulop
     RABBITMQ_URL: amqp://${RABBITMQ_USER:-ulop}:${RABBITMQ_PASSWORD:-ulop}@rabbitmq:5672/%2F
+    RABBITMQ_EXCHANGE: ulop.events
   depends_on:
     api:
       condition: service_healthy

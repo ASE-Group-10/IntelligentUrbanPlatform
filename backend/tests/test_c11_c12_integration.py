@@ -255,7 +255,7 @@ def client(engine, context):
     app = FastAPI()
     app.state.engine = engine
     app.state.replay_engine = engine  # SQL role isolation is tested on Postgres below.
-    app.state.settings = type("Settings", (), {"c06_shared_run_ids": ()})()
+    app.state.settings = type("Settings", (), {"shared_run_ids": ()})()
     app.dependency_overrides[authenticate] = lambda: context
 
     @app.middleware("http")
@@ -299,7 +299,7 @@ def test_synthetic_trace_verifies_http_and_fails_if_a_worker_is_missing(
     wait_for_recording(integration_engine, run_id, events, timeout=0)
     recorder.seal(run_id, now + timedelta(minutes=1))
     with client(integration_engine, context) as http:
-        http.app.state.settings.c06_shared_run_ids = (run_id,)
+        http.app.state.settings.shared_run_ids = (run_id,)
 
         def call(method, path, body=None, key=None):
             response = http.request(
@@ -328,6 +328,16 @@ def test_demo_verifier_refuses_remote_destinations_and_missing_identity(url, tok
 
     with pytest.raises(ValueError):
         LocalAPI(url, token, uuid4(), uuid4())
+
+
+def test_app_keeps_disruptions_analytics_and_replay_routes_after_merge():
+    from app.main import create_app
+
+    paths = create_app().openapi()["paths"]
+    assert "get" in paths["/api/v1/disruptions"]
+    assert "post" in paths["/api/v1/analytics/kpis/query"]
+    assert "get" in paths["/api/v1/simulation-runs"]
+    assert "post" in paths["/api/v1/replay-sessions"]
 
 
 def test_http_uses_c02_scope_and_rejects_wrong_roles(integration_engine, context):

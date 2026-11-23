@@ -6,7 +6,7 @@ import threading
 
 from app.config import get_settings
 from app.infrastructure.database import make_engine
-from app.shared.events import EventConsumer
+from app.shared.events import DEFAULT_EXCHANGE, EventConsumer
 from app.shared.logging import configure_logging
 from app.shared.topology import SUBSCRIBER_QUEUES
 
@@ -17,7 +17,11 @@ QUEUE = "c12.delivery-recordings"
 
 def make_consumer(engine, url):
     return EventConsumer(
-        url, QUEUE, list(SUBSCRIBER_QUEUES[QUEUE]), CaptureRecorder(engine).consume
+        url,
+        QUEUE,
+        list(SUBSCRIBER_QUEUES[QUEUE]),
+        CaptureRecorder(engine).consume,
+        exchange=os.environ.get("RABBITMQ_EXCHANGE", DEFAULT_EXCHANGE),
     )
 
 

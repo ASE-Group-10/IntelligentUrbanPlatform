@@ -25,6 +25,7 @@ from app.components.c12_simulation_replay.worker import make_consumer as c12_con
 from app.config import get_settings
 from app.infrastructure.database import make_engine
 from app.shared.contracts import EventEnvelope
+from app.shared.events import DEFAULT_EXCHANGE
 from app.shared.logging import configure_logging
 
 
@@ -126,7 +127,9 @@ def main():
         True,
     )
     subscribers = [c11_consumer(engine, broker), c12_consumer(engine, broker)]
-    publisher = RabbitMQPublisher(broker)
+    publisher = RabbitMQPublisher(
+        broker, exchange=os.environ.get("RABBITMQ_EXCHANGE", DEFAULT_EXCHANGE)
+    )
     delivery_id = uuid4()
     events = fixture_events(args.run_id, delivery_id, correlation_id, now)
     try:

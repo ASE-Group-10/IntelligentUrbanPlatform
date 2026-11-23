@@ -143,10 +143,11 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
     from app.components.analytics_demo import fixture_events, wait_for_recording
     from app.components.analytics_verify import verify_http
     from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
+    from app.components.c11_kpi_analytics import worker as c11_worker
     from app.components.c11_kpi_analytics.store import ObservationStore
+    from app.components.c12_simulation_replay import worker as c12_worker
     from app.components.c12_simulation_replay.recording import CaptureRecorder
     from app.shared.auth import AuthContext
-    from app.shared.events import EventConsumer
     from tests.test_c11_c12_integration import client
 
     engine = create_engine(
@@ -170,14 +171,21 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
         exchange + ".c12": [e.event_type for e in events],
     }
     store, recorder = ObservationStore(engine), CaptureRecorder(engine)
-    consumers = [
-        EventConsumer(broker, queue, types, handler, exchange)
-        for (queue, types), handler in zip(
-            queues.items(), [store.consume, recorder.consume], strict=True
-        )
-    ]
-    publisher = RabbitMQPublisher(broker, exchange, queues)
+    monkeypatch.setenv("RABBITMQ_EXCHANGE", exchange)
+    # Isolate test queues, but use the actual worker factories/configuration.
+    consumers = []
+    for worker, (queue, types) in zip(
+        [c11_worker, c12_worker], queues.items(), strict=True
+    ):
+        monkeypatch.setattr(worker, "QUEUE", queue)
+        monkeypatch.setitem(worker.SUBSCRIBER_QUEUES, queue, types)
+        consumers.append(worker.make_consumer(engine, broker))
+    # The publisher must not create subscriber bindings: routing now proves
+    # that each worker read RABBITMQ_EXCHANGE and declared its own binding.
+    publisher = RabbitMQPublisher(broker, exchange)
     try:
+        for consumer in consumers:
+            consumer.declare()
         recorder.begin(
             run_id,
             context.acting_provider_id,
@@ -222,7 +230,7 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
 
         monkeypatch.setattr(RabbitMQPublisher, "publish", no_publish)
         with client(engine, context) as http:
-            http.app.state.settings.c06_shared_run_ids = (run_id,)
+            http.app.state.settings.shared_run_ids = (run_id,)
 
             def call(method, path, body=None, key=None):
                 response = http.request(

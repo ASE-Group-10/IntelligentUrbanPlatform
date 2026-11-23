@@ -68,7 +68,7 @@ uv run python -m app.components.analytics_demo \
 This refuses remote services. It publishes synthetic C04 contract examples through
 RabbitMQ, runs actual C11/C12 handlers and seals a labelled C04-only capture. It
 does not exercise a real C04 producer. Use a fresh local DB or a new run ID on
-repeat; another ID must be allowed in C06_SHARED_RUN_IDS for C11 queries.
+repeat; another ID must be allowed in SHARED_RUN_IDS for C11 queries.
 
 Start the existing API/frontend, open `/kpis`, select the same provider, enter the
 printed UTC range/run ID and refresh. Observations appear while metrics explicitly
@@ -93,7 +93,7 @@ also run local workers against the same queues.
 
 With #79 available, configure the API's optional `backend/.env` with C02's local
 sign-in settings and the database owner's restricted `REPLAY_DATABASE_URL`
-(inside Compose, the database hostname is `db`). Set `C06_SHARED_RUN_IDS` to a
+(inside Compose, the database hostname is `db`). Set `SHARED_RUN_IDS` to a
 JSON array containing the simulation UUID below if it is not already allowed.
 The overlay never falls back to a business-writer login for playback, creates
 roles, or changes shared/cloud credentials. Then:
@@ -161,6 +161,29 @@ Unregistered runs are intentionally not captured; C12 rejects live input.
 and ranges; max 50 MB / 10000 outcomes) and never overwrites a saved run.
 
 ## Verification and remaining work
+
+### Follow-up to Bruno's storage/worker review
+
+- C11/C12 workers and the synthetic publisher now all read `RABBITMQ_EXCHANGE`,
+  defaulting to `ulop.events`, like the other workers. The Compose overlay sets
+  the same default explicitly. Custom deployments must configure producers and
+  consumers consistently; no message/schema contract changed.
+- Integrated #110's C07 router without dropping C11/C12 routers. C11 also uses
+  the renamed `shared_run_ids` setting; `SHARED_RUN_IDS` is preferred and the
+  central settings model still accepts `C06_SHARED_RUN_IDS` as a legacy alias.
+- Both pagination stores already delete expired cursor rows when they create
+  a next-page cursor. This is opportunistic cleanup, not a timer; expired rows
+  can remain when pagination stops, but they cannot authorise a read. A periodic
+  retention job can be added later if volume justifies it. No new scheduler or
+  database privilege is needed for the slice.
+- Bruno's proposed local-only playback-login setup belongs with the Compose
+  integration, outside `database/migrations`. The overlay here is optional and
+  can be folded into the shared stack; do not run two copies of each worker.
+  The database/Compose owner still needs to supply that setup and its restricted
+  login. This PR does not provision credentials or alter Supabase access.
+- #112 may correctly report hops 9/10 as `WIRED` until an actual C04 producer
+  feeds the agreed demonstration. The synthetic component check does not turn
+  the whole-platform result into `PASS`.
 
 Run existing backend pytest/Ruff and frontend lint/test/build commands. Portable
 checks use SQLite and explicit trusted C02 context doubles. The same adapters run

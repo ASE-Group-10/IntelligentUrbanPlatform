@@ -26,6 +26,7 @@ from app.integrations.identity import current_identity
 from app.shared.auth import CurrentIdentity
 from app.shared.contracts import ContractModel, SegmentKey, Version
 from app.shared.result import Failure
+from app.shared.run_access import require_run_access
 
 router = APIRouter(prefix="/api/v1/city-state", tags=["C06 City Monitoring"])
 logger = logging.getLogger("ulop.c06.api")
@@ -136,12 +137,7 @@ def get_city_snapshot(
         field = ".".join(map(str, detail["loc"]))
         raise APIError(400, "Invalid", f"{field}: {detail['msg']}") from error
 
-    # shortcut: no component records who owns a simulation run yet (C12
-    # internal.md lists the owner as pending), so only runs configured as
-    # shared, the thin-slice demo run by default, can be read.
-    shared_runs = request.app.state.settings.c06_shared_run_ids
-    if params.run_id and params.run_id not in shared_runs:
-        raise APIError(403, "Forbidden", "The caller may not read this simulation run.")
+    require_run_access(request, params.run_id)
 
     scope = (
         StateScope(scope="simulation", run_id=params.run_id)

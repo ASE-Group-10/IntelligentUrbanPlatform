@@ -32,7 +32,7 @@ def allowed(context, scope, shared_runs):
 def service(request):
     with _setup_lock:
         if not hasattr(request.app.state, "c11_analytics"):
-            shared_runs = getattr(request.app.state.settings, "c06_shared_run_ids", ())
+            shared_runs = request.app.state.settings.shared_run_ids
             request.app.state.c11_analytics = KPIAnalytics(
                 ObservationSource(request.app.state.engine),
                 lambda context, scope: allowed(context, scope, shared_runs),
@@ -59,7 +59,7 @@ def breakdown(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
 ):
-    shared_runs = getattr(request.app.state.settings, "c06_shared_run_ids", ())
+    shared_runs = request.app.state.settings.shared_run_ids
     analytics = KPIAnalytics(
         ObservationSource(request.app.state.engine, context.principal_id),
         lambda ctx, scope: allowed(ctx, scope, shared_runs),
