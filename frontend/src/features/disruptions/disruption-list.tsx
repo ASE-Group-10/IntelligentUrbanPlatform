@@ -1,4 +1,5 @@
-import { TriangleAlert } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { MapPin, TriangleAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -126,6 +127,21 @@ function DisruptionCard({ disruption }: { disruption: Disruption }) {
             {updated !== detected && ` · updated ${updated}`}
             {named && ` · ${disruption.segmentKeys.join(", ")}`}
           </p>
+          {disruption.segmentKeys.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              {disruption.segmentKeys.map((key) => (
+                <Link
+                  key={key}
+                  to="/"
+                  search={{ segment: key }}
+                  className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                >
+                  <MapPin className="size-3.5" aria-hidden="true" />
+                  Show {segmentName(key)} on the map
+                </Link>
+              ))}
+            </div>
+          )}
           {disruption.quality !== "good" && (
             <p className="text-xs text-status-slow">
               Detected from {disruption.quality} data, so this may be uncertain.
