@@ -8,7 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { ResourceAccess, type ResourceScope } from "@/features/auth/resource-access";
+import {
+  ProviderPicker,
+  ResourceAccess,
+  type ResourceScope,
+} from "@/features/auth/resource-access";
 
 type ResourceType = "vehicle" | "depot" | "warehouse" | "locker";
 
@@ -215,9 +219,12 @@ function ResourceWorkspace({
 
   if (denied)
     return (
-      <p role="alert" className="p-4 text-destructive">
-        Access denied for this provider.
-      </p>
+      <div className="space-y-3 p-4">
+        <p role="alert" className="text-destructive">
+          Access denied for this provider.
+        </p>
+        <ProviderPicker />
+      </div>
     );
 
   return (
@@ -226,7 +233,8 @@ function ResourceWorkspace({
         title="Resources"
         description="Register logistics resources and review their planning eligibility."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <ProviderPicker />
             <Button variant="outline" size="icon" onClick={refresh} aria-label="Refresh resources">
               <RefreshCw className={loading ? "animate-spin" : ""} />
             </Button>

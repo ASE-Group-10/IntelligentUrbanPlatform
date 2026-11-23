@@ -18,6 +18,11 @@ from app.components.c06_city_monitoring.ingestion import CityMonitoring
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
 from app.components.c06_city_monitoring.router import libpq_url
 from app.components.c06_city_monitoring.router import router as city_state_router
+from app.components.c07_disruption_detection.postgres_store import (
+    PostgresDisruptionStore,
+)
+from app.components.c07_disruption_detection.router import router as disruptions_router
+from app.components.c08_allocation.router import router as allocation_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -36,6 +41,7 @@ def create_app(
     *,
     identity_verifier=None,
     city_state_store=None,
+    disruption_store=None,
     clock=None,
 ):
     @asynccontextmanager
@@ -61,6 +67,9 @@ def create_app(
                 libpq_url(app.state.settings.database_url.get_secret_value())
             ),
             clock=clock or (lambda: datetime.now(UTC)),
+        )
+        app.state.disruption_store = disruption_store or PostgresDisruptionStore(
+            libpq_url(app.state.settings.database_url.get_secret_value())
         )
         yield
         if engine is None:
@@ -150,9 +159,11 @@ def create_app(
         return FileResponse(STATIC / "index.html")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    app.include_router(allocation_router)
     app.include_router(identity_router)
     app.include_router(router)
     app.include_router(city_state_router)
+    app.include_router(disruptions_router)
     return app
 
 

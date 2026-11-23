@@ -191,7 +191,7 @@ and recovery, and pagination. Actual Supabase/browser verification is recorded i
 
 ## Postgres-backed tests
 
-Stores with a Postgres implementation (C06 so far) run the same tests against
+Stores with a Postgres implementation (C06 and C07) run the same tests against
 the in-memory test double and against a real database. Those tests are skipped
 unless `TEST_DATABASE_URL` points at a **dedicated test database**: its schemas
 are rebuilt from `database/migrations/` and its tables are emptied before each
@@ -245,16 +245,28 @@ out, and values older than `maxAgeSeconds` (default 900) come back `degraded`,
 so use `app.demo.feed --fresh` for a closure that shows as current.
 
 Nothing records who owns a simulation run yet, so a `runId` is only readable
-when it is listed in `C06_SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
-the demo run). Any other run returns `403 Forbidden`.
+when it is listed in `SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
+the demo run). Any other run returns `403 Forbidden`. The old name
+`C06_SHARED_RUN_IDS` is still read when `SHARED_RUN_IDS` is not set.
+
+## C07 Disruptions API
+
+`GET /api/v1/disruptions?runId=<uuid>` returns the disruptions C07 recorded for a
+simulation run, most recently updated first; leave out `runId` for live ones
+(`listDisruptions` in `contracts/components/c07-disruption-detection/openapi.yaml`).
+It needs a C02 bearer token and reads the same Postgres tables as the C07
+worker. Runs follow the `SHARED_RUN_IDS` rule above.
 
 ## C07 worker
 
 Consumes `CityStateUpdated` from `ulop.events` (queue `c07.city-state-updated`)
-and runs `evaluateChange`. Until C05 exists it uses the labelled stub in
-`planning_stub.py`, which knows one demo plan on `seg:4471023`.
+and runs `evaluateChange`. Disruptions and processed event IDs are kept in
+Postgres (`c07_disruption_detection`), so they survive a restart. Until C05
+exists it uses the labelled stub in `planning_stub.py`, which knows one demo plan
+on `seg:4471023`.
 
 ```sh
+DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable \
 RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
 uv run python -m app.components.c07_disruption_detection.worker
 ```
@@ -272,15 +284,80 @@ startup, so your queue keeps events published before your worker starts.
 ## Demo: road closure through C06 and C07
 
 The thin-slice event chain (#72 hops 7–8), using the shared scenario in
-`fixtures/dublin-scenario.json`. With `docker compose up -d db rabbitmq` running
-and the migrations applied, start the two workers in separate terminals (see
-above), then inject the closure:
+`fixtures/dublin-scenario.json`. From the repository root:
+
+```sh
+docker compose up -d --build          # db, rabbitmq, migrations, API, C06 publisher, C07 + C08 workers
+docker compose run --rm demo-feed     # inject the closure
+docker compose logs -f c06-publisher c07-worker
+```
+
+`demo-feed` prints the run, the `correlationId`, the new City State version and
+the queued event ID. The C06 publisher and C07 worker log the same
+`correlationId` as the event goes through. Running it again changes nothing;
+add `--fresh` (`docker compose run --rm demo-feed --fresh`) to inject a new
+closure with new IDs at the current time. Use `--build` again after code
+changes, since the containers run the image, not your working tree.
+
+To run the workers from your checkout instead (for debugging), start only
+`docker compose up -d db rabbitmq migrate`, run the workers you need in
+separate terminals (see above), then:
 
 ```sh
 DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop uv run python -m app.demo.feed
 ```
 
-It prints the run, the `correlationId`, the new City State version and the
-queued event ID. The C06 publisher and C07 worker log the same `correlationId`
-as the event goes through. Running it again changes nothing; add `--fresh` to
-inject a new closure with new IDs at the current time.
+Don't run local workers or a local API next to the Compose ones: two workers
+on one queue each see only some of the events, and the Compose API already
+holds port 8000 (set `API_PORT` to move it).
+
+## C08 allocation and driver acceptance (hop 6)
+
+Start PostgreSQL and RabbitMQ and apply the repo migrations from the repository root:
+
+```sh
+docker compose up -d --wait db rabbitmq
+docker compose run --rm dbmate up
+```
+
+Run the FastAPI backend and C01 frontend as usual. In the local C02 database,
+provision an operator and a driver for the same provider using the Supabase
+user IDs and the `operator` and `driver` provider roles. Register a synthetic
+van with the C03 Resources workflow as a manager. It needs active agent status,
+fresh observed availability, and at least 10 kg of available payload for the Dublin simulation.
+
+From `backend/`, run the worker with the same `DATABASE_URL` as the API:
+
+```sh
+export RABBITMQ_URL='amqp://ulop:ulop@127.0.0.1:5672/%2F'
+uv run python -m app.components.c08_allocation.worker
+```
+
+In another terminal in `backend/`, set the same `RABBITMQ_URL` and supply the
+provider UUID, the registered C03 resource UUID and the driver's Supabase UID:
+
+```sh
+uv run python -m app.demo.c08 --provider "$PROVIDER_ID" --resource "$RESOURCE_ID" --driver "$DRIVER_ID"
+```
+
+By default this seeds C05’s confirmed v3 plan in the Dublin simulation and
+publishes the same `PlanReady` twice with the closure feed’s correlation ID.
+Running it again with the same provider, vehicle and driver replays the event.
+When C05 publishes the event, run the same command with `--seed-only` before
+confirming the plan. This prepares the saved-plan lookup and driver mapping. C08 reads
+the C03 vehicle and reserves capacity separately in each run. Add `--live`
+for the original standalone demo with a fresh plan and a 12.5 kg reservation.
+The assignment endpoints take an optional `runId` query parameter on reads
+and commands. Omitting it selects live state.
+
+1. Open **Plans** as the operator, select the provider and **Dublin simulation**, then choose **Send driver offer**.
+2. Sign in as the intended driver, open **Plans**, select **Dublin simulation**, and accept the offer.
+3. Reload as either participant and select the same scope. The assignment shows **Driver accepted**.
+   The API and worker logs include the correlation ID printed by the demo.
+
+To run the automated demonstration, configure a dedicated `TEST_DATABASE_URL`
+ending in `_test` and `TEST_RABBITMQ_URL`, then run
+`uv run pytest tests/test_c08_driver_acceptance.py`. The test rebuilds the
+test schemas, uses its own RabbitMQ exchange/queue, and substitutes token
+verification for interactive Supabase sign-in. Offer expiry, revised plans,
+multi-agent negotiation and downstream evidence/disruption events are follow-up work.

@@ -13,15 +13,14 @@ Use camelCase JSON, UUID v4 identifiers, positive integer versions and UTC
 RFC 3339 timestamps. Reuse the shared `Result<T>` from
 `backend/app/shared/result.py`. A successful internal call returns `Ok(value)`;
 a failure returns `Failure(kind, message)`. JSON examples show the success value.
-The existing `PlanningPort` returns unwrapped values and raises
-`PlanningUnavailableError` for unavailability. Its future C05 adapter must map
-these to and from the logical `Result` contract.
+`PlanningPort` returns this `Result` from both operations and raises no exceptions.
 
 The adopted C07 models remain in
 `backend/app/components/c07_disruption_detection/contracts.py` for compatibility.
 `ChangeScope`, `AffectedWork`, `ReplanRequest` and `ReplanOutcome` are the current
 typed models. `PlanningPort` in the adjacent `planning.py` is the current caller
-interface. This documentation migration preserves their fields and imports.
+interface. The agreements with C07 that shaped them are in
+[Agreed with C07](#agreed-with-c07-59-20-nov-2026).
 
 ## Provided interfaces
 
@@ -42,6 +41,8 @@ Examples [request](examples/find-affected-work-request.json) and
 | `resourceIds` | array of UUID | one of | Resources whose availability changed or failed |
 | `planIds` | array of UUID | one of | Plans named directly (for example by `OperationalDisruption`) |
 | `from` / `to` | timestamp | no | Time window the change applies to; default now → open-ended |
+| `scope` | enum | yes | `live` or `simulation`, copied from the event that triggered the detection |
+| `runId` | UUID | when simulation | Simulation run; must be absent when `scope` is `live` |
 
 **Response: AffectedWork**
 
@@ -78,7 +79,9 @@ Examples [request](examples/request-replan.json),
 | `trigger.reason` | enum | yes | `road_closed` / `congestion` / `resource_unavailable` / `operational_failure` / `weather` |
 | `trigger.citySnapshotVersion` | integer | no | Snapshot the disruption was judged on |
 | `trigger.sourceEventId` | UUID | yes | Event that started the chain |
-| `key` | string | yes | Idempotency key = `planId:disruptionId:disruptionVersion` |
+| `scope` | enum | yes | `live` or `simulation`, copied from the event that triggered the detection |
+| `runId` | UUID | when simulation | Simulation run; must be absent when `scope` is `live` |
+| `key` | string | yes | Idempotency key = `planId:basedOnPlanVersion:disruptionId:disruptionVersion` |
 
 **Response: ReplanOutcome**
 
@@ -87,16 +90,19 @@ Examples [request](examples/request-replan.json),
 | `status` | enum | yes | `NoChange` / `ReviewRequired` / `PlanSaved` |
 | `newPlanVersion` | integer | when saved | Version of the saved revision |
 | `decisionId` | UUID | when saved | C10 decision record |
+| `reason` | string | when `ReviewRequired` | Why no feasible revision was saved, for the operator |
 
-The inherited logical draft lists `Conflict`, `Infeasible`, `Unavailable` and
-`NotFound`. The current `PlanningPort` returns an unwrapped `ReplanOutcome` or
-raises `PlanningUnavailableError`. C07 catches that exception and otherwise
-records `outcome.status`. Agree the mapping of other logical failures and any
-`Conflict` discovery retry with C07 before connecting the C05 adapter.
+Example [review required](examples/replan-review-required.json).
+An infeasible revision is not a failure: it is `Ok` with status `ReviewRequired`
+and a `reason`.
 
-The idempotency key is what stops the C08 → C07 → C05 loop. The same
-disruption version can never produce a second replan of the same plan; C05
-returns the first outcome again.
+**Failures:** `Invalid`, `NotFound`, `Conflict` and `Unavailable`. C07 treats any
+`Conflict` as a stale plan; see [Agreed with C07](#agreed-with-c07-59-20-nov-2026).
+
+The idempotency key is what stops the C08 → C07 → C05 loop. The same key always
+returns the first outcome again. Because the key includes `basedOnPlanVersion`, C05
+also returns the saved result when that disruption version already produced a
+revision for that plan and run, even if a retry carries a newer `basedOnPlanVersion`.
 
 ## Required interfaces
 
@@ -159,24 +165,52 @@ with version 4 and its decision ID. It retains the closure correlation ID and
 simulation run ID and has its own event ID.
 HTTP examples and this event illustrate proposed fields pending consumer review.
 
+## Agreed with C07 (#59, 20 Nov 2026)
+
+1. **Run scope.** `ChangeScope` and `ReplanRequest` carry `scope` (`live` or
+   `simulation`) and `runId`, copied from the event that triggers the detection.
+   `runId` is required for `simulation` and must be absent for `live`, the same
+   rule as `EventEnvelope`. A simulation resolves only its run's plans, inputs and
+   receipts; an unspecified run is never treated as live.
+2. **Idempotency key.** `planId:basedOnPlanVersion:disruptionId:disruptionVersion`.
+   The key does not include the run scope; C05 scopes its receipts by run.
+3. **Conflict.** C07 treats any `Conflict` from `requestReplan` as a stale plan and
+   retries once; if C05 needs to report key reuse differently, it should use a
+   distinct failure. The retry is: call `findAffectedWork` once more (all the
+   disruption's `segmentKeys`, same `scope` and `runId`), then send one new
+   `requestReplan` with the `planVersion` C05 now reports, which gives a new key.
+   C07 does not retry if the plan is no longer affected, or if C05 reports the same
+   `planVersion` as before (the key would be identical). A second failure leaves
+   the replan not made. C05, for its part, returns the saved result when that
+   disruption version already produced a revision for that plan and run.
+4. **ReplanOutcome.** It gains `reason` (text, optional), required when `status` is
+   `ReviewRequired`. `Infeasible` is no longer a failure. The remaining failures are
+   `Invalid`, `NotFound`, `Conflict` and `Unavailable`.
+5. **PlanSaved.** It is returned when the revision and its `PlanReady` outbox entry
+   are saved together. C05 owns the publication state; it is not part of the
+   response to C07.
+6. **Port.** `PlanningPort` returns a typed `Result` (`app.shared.result`: `Ok` or
+   `Failure`) from both calls, instead of raising exceptions.
+7. **Unavailable and retry.** C07 marks the detection result as `retryable` only
+   when delivering the event again can change the outcome:
+   - If C05 answers `Unavailable` to `findAffectedWork`, C07 reports `unknown` and
+     does not mark the event as processed, so the event is not lost.
+   - If a `requestReplan` is not made because C05 answered `Unavailable`
+     (including the rediscovery after a `Conflict`), C07 keeps the disruption with
+     that plan as not requested and the result is `retryable`. When the event
+     arrives again, C07 sends only the plans still pending, with the same key, so
+     C05 deduplicates on it. A pending plan whose version has moved on still
+     follows the `Conflict` rule of point 3.
+   - Causes a redelivery would not change do not set `retryable`: `NotFound`, a
+     plan that is no longer affected, a repeated `Conflict` or one with the same
+     `planVersion`, and `Invalid`. Those plans stay not requested, so the event is
+     not retried forever.
+
 ## Open coordination points
 
 - The HTTP paths, proposal representation, priorities and resource-needs schema
   are proposals for C01/C03/C04/C08 review. Only the two C07 interfaces above
   have existing typed models. New HTTP/event schemas have no runtime yet.
-- The existing `PlanningPort` passes no run scope or run ID to either method.
-  Agree scope propagation with C07 before connecting simulation to real C05
-  storage. A simulation must resolve only its run's plans, inputs and receipts.
-  Do not silently treat an unspecified simulation run as live.
-- Agree with C07 whether one fresh discovery is allowed after a stale-plan
-  `Conflict`, and whether that conflict consumes the key. A refreshed
-  `basedOnPlanVersion` changes the request but leaves the current key unchanged.
-- The inherited logical draft lists `Infeasible`, while architecture UC07 returns
-  `ReviewRequired` for an infeasible revision. Agree that mapping with C07. The
-  current `ReplanOutcome` has no reason/details field.
-- Agree with C07 when the synchronous `PlanSaved` outcome is returned and how to
-  report a saved revision while `PlanReady` publication is pending. `PlanReady`
-  is the event for confirmation and saved revisions.
 - Exchange/routing and the canonical shared event envelope are tracked in #28.
   The event draft refers to the existing C06 envelope to avoid another copy.
 - C05 receives replanning through an internal call from C07. No direct subscription

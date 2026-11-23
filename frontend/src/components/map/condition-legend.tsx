@@ -14,6 +14,10 @@ export function ConditionLegend() {
           {label}
         </li>
       ))}
+      <li className="flex items-center gap-1.5">
+        <span className="w-5 border-t-2 border-dashed border-muted-foreground" aria-hidden="true" />
+        Uncertain
+      </li>
     </ul>
   );
 }
