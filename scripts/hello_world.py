@@ -19,7 +19,7 @@ The closure from ``demo-feed`` carries one correlationId through hops 7 and 8.
 Once C04 and C05 exist, hop 3 starts the run and that correlationId should
 reach every hop. The script exits 1 unless every hop is PASS or STUB.
 
-Standard library only, so it runs with any Python 3.10+.
+Standard library only, so it runs with any Python 3.11+.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 API = os.environ.get("ULOP_API", "http://127.0.0.1:8000").rstrip("/")
 TOKEN = os.environ.get("ULOP_TOKEN")
@@ -237,7 +237,7 @@ def main() -> int:
         hops[6].set("MISSING", "no c08.plan-ready consumer or assignment API")
 
     # Hops 7–8: inject the demo closure and follow its correlationId.
-    since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    since = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         feed = compose("--profile", "demo", "run", "--rm", "-T", "demo-feed", "--fresh")
     except RuntimeError as error:
