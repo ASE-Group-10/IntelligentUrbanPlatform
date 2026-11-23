@@ -3,6 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 import { AuthContext, type Auth } from "@/features/auth/auth-context";
+import { SessionError } from "@/features/auth/identity";
 
 import { DisruptionList } from "./disruption-list";
 import { DEMO_RUN_ID, DisruptionsError, fetchDisruptions, type Disruption } from "./disruptions";
@@ -92,10 +93,20 @@ describe("fetchDisruptions", () => {
 
   it("treats an expired session that can't be refreshed as sign-in", async () => {
     const request = vi.fn(async () => {
-      throw new Error("Session expired. Sign in again.");
+      throw new SessionError("Session expired. Sign in again.");
     });
 
     await expect(fetchDisruptions({ request })).rejects.toMatchObject({ kind: "signin" });
+  });
+
+  it("treats a dropped connection as unavailable, not as a lost session", async () => {
+    const request = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+
+    await expect(fetchDisruptions({ request })).rejects.toMatchObject({
+      kind: "unavailable",
+    });
   });
 
   it("rejects a response that doesn't match the contract", async () => {
@@ -177,5 +188,22 @@ describe("DisruptionList", () => {
 
     await act(() => client.refetchQueries());
     expect(await screen.findByRole("region", { name: /Roadworks on/ })).toBeInTheDocument();
+  });
+
+  it("keeps the list as last known when the connection drops", async () => {
+    let call = 0;
+    const request = vi.fn(async () => {
+      if (call++ === 0) return json(200, { disruptions: [DISRUPTION] });
+      throw new TypeError("Failed to fetch");
+    });
+    const client = renderList(signedIn(request));
+    await screen.findByRole("region", { name: /Roadworks on/ });
+
+    await act(() => client.refetchQueries());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unavailable/i);
+    expect(screen.queryByText(/session has ended/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Last known: 1 disruption/)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Roadworks on/ })).toBeInTheDocument();
   });
 });

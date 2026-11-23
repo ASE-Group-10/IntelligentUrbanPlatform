@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { SessionRequest } from "@/features/auth/identity";
+import { SessionError, type SessionRequest } from "@/features/auth/identity";
 
 import scenario from "../../../../fixtures/dublin-scenario.json";
 
@@ -79,9 +79,10 @@ export async function fetchDisruptions({
   try {
     response = await request(`/disruptions${query}`, { signal });
   } catch (error) {
-    // `sessionRequest` throws once the session has expired and can't be refreshed.
     if (signal?.aborted) throw error;
-    throw new DisruptionsError("signin");
+    // `sessionRequest` throws SessionError once the session can't be refreshed;
+    // anything else (a dropped connection) means C07 couldn't be reached.
+    throw new DisruptionsError(error instanceof SessionError ? "signin" : "unavailable");
   }
   if (response.status === 401) throw new DisruptionsError("signin");
   if (response.status === 403) throw new DisruptionsError("forbidden");
