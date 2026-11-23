@@ -22,6 +22,7 @@ from app.components.c07_disruption_detection.planning_stub import DemoPlanningSt
 from app.components.c07_disruption_detection.postgres_store import (
     PostgresDisruptionStore,
 )
+from app.components.c07_disruption_detection.telemetry import C07Telemetry
 from app.shared.contracts import EventEnvelope
 from app.shared.events import DEFAULT_EXCHANGE, Disposition, EventConsumer, EventHandler
 from app.shared.logging import configure_logging, trace
@@ -34,7 +35,9 @@ EVENT_TYPES = list(SUBSCRIBER_QUEUES[QUEUE])
 log = logging.getLogger(__name__)
 
 
-def c07_handler(detection: DisruptionDetection) -> EventHandler:
+def c07_handler(
+    detection: DisruptionDetection, *, telemetry: C07Telemetry | None = None
+) -> EventHandler:
     """Map ``evaluate_change`` results onto ack / retry / reject.
 
     An outcome C07 could not finish because C05 answered ``Unavailable`` (the
@@ -45,7 +48,11 @@ def c07_handler(detection: DisruptionDetection) -> EventHandler:
     """
 
     def handle(envelope: EventEnvelope) -> Disposition:
-        result = detection.evaluate_change(envelope)
+        result = (
+            telemetry.evaluate(envelope, detection.evaluate_change)
+            if telemetry is not None
+            else detection.evaluate_change(envelope)
+        )
         if isinstance(result, Ok):
             outcome = result.value
             log.log(
@@ -69,12 +76,14 @@ def make_consumer(
     url: str,
     exchange: str = DEFAULT_EXCHANGE,
     queue: str = QUEUE,
+    *,
+    telemetry: C07Telemetry | None = None,
 ) -> EventConsumer:
     return EventConsumer(
         url,
         queue=queue,
         event_types=EVENT_TYPES,
-        handler=c07_handler(detection),
+        handler=c07_handler(detection, telemetry=telemetry),
         exchange=exchange,
     )
 
@@ -86,19 +95,26 @@ def main() -> None:  # pragma: no cover - process entry point
         store=PostgresDisruptionStore(os.environ["DATABASE_URL"]),
         clock=lambda: datetime.now(UTC),
     )
-    consumer = make_consumer(
-        detection,
-        os.environ["RABBITMQ_URL"],
-        os.environ.get("RABBITMQ_EXCHANGE", DEFAULT_EXCHANGE),
-    )
-    stop = threading.Event()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, lambda *_: stop.set())
-    log.info("C07 worker started (C05 stub, Postgres store)")
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    telemetry = C07Telemetry(endpoint) if endpoint else None
     try:
-        consumer.run(stop)
+        consumer = make_consumer(
+            detection,
+            os.environ["RABBITMQ_URL"],
+            os.environ.get("RABBITMQ_EXCHANGE", DEFAULT_EXCHANGE),
+            telemetry=telemetry,
+        )
+        try:
+            stop = threading.Event()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                signal.signal(sig, lambda *_: stop.set())
+            log.info("C07 worker started (C05 stub, Postgres store)")
+            consumer.run(stop)
+        finally:
+            consumer.close()
     finally:
-        consumer.close()
+        if telemetry is not None:
+            telemetry.shutdown()
 
 
 if __name__ == "__main__":  # pragma: no cover

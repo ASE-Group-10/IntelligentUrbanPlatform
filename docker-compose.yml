@@ -65,6 +65,18 @@ services:
       timeout: 5s
       retries: 12
 
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7.76.0
+    profiles: ["observability"]
+    environment:
+      DD_API_KEY: ${DD_API_KEY:-}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_HOSTNAME: ${DD_HOSTNAME:-ulop-local-otel}
+      DD_APM_ENABLED: "true"
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: "0.0.0.0:4318"
+    ports:
+      - "127.0.0.1:4318:4318"
+
   # One-shot migration runner: docker compose run --rm dbmate up
   dbmate:
     image: ghcr.io/amacneil/dbmate:2.36.0
