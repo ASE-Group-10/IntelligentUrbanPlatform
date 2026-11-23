@@ -1,0 +1,40 @@
+{
+  "planId": "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c",
+  "version": 3,
+  "status": "confirmed",
+  "requestIds": [
+    "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"
+  ],
+  "runScope": {
+    "scope": "simulation",
+    "runId": "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+  },
+  "routes": [
+    {
+      "deliveryIds": [
+        "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"
+      ],
+      "segmentKeys": [
+        "seg:4471023"
+      ],
+      "distanceMetres": 1200,
+      "estimatedDurationSeconds": 360
+    }
+  ],
+  "resourceNeeds": [
+    {
+      "deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493",
+      "resourceKind": "van",
+      "capacity": {
+        "amount": 10,
+        "unit": "kg"
+      }
+    }
+  ],
+  "decisionId": "33333333-3333-4333-8333-333333333333",
+  "inputVersions": {
+    "cityState": 41,
+    "delivery:7c6b5a49-3827-4165-a0f9-e8d7c6b5a493": 1,
+    "resource:44444444-4444-4444-8444-444444444444": 1
+  }
+}

@@ -166,11 +166,11 @@ npm run contracts:build
 ```
 
 Pull requests and feature branches validate and build a Redoc artifact without
-publishing it. Pushes to `develop` and `main` publish the generated site under
-`develop/openapi/` and `main/openapi/` on GitHub Pages. Configure the repository's
-Pages source to the `gh-pages` branch before using the published links. Reviewers
-should verify that new paths are tagged with their owning component and that the
-aggregate references the component source rather than duplicating schemas.
+publishing it. Successful pushes to `develop` publish the generated site to the
+GitHub Pages root. Configure the repository's Pages source to the `gh-pages`
+branch before using the published link. Reviewers should verify that new paths
+are tagged with their owning component and that the aggregate references the
+component source rather than duplicating schemas.
 
 ## 5. Daily paired development
 

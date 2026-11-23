@@ -42,13 +42,14 @@ paths:
               address: 1 Example Quay, Dublin 1
               latitude: 53.3498
               longitude: -6.2603
+              profile_status: active
               observed_availability: available
               details:
                 timezone: Europe/Dublin
                 operating_hours:
                   - day: monday
-                    opens: '08:00:00'
-                    closes: '18:00:00'
+                    opens: '08:00'
+                    closes: '18:00'
                 restrictions: []
                 vehicle_category: van
                 max_weight_kg: 1000

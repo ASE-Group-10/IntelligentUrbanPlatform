@@ -87,7 +87,7 @@ class InMemoryDisruptionTransaction:
 
 
 class InMemoryDisruptionStore:
-    """Test double for ``DisruptionStore``; replaced by the Postgres store later.
+    """Test double for ``DisruptionStore``; the worker uses ``PostgresDisruptionStore``.
 
     Each transaction works on a copy that replaces the stored state only when the
     ``with`` block exits normally, so failures leave nothing behind.

@@ -1,0 +1,13 @@
+{
+  "principalId": "20000000-0000-4000-8000-000000000001",
+  "principalType": "user",
+  "serviceId": null,
+  "actingProviderId": "10000000-0000-4000-8000-000000000001",
+  "roles": ["manager", "operator"],
+  "providerIds": [
+    "10000000-0000-4000-8000-000000000001",
+    "10000000-0000-4000-8000-000000000002"
+  ],
+  "platformRoles": [],
+  "correlationId": "a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e"
+}

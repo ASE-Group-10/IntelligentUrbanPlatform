@@ -33,6 +33,7 @@ EXAMPLES: list[tuple[type[BaseModel], str]] = [
     (AffectedWork, "find-affected-work-response.json"),
     (ReplanRequest, "request-replan.json"),
     (ReplanOutcome, "replan-saved.json"),
+    (ReplanOutcome, "replan-review-required.json"),
     (Disruption, "disruption.json"),
     (ResourceAvailabilityChanged, "resource-availability-changed-payload.json"),
     (OperationalDisruption, "operational-disruption-payload.json"),
@@ -147,20 +148,80 @@ class TestObservationTarget:
 
 def test_change_scope_must_name_something():
     with pytest.raises(ValidationError):
-        ChangeScope.model_validate({"segmentKeys": []})
+        ChangeScope.model_validate({"segmentKeys": [], "scope": "live"})
+
+
+class TestChangeScopeRunScope:
+    def test_simulation_requires_run_id(self, example):
+        data = example("find-affected-work-request.json") | {"runId": None}
+        with pytest.raises(ValidationError):
+            ChangeScope.model_validate(data)
+
+    def test_live_must_not_carry_run_id(self, example):
+        data = example("find-affected-work-request.json") | {"scope": "live"}
+        with pytest.raises(ValidationError):
+            ChangeScope.model_validate(data)
+
+    def test_live_without_run_id_is_valid(self, example):
+        data = example("find-affected-work-request.json") | {
+            "scope": "live",
+            "runId": None,
+        }
+        assert ChangeScope.model_validate(data).scope == "live"
+
+    def test_scope_is_required(self, example):
+        data = example("find-affected-work-request.json")
+        del data["scope"]
+        with pytest.raises(ValidationError):
+            ChangeScope.model_validate(data)
 
 
 class TestReplanRequest:
-    def test_key_must_match_plan_disruption_and_version(self, example):
+    def test_key_must_match_plan_disruption_and_versions(self, example):
         data = example("request-replan.json")
         data["trigger"]["disruptionVersion"] = 2
         with pytest.raises(ValidationError):
             ReplanRequest.model_validate(data)
 
+    def test_key_includes_the_plan_version_the_request_is_based_on(self, example):
+        data = example("request-replan.json")
+        data["trigger"]["basedOnPlanVersion"] = 4
+        with pytest.raises(ValidationError):
+            ReplanRequest.model_validate(data)
+
+    def test_key_format_is_plan_basedon_disruption_version(self, example):
+        request = ReplanRequest.model_validate(example("request-replan.json"))
+        assert request.key == (
+            "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c:3:"
+            "d4c3b2a1-0f9e-4d8c-b7a6-5e4d3c2b1a0f:1"
+        )
+
     def test_build_derives_idempotency_key(self, example):
         expected = ReplanRequest.model_validate(example("request-replan.json"))
-        built = ReplanRequest.build(plan_id=expected.plan_id, trigger=expected.trigger)
+        built = ReplanRequest.build(
+            plan_id=expected.plan_id,
+            trigger=expected.trigger,
+            scope=expected.scope,
+            run_id=expected.run_id,
+        )
         assert built == expected
+
+    def test_simulation_requires_run_id(self, example):
+        data = example("request-replan.json") | {"runId": None}
+        with pytest.raises(ValidationError):
+            ReplanRequest.model_validate(data)
+
+    def test_live_must_not_carry_run_id(self, example):
+        data = example("request-replan.json") | {"scope": "live"}
+        with pytest.raises(ValidationError):
+            ReplanRequest.model_validate(data)
+
+    def test_build_rejects_simulation_without_run_id(self, example):
+        expected = ReplanRequest.model_validate(example("request-replan.json"))
+        with pytest.raises(ValidationError):
+            ReplanRequest.build(
+                plan_id=expected.plan_id, trigger=expected.trigger, scope="simulation"
+            )
 
 
 class TestReplanOutcome:
@@ -170,6 +231,14 @@ class TestReplanOutcome:
 
     def test_no_change_needs_nothing_else(self):
         assert ReplanOutcome.model_validate({"status": "NoChange"}).status == "NoChange"
+
+    def test_review_required_needs_a_reason(self):
+        with pytest.raises(ValidationError):
+            ReplanOutcome.model_validate({"status": "ReviewRequired"})
+
+    def test_reason_must_not_be_empty(self):
+        with pytest.raises(ValidationError):
+            ReplanOutcome.model_validate({"status": "ReviewRequired", "reason": ""})
 
 
 @pytest.mark.parametrize(
