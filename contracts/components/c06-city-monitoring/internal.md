@@ -121,6 +121,6 @@ None yet. Source authentication will use C02 once its contract exists.
 - [ ] Where the shared `EventEnvelope` and conventions live (#28).
 - [ ] Zones: fixed grid or postal districts? Only needed for weather, so this can wait.
 - [ ] Per-source freshness overrides.
-- [x] City State read for C01: `getCitySnapshot` in `openapi.yaml`.
+- [x] City State read for C01: `getCitySnapshot` in `openapi.yaml`, served by `c06_city_monitoring/router.py`.
 - [ ] `submitManualCondition` over HTTP (UC05 AF5).
 - [ ] Segment geometry for area (`bbox`) queries and the C01 map (#43): from C05's routing graph or a demo fixture.

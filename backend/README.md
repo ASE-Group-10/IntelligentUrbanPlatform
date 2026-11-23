@@ -234,6 +234,20 @@ Stop it with Ctrl+C. Events stay in the outbox while the broker is down, or
 while no consumer queue is bound for their event type yet (for example C06
 started before C07 on a fresh broker), and go out once that changes.
 
+## C06 City State API
+
+`GET /api/v1/city-state/snapshot?segmentKeys=seg:4471023,...` returns the
+current condition of those segments for the C01 map (`getCitySnapshot` in
+`contracts/components/c06-city-monitoring/openapi.yaml`). It needs a C02 bearer
+token. Add `runId` to read a simulation run, such as the demo run below, and
+`atVersion` for a past version. Segments with no recorded condition are left
+out, and values older than `maxAgeSeconds` (default 900) come back `degraded`,
+so use `app.demo.feed --fresh` for a closure that shows as current.
+
+Nothing records who owns a simulation run yet, so a `runId` is only readable
+when it is listed in `C06_SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
+the demo run). Any other run returns `403 Forbidden`.
+
 ## C07 worker
 
 Consumes `CityStateUpdated` from `ulop.events` (queue `c07.city-state-updated`)

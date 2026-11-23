@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: C06 City Monitoring API
-  version: 1.0.0
+  version: 1.1.0
   summary: Read current and past City State for the map and other clients.
   description: |
     Synchronous HTTP contract for C06 City Monitoring (UC05).
@@ -226,15 +226,18 @@ components:
       properties:
         error:
           type: object
-          required: [code, message, correlationId]
+          required: [code, message, correlation_id]
           additionalProperties: false
           properties:
             code:
               type: string
-              enum: [Invalid, Forbidden, NotFound, Unavailable]
-              description: The shared `Result` failure kind.
+              enum: [Invalid, Forbidden, NotFound, Unavailable, UNAUTHENTICATED, IDENTITY_UNAVAILABLE]
+              description: |
+                The shared `Result` failure kind. Sign-in failures (`401`) and a
+                C02 outage (`503`) keep C02's codes, since C02 checks the token.
             message:
               type: string
-            correlationId:
+            correlation_id:
               type: string
               format: uuid
+              description: Same field name as C02 and C03, so C01 has one error handler.

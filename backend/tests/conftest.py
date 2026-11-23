@@ -70,11 +70,12 @@ def test_database_url() -> str:
                 f"refusing to reset {name!r}: TEST_DATABASE_URL must name a "
                 "dedicated test database ending in '_test', such as ulop_test"
             )
-        conn.execute("drop schema if exists c08_allocation cascade")
-        conn.execute("drop schema if exists c03_resource_management cascade")
-        conn.execute("drop schema if exists c02_identity_access cascade")
-        conn.execute("drop schema if exists c06_city_monitoring cascade")
-        conn.execute("drop schema if exists c07_disruption_detection cascade")
+        # Every component schema (c02_..., c03_..., c06_...), so a rerun starts clean.
+        schemas = conn.execute(
+            "select nspname from pg_namespace where nspname ~ '^c[0-9]{2}_'"
+        ).fetchall()
+        for (schema,) in schemas:
+            conn.execute(f'drop schema "{schema}" cascade')
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
             conn.execute(_migrate_up_sql(migration))
     return TEST_DATABASE_URL

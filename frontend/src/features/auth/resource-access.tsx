@@ -1,11 +1,9 @@
-import type { Session, SupabaseClient } from "@supabase/supabase-js";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { identitySchema, sessionRequest, type SessionRequest } from "./identity";
-import { supabase } from "./supabase";
+import { useAuth } from "./auth-context";
+import type { SessionRequest } from "./identity";
 
 export interface ResourceScope {
   providerId: string;
@@ -15,6 +13,11 @@ export interface ResourceScope {
 
 type Workspace = (scope: ResourceScope) => ReactNode;
 
+/**
+ * Guard for protected screens. The session lives in `AuthProvider`; this shows
+ * the sign-in form, access checks and provider choice until there is an acting
+ * provider, then renders the screen for it.
+ */
 export function ResourceAccess({
   children,
   area = "Resources",
@@ -22,66 +25,88 @@ export function ResourceAccess({
   children: Workspace;
   area?: string;
 }) {
-  if (!supabase) {
+  const auth = useAuth();
+
+  if (!auth.client) {
     return <AccessNotice>{area} sign-in is unavailable in this environment.</AccessNotice>;
+  }
+  if (auth.session === undefined) return <AccessNotice>Checking your session…</AccessNotice>;
+  if (!auth.session || !auth.request) return <SignInForm area={area} />;
+  if (auth.identityStatus === "pending") {
+    return <AccessNotice>Checking provider access…</AccessNotice>;
+  }
+  if (auth.identityStatus === "error") {
+    return (
+      <AccessNotice>
+        <span role="alert">Couldn’t verify your access.</span>{" "}
+        <Button variant="outline" onClick={auth.retryIdentity}>
+          Retry
+        </Button>
+      </AccessNotice>
+    );
+  }
+  if (auth.providers.length === 0) {
+    return <AccessNotice>You don’t have access to a provider yet.</AccessNotice>;
+  }
+  if (!auth.actingProvider) {
+    return (
+      <AccessNotice>
+        <span className="mb-3 block">Choose the provider you’re acting for.</span>
+        <ProviderPicker />
+      </AccessNotice>
+    );
   }
 
   return (
-    <ResourceSession client={supabase} area={area}>
-      {children}
-    </ResourceSession>
+    <div key={`${auth.session.user.id}:${auth.actingProvider.providerId}`}>
+      {children({
+        providerId: auth.actingProvider.providerId,
+        canRegister: auth.canRegister,
+        request: auth.request,
+      })}
+    </div>
   );
 }
 
-function ResourceSession({
-  client,
-  children,
-  area,
-}: {
-  client: SupabaseClient;
-  children: Workspace;
-  area: string;
-}) {
-  const [session, setSession] = useState<Session | null | undefined>();
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    const { data } = client.auth.onAuthStateChange((event, nextSession) => {
-      setSession(nextSession);
-      if (event === "SIGNED_OUT") {
-        queryClient.removeQueries({ queryKey: ["current-identity"] });
-      }
-    });
-    return () => data.subscription.unsubscribe();
-  }, [client, queryClient]);
-
-  const expire = useCallback(async () => {
-    setSession(null);
-    queryClient.removeQueries({ queryKey: ["current-identity"] });
-    await client.auth.signOut({ scope: "local" }).catch(() => undefined);
-  }, [client, queryClient]);
-
-  if (session === undefined) return <AccessNotice>Checking your session…</AccessNotice>;
-  if (!session) return <SignIn client={client} area={area} />;
+/** Acting-provider choice for a page header; a plain label when there is no choice. */
+export function ProviderPicker() {
+  const { providers, needsSelection, actingProvider, selectProvider } = useAuth();
+  if (providers.length === 0) return null;
+  if (!needsSelection) {
+    return (
+      <p className="text-sm text-muted-foreground">Acting for {actingProvider?.providerName}</p>
+    );
+  }
 
   return (
-    <SignedInResources
-      key={session.user.id}
-      client={client}
-      principalId={session.user.id}
-      expire={expire}
-    >
-      {children}
-    </SignedInResources>
+    <label className="flex items-center gap-2 text-sm">
+      Acting provider
+      <select
+        className="rounded-lg border border-input bg-background px-2 py-1"
+        value={actingProvider?.providerId ?? ""}
+        onChange={(event) => selectProvider(event.target.value)}
+      >
+        <option value="" disabled>
+          Select a provider
+        </option>
+        {providers.map((provider) => (
+          <option key={provider.providerId} value={provider.providerId}>
+            {provider.providerName}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
-function SignIn({ client, area }: { client: SupabaseClient; area: string }) {
+export function SignInForm({ area, className }: { area?: string; className?: string }) {
+  const { client } = useAuth();
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!client) return;
     const form = new FormData(event.currentTarget);
     setPending(true);
     setFailed(false);
@@ -103,9 +128,15 @@ function SignIn({ client, area }: { client: SupabaseClient; area: string }) {
   return (
     <form
       onSubmit={signIn}
-      className="mx-auto my-8 grid w-full max-w-sm gap-4 rounded-xl border bg-card p-6 text-card-foreground"
+      aria-label="Sign in"
+      className={
+        className ??
+        "mx-auto my-8 grid w-full max-w-sm gap-4 rounded-xl border bg-card p-6 text-card-foreground"
+      }
     >
-      <h1 className="font-heading text-xl font-semibold">Sign in to {area}</h1>
+      <h1 className="font-heading text-xl font-semibold">
+        {area ? `Sign in to ${area}` : "Sign in"}
+      </h1>
       <label className="grid gap-1 text-sm">
         Email
         <input className={inputClass} name="email" type="email" autoComplete="username" required />
@@ -129,117 +160,6 @@ function SignIn({ client, area }: { client: SupabaseClient; area: string }) {
         {pending ? "Signing in…" : "Sign in"}
       </Button>
     </form>
-  );
-}
-
-function SignedInResources({
-  client,
-  principalId,
-  expire,
-  children,
-}: {
-  client: SupabaseClient;
-  principalId: string;
-  expire: () => Promise<void>;
-  children: Workspace;
-}) {
-  const [providerId, setProviderId] = useState("");
-  const [signOutError, setSignOutError] = useState(false);
-  const request = useMemo(
-    () => sessionRequest(client, principalId, expire),
-    [client, principalId, expire],
-  );
-  const identity = useQuery({
-    queryKey: ["current-identity", principalId],
-    gcTime: 0,
-    queryFn: async ({ signal }) => {
-      const response = await request("/identity/me", { signal });
-      if (!response.ok) throw new Error("Couldn’t verify your access.");
-      const profile = identitySchema.parse(await response.json());
-      if (profile.principalId !== principalId) throw new Error("Account changed.");
-      return profile;
-    },
-    retry: false,
-  });
-
-  async function signOut() {
-    setSignOutError(false);
-    try {
-      const { error } = await client.auth.signOut({ scope: "local" });
-      setSignOutError(Boolean(error));
-    } catch {
-      setSignOutError(true);
-    }
-  }
-
-  const profile = identity.data;
-  const providers = profile?.availableProviders ?? [];
-  const admin = profile?.platformRoles.includes("admin") ?? false;
-  const needsSelection = admin || providers.length > 1;
-  const actingProvider = needsSelection
-    ? providers.find((entry) => entry.providerId === providerId)
-    : providers[0];
-  const canRegister =
-    admin ||
-    Boolean(
-      profile?.memberships.some(
-        (entry) =>
-          entry.providerId === actingProvider?.providerId && entry.roles.includes("manager"),
-      ),
-    );
-  return (
-    <>
-      <div className="flex flex-wrap items-center justify-end gap-3 border-b px-4 py-2 text-sm">
-        {identity.data && <span>{identity.data.displayName}</span>}
-        <Button variant="outline" onClick={signOut}>
-          Sign out
-        </Button>
-        {signOutError && <p role="alert">Sign-out failed. Try again.</p>}
-      </div>
-      {identity.isPending && <AccessNotice>Checking provider access…</AccessNotice>}
-      {identity.isError && (
-        <AccessNotice>
-          <span role="alert">Couldn’t verify your access.</span>{" "}
-          <Button variant="outline" onClick={() => void identity.refetch()}>
-            Retry
-          </Button>
-        </AccessNotice>
-      )}
-      {identity.isSuccess && identity.data && (
-        <>
-          {needsSelection && providers.length > 0 && (
-            <label className="flex items-center gap-2 px-4 py-3 text-sm">
-              Acting provider
-              <select
-                className="rounded-lg border border-input bg-background px-2 py-1"
-                value={actingProvider?.providerId ?? ""}
-                onChange={(event) => setProviderId(event.target.value)}
-              >
-                <option value="" disabled>
-                  Select a provider
-                </option>
-                {providers.map((membership) => (
-                  <option key={membership.providerId} value={membership.providerId}>
-                    {membership.providerName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {providers.length === 0 && (
-            <AccessNotice>You don’t have access to a provider yet.</AccessNotice>
-          )}
-          {actingProvider && (
-            <div key={actingProvider.providerId}>
-              {!needsSelection && (
-                <p className="px-4 py-2 text-sm">Acting provider: {actingProvider.providerName}</p>
-              )}
-              {children({ providerId: actingProvider.providerId, canRegister, request })}
-            </div>
-          )}
-        </>
-      )}
-    </>
   );
 }
 
