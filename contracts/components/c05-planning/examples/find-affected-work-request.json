@@ -1,5 +1,7 @@
 {
   "segmentKeys": ["seg:4471023"],
   "from": "2026-11-20T08:14:30Z",
-  "to": "2026-11-20T18:00:00Z"
+  "to": "2026-11-20T18:00:00Z",
+  "scope": "simulation",
+  "runId": "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 }

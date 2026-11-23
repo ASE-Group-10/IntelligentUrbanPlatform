@@ -1,0 +1,36 @@
+{
+  "deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493",
+  "version": 1,
+  "status": "pending",
+  "pickup": {
+    "address": "Dublin Port",
+    "latitude": 53.3478,
+    "longitude": -6.2297
+  },
+  "destination": {
+    "address": "Trinity College Dublin",
+    "latitude": 53.3438,
+    "longitude": -6.2546
+  },
+  "cargo": {
+    "description": "Office supplies",
+    "weightKg": 4.5,
+    "parcelCount": 2
+  },
+  "timeWindow": {
+    "start": "2026-11-20T09:00:00Z",
+    "end": "2026-11-20T12:00:00Z"
+  },
+  "constraints": {
+    "vehicleKinds": ["van", "cargo_bike"],
+    "fragile": false
+  },
+  "plannedAt": null,
+  "progress": {
+    "status": "pending",
+    "updatedAt": "2026-11-19T22:00:00Z",
+    "note": null
+  },
+  "createdAt": "2026-11-19T22:00:00Z",
+  "updatedAt": "2026-11-19T22:00:00Z"
+}

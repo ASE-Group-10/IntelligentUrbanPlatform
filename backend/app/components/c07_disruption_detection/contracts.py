@@ -14,6 +14,7 @@ from app.shared.contracts import (
     ContractModel,
     EventEnvelope,
     Quality,
+    RunScope,
     SegmentKey,
     UtcDatetime,
     Version,
@@ -42,19 +43,38 @@ FailureKind = Literal[
 ]
 
 
+def _check_run_scope(scope: RunScope, run_id: UUID4 | None) -> None:
+    """Same rule as ``EventEnvelope``: ``runId`` only, and always, in simulation."""
+    if scope == "simulation" and run_id is None:
+        raise ValueError("runId is required when scope is 'simulation'")
+    if scope == "live" and run_id is not None:
+        raise ValueError("runId must be absent when scope is 'live'")
+
+
 class ChangeScope(ContractModel):
-    """Request for C05 ``findAffectedWork``: what changed, and when."""
+    """Request for C05 ``findAffectedWork``: what changed, and when.
+
+    ``scope`` and ``run_id`` are copied from the event that triggered the
+    detection, so a simulation only ever resolves its own run's plans.
+    """
 
     segment_keys: list[SegmentKey] = Field(default_factory=list)
     resource_ids: list[UUID4] = Field(default_factory=list)
     plan_ids: list[UUID4] = Field(default_factory=list)
     from_: UtcDatetime | None = Field(default=None, alias="from")
     to: UtcDatetime | None = None
+    scope: RunScope
+    run_id: UUID4 | None = None
 
     @model_validator(mode="after")
     def _names_something(self) -> Self:
         if not (self.segment_keys or self.resource_ids or self.plan_ids):
             raise ValueError("provide segmentKeys, resourceIds or planIds")
+        return self
+
+    @model_validator(mode="after")
+    def _run_id_fits_scope(self) -> Self:
+        _check_run_scope(self.scope, self.run_id)
         return self
 
 
@@ -86,39 +106,72 @@ class ReplanTrigger(ContractModel):
 
 
 def replan_key(plan_id: UUID4, trigger: ReplanTrigger) -> str:
-    """Idempotency key ``planId:disruptionId:disruptionVersion``."""
-    return f"{plan_id}:{trigger.disruption_id}:{trigger.disruption_version}"
+    """Idempotency key ``planId:basedOnPlanVersion:disruptionId:disruptionVersion``."""
+    return (
+        f"{plan_id}:{trigger.based_on_plan_version}:"
+        f"{trigger.disruption_id}:{trigger.disruption_version}"
+    )
 
 
 class ReplanRequest(ContractModel):
     """Body of C05 ``requestReplan`` (the AuthContext travels separately).
 
+    ``scope`` and ``run_id`` are copied from the event that triggered the
+    detection; the key does not include them.
+
     Raises:
-        ValidationError: if ``key`` does not match plan, disruption and version.
+        ValidationError: if ``key`` does not match plan, plan version and
+            disruption version, or if ``run_id`` does not fit ``scope``.
     """
 
     plan_id: UUID4
     trigger: ReplanTrigger
+    scope: RunScope
+    run_id: UUID4 | None = None
     key: str
 
     @classmethod
-    def build(cls, plan_id: UUID4, trigger: ReplanTrigger) -> Self:
+    def build(
+        cls,
+        plan_id: UUID4,
+        trigger: ReplanTrigger,
+        scope: RunScope,
+        run_id: UUID4 | None = None,
+    ) -> Self:
         """Create a request with its idempotency key derived from the trigger."""
-        return cls(plan_id=plan_id, trigger=trigger, key=replan_key(plan_id, trigger))
+        return cls(
+            plan_id=plan_id,
+            trigger=trigger,
+            scope=scope,
+            run_id=run_id,
+            key=replan_key(plan_id, trigger),
+        )
 
     @model_validator(mode="after")
     def _key_matches(self) -> Self:
         if self.key != replan_key(self.plan_id, self.trigger):
-            raise ValueError("key must be planId:disruptionId:disruptionVersion")
+            raise ValueError(
+                "key must be planId:basedOnPlanVersion:disruptionId:disruptionVersion"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _run_id_fits_scope(self) -> Self:
+        _check_run_scope(self.scope, self.run_id)
         return self
 
 
 class ReplanOutcome(ContractModel):
-    """Response from C05 ``requestReplan``."""
+    """Response from C05 ``requestReplan``.
+
+    ``ReviewRequired`` means the revision is infeasible without an operator
+    decision; ``reason`` says why.
+    """
 
     status: ReplanOutcomeStatus
     new_plan_version: Version | None = None
     decision_id: UUID4 | None = None
+    reason: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _saved_has_version_and_decision(self) -> Self:
@@ -126,6 +179,12 @@ class ReplanOutcome(ContractModel):
             self.new_plan_version is None or self.decision_id is None
         ):
             raise ValueError("PlanSaved requires newPlanVersion and decisionId")
+        return self
+
+    @model_validator(mode="after")
+    def _review_has_reason(self) -> Self:
+        if self.status == "ReviewRequired" and self.reason is None:
+            raise ValueError("ReviewRequired requires a reason")
         return self
 
 

@@ -67,5 +67,8 @@ jobs:
           TEST_RABBITMQ_URL: amqp://ulop:ulop@localhost:5672/%2F
         run: uv run --directory backend pytest
 
+      - name: Lint backend
+        run: uv run --project backend ruff check --config backend/pyproject.toml backend scripts
+
       - name: Check backend formatting
         run: uv run --project backend ruff format --check --config backend/pyproject.toml backend scripts
