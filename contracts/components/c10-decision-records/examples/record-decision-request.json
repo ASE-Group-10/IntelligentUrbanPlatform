@@ -108,7 +108,7 @@
           "start": "2026-11-20T07:30:00Z",
           "end": "2026-11-20T09:00:00Z"
         },
-        "vehicleClass": "HGV",
+        "vehicleClass": "truck",
         "activity": "Delivery",
         "freeText": "city-centre delivery to a Grafton Street retailer",
         "maxPassages": 5
@@ -130,7 +130,7 @@
               "dublin-D2"
             ],
             "vehicleClasses": [
-              "HGV"
+              "truck"
             ],
             "activities": []
           },
@@ -145,7 +145,7 @@
               ],
               "segmentKeys": [],
               "vehicleClasses": [
-                "HGV"
+                "truck"
               ],
               "timeOfDay": {
                 "from": "07:00",
