@@ -18,6 +18,7 @@ from app.components.c06_city_monitoring.ingestion import CityMonitoring
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
 from app.components.c06_city_monitoring.router import libpq_url
 from app.components.c06_city_monitoring.router import router as city_state_router
+from app.components.c08_allocation.router import router as allocation_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -150,6 +151,7 @@ def create_app(
         return FileResponse(STATIC / "index.html")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    app.include_router(allocation_router)
     app.include_router(identity_router)
     app.include_router(router)
     app.include_router(city_state_router)
