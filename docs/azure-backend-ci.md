@@ -1,5 +1,12 @@
 # Azure development backend image pipeline (#75)
 
+## Dependency on local Compose setup
+
+Merge PR #79 before this pipeline. PR #79 owns `backend/Dockerfile` and the
+local Compose services. This PR reuses that Dockerfile to publish the same
+backend image to GitHub Container Registry; it does not define another image.
+Do not merge this PR into `develop` while `backend/Dockerfile` is absent.
+
 ## Scope and gate
 
 The `Backend checks` workflow tests and lints backend changes on `develop`.
