@@ -297,3 +297,58 @@ def test_bans_sharing_a_queried_zone_still_conflict():
     ).value
     assert result.status is RetrievalStatus.CONFLICT
     assert "in dublin-D2 but" in result.conflicts[0].reason
+
+
+# ---- TseGong's review of #87 (e7fb027): weekday order ----
+
+
+def _truck_ban(request: PublishKnowledgeRequest, days: list[str]):
+    """The same truck ban in dublin-D2, 07:00-10:30, on the given weekdays."""
+    data = request.model_dump(mode="json", by_alias=True)
+    for constraints in data["metadata"]["constraintsBySection"].values():
+        for c in constraints:
+            c.update(
+                zoneIds=["dublin-D2"],
+                vehicleClasses=["truck"],
+                timeOfDay={"from": "07:00", "to": "10:30"},
+                daysOfWeek=days,
+                exemption=None,
+            )
+    data["idempotencyKey"] += ":" + "-".join(days)
+    return PublishKnowledgeRequest.model_validate(data)
+
+
+def _monday_query() -> PolicyQuery:
+    data = _example("query_knowledge.request.json")
+    data["area"]["zoneIds"] = ["dublin-D2"]
+    data["timeWindow"] = {
+        "start": "2026-11-23T07:30:00Z",  # a Monday
+        "end": "2026-11-23T09:00:00Z",
+    }
+    data.pop("freeText", None)
+    return PolicyQuery.model_validate(data)
+
+
+def test_same_rule_with_weekdays_in_another_order_does_not_conflict():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _truck_ban(_request(), ["Mon", "Tue"]))
+    service.publish_knowledge(CURATOR, _truck_ban(_amendment(), ["Tue", "Mon"]))
+
+    result = service.query_knowledge(PLANNER, _monday_query()).value
+    assert len(result.passages) == 2
+    assert result.status is RetrievalStatus.OK
+    assert result.conflicts == []
+    assert store._warnings == {}  # no curator warning
+
+
+def test_rules_on_different_overlapping_weekdays_still_conflict():
+    store = _empty_store()
+    service = _service(store)
+    service.publish_knowledge(CURATOR, _truck_ban(_request(), ["Mon", "Tue"]))
+    service.publish_knowledge(CURATOR, _truck_ban(_amendment(), ["Mon"]))
+
+    result = service.query_knowledge(PLANNER, _monday_query()).value
+    assert result.status is RetrievalStatus.CONFLICT
+    assert "07:00-10:30 Mon/Tue" in result.conflicts[0].reason
+    assert len(store._warnings) == 1
