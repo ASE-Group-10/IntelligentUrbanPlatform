@@ -9,6 +9,7 @@ record's ``scope`` and ``runId`` (walking skeleton #72, hop 4).
 """
 
 import hashlib
+import json
 import logging
 from collections.abc import Callable
 from datetime import datetime
@@ -71,7 +72,16 @@ def _summary(errors: list[Any]) -> str:
 
 
 def _hash(record: DecisionRecord) -> str:
-    return hashlib.sha256(record.model_dump_json(by_alias=True).encode()).hexdigest()
+    """Fingerprint of the request body for idempotency. Object keys are sorted
+    so a retry that rebuilds a free-form object (``selectedOption.details``)
+    in another key order is still the same request; list order is kept."""
+    canonical = json.dumps(
+        record.model_dump(mode="json", by_alias=True),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _trace(ctx: AuthContext, run_scope: RunScope | None = None) -> dict[str, str]:

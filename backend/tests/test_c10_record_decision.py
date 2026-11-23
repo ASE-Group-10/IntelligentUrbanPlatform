@@ -251,6 +251,23 @@ def test_duplicate_is_detected_inside_the_same_transaction(service, backend):
     assert len(backend.decisions()) == 1
 
 
+def test_retry_with_object_keys_in_another_order_is_a_duplicate(service, backend):
+    # PR #100 review: same decision, selectedOption.details rebuilt in reverse
+    first = _record()
+    _record_and_commit(service, backend, C05, first)
+    option = _example("record-decision-request.json")["selectedOption"]
+    option["details"] = dict(reversed(option["details"].items()))
+    retry = _record(selectedOption=option)
+    assert retry.model_dump_json() != first.model_dump_json()  # JSON text differs
+
+    result = _record_and_commit(service, backend, C05, retry)
+
+    assert isinstance(result, Ok)
+    assert result.value.duplicate is True
+    assert result.value.decision_id == first.decision_id
+    assert len(backend.decisions()) == 1
+
+
 def test_same_key_with_another_body_is_a_conflict(service, backend):
     _record_and_commit(service, backend, C05, _record())
     changed = _record(limitations=["recomputed"])
