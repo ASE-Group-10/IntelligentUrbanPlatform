@@ -278,7 +278,7 @@ The thin-slice event chain (#72 hops 7–8), using the shared scenario in
 `fixtures/dublin-scenario.json`. From the repository root:
 
 ```sh
-docker compose up -d --build          # db, rabbitmq, migrations, C06 publisher, C07 worker
+docker compose up -d --build          # db, rabbitmq, migrations, API, C06 publisher, C07 + C08 workers
 docker compose run --rm demo-feed     # inject the closure
 docker compose logs -f c06-publisher c07-worker
 ```
@@ -291,15 +291,16 @@ closure with new IDs at the current time. Use `--build` again after code
 changes, since the containers run the image, not your working tree.
 
 To run the workers from your checkout instead (for debugging), start only
-`docker compose up -d db rabbitmq migrate`, run the two workers in separate
-terminals (see above), then:
+`docker compose up -d db rabbitmq migrate`, run the workers you need in
+separate terminals (see above), then:
 
 ```sh
 DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop uv run python -m app.demo.feed
 ```
 
-Don't run local workers next to the Compose ones: two C07 workers share the
-queue, so each sees only some of the events.
+Don't run local workers or a local API next to the Compose ones: two workers
+on one queue each see only some of the events, and the Compose API already
+holds port 8000 (set `API_PORT` to move it).
 
 ## C08 allocation and driver acceptance (hop 6)
 
