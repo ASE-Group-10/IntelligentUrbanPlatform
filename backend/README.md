@@ -296,3 +296,54 @@ It prints the run, the `correlationId`, the new City State version and the
 queued event ID. The C06 publisher and C07 worker log the same `correlationId`
 as the event goes through. Running it again changes nothing; add `--fresh` to
 inject a new closure with new IDs at the current time.
+
+## C08 allocation and driver acceptance (hop 6)
+
+Start PostgreSQL and RabbitMQ and apply the repo migrations from the repository root:
+
+```sh
+docker compose up -d --wait db rabbitmq
+docker compose run --rm dbmate up
+```
+
+Run the FastAPI backend and C01 frontend as usual. In the local C02 database,
+provision an operator and a driver for the same provider using the Supabase
+user IDs and the `operator` and `driver` provider roles. Register a synthetic
+van with the C03 Resources workflow as a manager. It needs active agent status,
+fresh observed availability, and at least 10 kg of available payload for the Dublin simulation.
+
+From `backend/`, run the worker with the same `DATABASE_URL` as the API:
+
+```sh
+export RABBITMQ_URL='amqp://ulop:ulop@127.0.0.1:5672/%2F'
+uv run python -m app.components.c08_allocation.worker
+```
+
+In another terminal in `backend/`, set the same `RABBITMQ_URL` and supply the
+provider UUID, the registered C03 resource UUID and the driver's Supabase UID:
+
+```sh
+uv run python -m app.demo.c08 --provider "$PROVIDER_ID" --resource "$RESOURCE_ID" --driver "$DRIVER_ID"
+```
+
+By default this seeds C05’s confirmed v3 plan in the Dublin simulation and
+publishes the same `PlanReady` twice with the closure feed’s correlation ID.
+Running it again with the same provider, vehicle and driver replays the event.
+When C05 publishes the event, run the same command with `--seed-only` before
+confirming the plan. This prepares the saved-plan lookup and driver mapping. C08 reads
+the C03 vehicle and reserves capacity separately in each run. Add `--live`
+for the original standalone demo with a fresh plan and a 12.5 kg reservation.
+The assignment endpoints take an optional `runId` query parameter on reads
+and commands. Omitting it selects live state.
+
+1. Open **Plans** as the operator, select the provider and **Dublin simulation**, then choose **Send driver offer**.
+2. Sign in as the intended driver, open **Plans**, select **Dublin simulation**, and accept the offer.
+3. Reload as either participant and select the same scope. The assignment shows **Driver accepted**.
+   The API and worker logs include the correlation ID printed by the demo.
+
+To run the automated demonstration, configure a dedicated `TEST_DATABASE_URL`
+ending in `_test` and `TEST_RABBITMQ_URL`, then run
+`uv run pytest tests/test_c08_driver_acceptance.py`. The test rebuilds the
+test schemas, uses its own RabbitMQ exchange/queue, and substitutes token
+verification for interactive Supabase sign-in. Offer expiry, revised plans,
+multi-agent negotiation and downstream evidence/disruption events are follow-up work.

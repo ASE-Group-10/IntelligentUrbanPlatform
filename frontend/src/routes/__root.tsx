@@ -4,6 +4,7 @@ import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/features/auth/auth-provider";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -16,10 +17,12 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootLayout() {
   return (
-    <AppShell>
-      <Outlet />
-      <Toaster richColors closeButton />
-    </AppShell>
+    <AuthProvider>
+      <AppShell>
+        <Outlet />
+        <Toaster richColors closeButton />
+      </AppShell>
+    </AuthProvider>
   );
 }
 
