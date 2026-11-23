@@ -164,6 +164,15 @@ workers. Sign-in needs `SUPABASE_URL` in `backend/.env`. Then
 `docker compose run --rm demo-feed` sends the scenario's road closure through
 C06 → RabbitMQ → C07. See [backend/README.md](backend/README.md#demo-road-closure-through-c06-and-c07).
 
+### Walking-skeleton check (#72)
+
+With the stack up, `scripts/hello-world.sh` checks every hop of the hello-world
+path and prints one line per hop: `PASS`, `STUB` (exercised, other side is a
+labelled stub), `WIRED` (route or consumer up, not reached in this run),
+`SKIPPED` or `MISSING`. It injects the demo closure and follows its
+`correlationId` through C06 and C07. Set `ULOP_TOKEN` to a Supabase access token
+to also run the signed-in hops. It exits 1 until every hop passes.
+
 ### Frontend
 
 ```sh
