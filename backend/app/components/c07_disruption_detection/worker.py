@@ -1,10 +1,12 @@
 """C07 worker: consume ``CityStateUpdated`` and run ``evaluateChange`` (#73).
 
-Walking-skeleton hop 8. Until C05 and the C07 Postgres store exist it uses the
-labelled C05 stub (``planning_stub.py``) and the in-memory disruption store.
+Walking-skeleton hop 8. Disruptions are kept in Postgres
+(``PostgresDisruptionStore``), so they survive a restart and the API can read
+them. Until C05 exists it uses the labelled C05 stub (``planning_stub.py``).
 
 Run from ``backend/``::
 
+    DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable \\
     RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \\
         uv run python -m app.components.c07_disruption_detection.worker
 """
@@ -17,7 +19,9 @@ from datetime import UTC, datetime
 
 from app.components.c07_disruption_detection.detection import DisruptionDetection
 from app.components.c07_disruption_detection.planning_stub import DemoPlanningStub
-from app.components.c07_disruption_detection.store import InMemoryDisruptionStore
+from app.components.c07_disruption_detection.postgres_store import (
+    PostgresDisruptionStore,
+)
 from app.shared.contracts import EventEnvelope
 from app.shared.events import DEFAULT_EXCHANGE, Disposition, EventConsumer, EventHandler
 from app.shared.logging import configure_logging, trace
@@ -79,7 +83,7 @@ def main() -> None:  # pragma: no cover - process entry point
     configure_logging("C07")
     detection = DisruptionDetection(
         planning=DemoPlanningStub(),
-        store=InMemoryDisruptionStore(),
+        store=PostgresDisruptionStore(os.environ["DATABASE_URL"]),
         clock=lambda: datetime.now(UTC),
     )
     consumer = make_consumer(
@@ -90,7 +94,7 @@ def main() -> None:  # pragma: no cover - process entry point
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
-    log.info("C07 worker started (C05 stub, in-memory store)")
+    log.info("C07 worker started (C05 stub, Postgres store)")
     try:
         consumer.run(stop)
     finally:

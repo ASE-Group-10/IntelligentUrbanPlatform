@@ -191,7 +191,7 @@ and recovery, and pagination. Actual Supabase/browser verification is recorded i
 
 ## Postgres-backed tests
 
-Stores with a Postgres implementation (C06 so far) run the same tests against
+Stores with a Postgres implementation (C06 and C07) run the same tests against
 the in-memory test double and against a real database. Those tests are skipped
 unless `TEST_DATABASE_URL` points at a **dedicated test database**: its schemas
 are rebuilt from `database/migrations/` and its tables are emptied before each
@@ -251,10 +251,13 @@ the demo run). Any other run returns `403 Forbidden`.
 ## C07 worker
 
 Consumes `CityStateUpdated` from `ulop.events` (queue `c07.city-state-updated`)
-and runs `evaluateChange`. Until C05 exists it uses the labelled stub in
-`planning_stub.py`, which knows one demo plan on `seg:4471023`.
+and runs `evaluateChange`. Disruptions and processed event IDs are kept in
+Postgres (`c07_disruption_detection`), so they survive a restart. Until C05
+exists it uses the labelled stub in `planning_stub.py`, which knows one demo plan
+on `seg:4471023`.
 
 ```sh
+DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable \
 RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
 uv run python -m app.components.c07_disruption_detection.worker
 ```

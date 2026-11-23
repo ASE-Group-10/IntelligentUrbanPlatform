@@ -379,7 +379,28 @@ class DisruptionDetection:
             update={"affected_plans": plans, "updated_at": self._clock()}
         )
         with self._store.transaction(envelope.scope, envelope.run_id) as tx:
-            tx.save_disruption(updated)
+            # Another delivery may have recorded outcomes while C05 was answering.
+            current = tx.disruption_for_event(envelope.event_id)
+            if current is None:
+                raise DisruptionStoreUnavailableError("Recorded disruption is missing")
+            if current.version != updated.version:
+                return  # These outcomes belong to an earlier disruption version.
+            accepted = {
+                p.plan_id: p for p in updated.affected_plans if p.replan_requested
+            }
+            merged = [
+                p if p.replan_requested else accepted.get(p.plan_id, p)
+                for p in current.affected_plans
+            ]
+            if merged != current.affected_plans:
+                tx.save_disruption(
+                    current.model_copy(
+                        update={
+                            "affected_plans": merged,
+                            "updated_at": max(current.updated_at, updated.updated_at),
+                        }
+                    )
+                )
 
 
 def _outcome(
