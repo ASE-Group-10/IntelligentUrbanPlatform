@@ -4,14 +4,18 @@ import argparse
 import json
 import os
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
 
+from app.components.c05_planning.models import Plan, PlanScope
+from app.components.c05_planning.store import PostgresPlanStore, lock_plan
 from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
+from app.components.c06_city_monitoring.router import libpq_url
 from app.components.c08_allocation.events import PlanReadyEvent
-from app.components.c08_allocation.store import AllocationStore
+from app.components.c08_allocation.store import AllocationStore, has_driver_membership
 from app.components.c08_allocation.worker import QUEUE
 from app.config import get_settings
 from app.demo.feed import load_scenario
@@ -71,6 +75,23 @@ def shared_plan():
 
 def seed_plan(store, event, provider, resource, driver):
     need = event.payload.requirements[0]
+    bind_vehicle(
+        store,
+        event.run_id,
+        event.payload.plan_id,
+        need,
+        provider,
+        resource,
+        driver,
+        fixture_version=event.payload.plan_version,
+    )
+
+
+def bind_vehicle(
+    store, run_id, plan_id, need, provider, resource, driver, *, fixture_version=None
+):
+    """Bind C08's vehicle and driver. Only standalone fixtures supply plan facts."""
+    required_kg = need.capacity.amount if fixture_version is not None else None
     with store.engine.begin() as conn:
         eligible = store.vehicle(conn, provider, resource)
         if (
@@ -78,14 +99,15 @@ def seed_plan(store, event, provider, resource, driver):
             or eligible["details"]["vehicle_category"] != need.resource_kind
         ):
             raise ValueError("Select an eligible C03 van for this provider.")
-        member = conn.execute(
-            text("""
-            SELECT 1 FROM c02_identity_access.provider_memberships
-            WHERE provider_id=:provider AND principal_id=:driver AND role='driver'
-        """),
-            {"provider": provider, "driver": driver},
-        ).scalar()
-        if not member:
+        if need.capacity.unit != "kg":
+            raise ValueError("Vehicle binding requires a capacity in kilograms.")
+        rated_kg = Decimal(str(eligible["details"]["max_weight_kg"]))
+        if rated_kg < Decimal(str(need.capacity.amount)):
+            raise ValueError(
+                f"The vehicle is rated for {rated_kg} kg. "
+                f"The delivery requires {need.capacity.amount} kg."
+            )
+        if not has_driver_membership(conn, provider, driver):
             raise ValueError(
                 "The intended driver needs a C02 driver membership for this provider."
             )
@@ -98,14 +120,14 @@ def seed_plan(store, event, provider, resource, driver):
             RETURNING plan_id
         """),
             {
-                "run": event.run_id,
-                "plan": event.payload.plan_id,
-                "version": event.payload.plan_version,
+                "run": run_id,
+                "plan": plan_id,
+                "version": fixture_version,
                 "delivery": need.delivery_id,
                 "provider": provider,
                 "resource": resource,
                 "driver": driver,
-                "kg": need.capacity.amount,
+                "kg": required_kg,
             },
         ).scalar()
         if saved is None:
@@ -116,19 +138,38 @@ def seed_plan(store, event, provider, resource, driver):
                     FROM c08_allocation.demo_plans
                     WHERE plan_id=:plan AND run_id IS NOT DISTINCT FROM :run
                 """),
-                {"plan": event.payload.plan_id, "run": event.run_id},
+                {"plan": plan_id, "run": run_id},
             ).one()
             if previous != (
-                event.payload.plan_version,
+                fixture_version,
                 need.delivery_id,
                 provider,
                 resource,
                 driver,
-                need.capacity.amount,
+                required_kg,
             ):
                 raise ValueError(
                     "This plan already has a different saved demo configuration."
                 )
+
+
+def bind_c05_proposal(store, plans, run_id, plan_id, provider, resource, driver):
+    scope = PlanScope(scope="simulation", run_id=run_id)
+    with plans.transaction() as conn:
+        # Confirmation takes the same lock. Its event can only reach the worker
+        # after the resource binding commits or this setup operation fails.
+        lock_plan(conn, scope, plan_id)
+        saved = plans.get_plan(scope.scope, run_id, plan_id)
+        if not saved:
+            raise ValueError("C05 has no such plan in this simulation run.")
+        plan = Plan.model_validate(saved, strict=False)
+        if plan.status != "awaiting_confirmation" or len(plan.resource_needs) != 1:
+            raise ValueError(
+                "Select a single-delivery C05 proposal before confirming it."
+            )
+        bind_vehicle(
+            store, run_id, plan_id, plan.resource_needs[0], provider, resource, driver
+        )
 
 
 def save_demo_revision(store, saved, departure: datetime):
@@ -169,6 +210,14 @@ def main():
         parser.add_argument(f"--{name}", type=UUID)
     source = parser.add_mutually_exclusive_group()
     source.add_argument(
+        "--c05-plan",
+        type=UUID,
+        help="Bind a generated C05 proposal before confirmation.",
+    )
+    parser.add_argument(
+        "--run-id", type=UUID, help="Simulation run for the C05 proposal."
+    )
+    source.add_argument(
         "--revision", action="store_true", help="Save the Dublin detour and publish v4."
     )
     source.add_argument(
@@ -180,6 +229,8 @@ def main():
         help="Prepare the saved-plan lookup and let C05 publish the event.",
     )
     args = parser.parse_args()
+    if args.run_id and not args.c05_plan:
+        parser.error("--run-id is used with --c05-plan")
     if not args.revision and not all((args.provider, args.resource, args.driver)):
         parser.error(
             "--provider, --resource and --driver are required for the initial plan"
@@ -188,6 +239,28 @@ def main():
     engine = make_engine(settings.database_url.get_secret_value())
     store = AllocationStore(engine, settings.availability_max_age_seconds)
     try:
+        if args.c05_plan:
+            run = args.run_id or load_scenario().run_id
+            plans = PostgresPlanStore(
+                libpq_url(settings.database_url.get_secret_value())
+            )
+            try:
+                bind_c05_proposal(
+                    store,
+                    plans,
+                    run,
+                    args.c05_plan,
+                    args.provider,
+                    args.resource,
+                    args.driver,
+                )
+            except ValueError as error:
+                parser.error(str(error))
+            print(
+                f"Bound vehicle to planId={args.c05_plan} runId={run}. "
+                "Confirm the proposal in Plans."
+            )
+            return
         if args.revision:
             event = PlanReadyEvent.model_validate_json(
                 (C05_EXAMPLES / "plan-ready-revision-event.json").read_text()

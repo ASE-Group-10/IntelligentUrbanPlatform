@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from itertools import count
 from threading import Barrier, Event
 from time import monotonic, sleep
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pika
 import psycopg
@@ -20,6 +20,7 @@ from app.components.c05_planning.allocation import (
 )
 from app.components.c05_planning.publisher import PostgresPlanOutbox
 from app.components.c05_planning.replanning import make_replanning
+from app.components.c05_planning.store import PostgresPlanStore
 from app.components.c06_city_monitoring.contracts import Observation, ObservationTarget
 from app.components.c06_city_monitoring.ingestion import CityMonitoring, SourceContext
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
@@ -34,13 +35,20 @@ from app.components.c07_disruption_detection.postgres_store import (
 )
 from app.components.c07_disruption_detection.worker import make_consumer, make_detection
 from app.components.c08_allocation.events import PlanReadyEvent
+from app.components.c08_allocation.worker import make_consumer as allocation_consumer
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.service import DecisionRecords
+from app.demo.c08 import bind_c05_proposal
 from app.demo.feed import feed_closure, load_scenario
 from app.shared.contracts import EventEnvelope
 from app.shared.publisher import RabbitMQPublisher, drain_outbox
 from app.shared.result import Failure, Ok
 from tests.c05_flow import flow as flow
+from tests.test_c08_driver_acceptance import headers
+from tests.test_c08_driver_acceptance import scenario as vehicle_scenario
+from tests.test_resources import PAYLOAD
+
+c08 = vehicle_scenario
 
 
 @pytest.fixture
@@ -676,9 +684,41 @@ def test_fresh_closure_after_delivery_deadline_requires_review(
         assert (versions, events) == (2, 1)
 
 
+def test_operator_can_retry_binding_after_selecting_an_undersized_van(
+    flow, c08, test_database_url
+):
+    small = c08.client.post(
+        "/api/v1/resources",
+        headers=headers(c08.operator),
+        json={
+            **PAYLOAD,
+            "external_identifier": "SMALL-VAN",
+            "details": {**PAYLOAD["details"], "max_weight_kg": 1},
+        },
+    )
+    assert small.status_code == 201, small.text
+    args = (
+        c08.store,
+        PostgresPlanStore(test_database_url),
+        flow.plan.run_scope.run_id,
+        flow.plan.plan_id,
+        c08.provider,
+    )
+    with pytest.raises(ValueError, match="rated for 1.*kg"):
+        bind_c05_proposal(*args, UUID(small.json()["id"]), c08.driver)
+    bind_c05_proposal(*args, c08.resource, c08.driver)
+    with psycopg.connect(test_database_url) as conn:
+        assert conn.execute(
+            "select resource_id from c08_allocation.demo_plans "
+            "where plan_id=%s and run_id=%s",
+            (flow.plan.plan_id, flow.plan.run_scope.run_id),
+        ).fetchall() == [(c08.resource,)]
+
+
 @pytest.mark.skipif(not os.getenv("TEST_RABBITMQ_URL"), reason="requires RabbitMQ")
+@pytest.mark.parametrize("driver_state", ["accepted", "pending", "revoked"])
 def test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq(
-    flow, city, scenario, clock, c07_database, monkeypatch
+    flow, city, scenario, clock, c07_database, monkeypatch, c08, driver_state
 ):
     url = os.environ["TEST_RABBITMQ_URL"]
     exchange = f"test.hop8.{uuid4()}"
@@ -689,6 +729,16 @@ def test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq(
     )
     plans = PostgresPlanOutbox(c07_database)
     plan_id, run_id = flow.plan.plan_id, flow.plan.run_scope.run_id
+    bind_c05_proposal(
+        c08.store,
+        PostgresPlanStore(c07_database),
+        run_id,
+        plan_id,
+        c08.provider,
+        c08.resource,
+        c08.driver,
+    )
+    allocation = allocation_consumer(c08.store, url, exchange, exchange + ".c08")
     snapshots = []
     query = LogisticsKnowledge.query_knowledge
 
@@ -706,6 +756,7 @@ def test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq(
     with pika.BlockingConnection(pika.URLParameters(url)) as broker:
         ch = broker.channel()
         consumer.declare()
+        allocation.declare()
         inbox = ch.queue_declare(queue="", exclusive=True).method.queue
         ch.queue_bind(queue=inbox, exchange=exchange, routing_key="PlanReady")
         try:
@@ -717,11 +768,71 @@ def test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq(
             assert flow.confirm().status_code == 200
             assert drain_outbox(plans, publisher).value.published == 1
             first = receive_plan(ch, inbox)
+            assert allocation.consume_available(max_messages=1) == 1
+            path = f"/api/v1/vehicle-assignments?runId={run_id}"
+            [initial] = c08.client.get(path, headers=headers(c08.operator)).json()
+            body = {k: initial[k] for k in ("planId", "deliveryId")}
+            offer = c08.client.post(
+                path, headers=headers(c08.operator), json={**body, "expectedVersion": 2}
+            )
+            assert offer.status_code == 200, offer.text
+            [pending] = c08.client.get(path, headers=headers(c08.driver)).json()
+
+            def accept():
+                return c08.client.post(
+                    f"/api/v1/driver-offers/{pending['offerId']}/response?runId={run_id}",
+                    headers=headers(c08.driver),
+                    json={"response": "accept"},
+                )
+
+            if driver_state != "pending":
+                assert accept().status_code == 200
+            if driver_state == "revoked":
+                with psycopg.connect(c07_database) as conn:
+                    assert (
+                        conn.execute(
+                            "delete from c02_identity_access.provider_memberships "
+                            "where provider_id=%s and principal_id=%s "
+                            "and role='driver'",
+                            (c08.provider, c08.driver),
+                        ).rowcount
+                        == 1
+                    )
             closure = inject_closure(city, scenario, clock, flow)
             assert drain_outbox(city, publisher).value.published == 1
             assert consumer.consume_available(max_messages=1) == 1
             assert drain_outbox(plans, publisher).value.published == 1
             second = receive_plan(ch, inbox)
+            if driver_state == "pending":
+                # C05 has committed v3 but C08 still holds the v2 offer.
+                assert accept().status_code == 409
+            assert allocation.consume_available(max_messages=1) == 1
+            publisher.publish(second)
+            publisher.publish(first)
+            assert allocation.consume_available(max_messages=2) == 2
+            if driver_state == "pending":
+                assert accept().status_code == 200
+            [current] = c08.client.get(path, headers=headers(c08.operator)).json()
+            assert current["assignmentRef"] == initial["assignmentRef"]
+            assert current["offerId"] == pending["offerId"]
+            assert current["correlationId"] == str(flow.trace)
+            assert current["planVersion"] == 3
+            assert current["status"] == (
+                "unresolved" if driver_state == "revoked" else "accepted"
+            )
+            with psycopg.connect(c07_database) as conn:
+                assert conn.execute(
+                    "select count(*), coalesce(sum(capacity_kg) filter "
+                    "(where status in ('allocated', 'offered', 'accepted')), 0) "
+                    "from c08_allocation.allocations "
+                    "where run_id=%s and plan_id=%s",
+                    (run_id, plan_id),
+                ).fetchone() == (
+                    1,
+                    0
+                    if driver_state == "revoked"
+                    else flow.plan.resource_needs[0].capacity.amount,
+                )
 
             assert_saved_events(c07_database, flow, closure, first, second, snapshots)
             store = PostgresDisruptionStore(c07_database)
@@ -743,11 +854,15 @@ def test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq(
             publisher.publish(EventEnvelope.model_validate(closure_envelope))
             assert consumer.consume_available(max_messages=1) == 1
             assert drain_outbox(plans, publisher).value.published == 0
+            assert receive_plan(ch, inbox) == second
+            assert receive_plan(ch, inbox) == first
             assert ch.basic_get(inbox)[0] is None
         finally:
             consumer.close()
+            allocation.close()
             publisher.close()
             ch.queue_delete(queue=c07_queue)
+            ch.queue_delete(queue=exchange + ".c08")
             ch.exchange_delete(exchange=exchange)
 
 

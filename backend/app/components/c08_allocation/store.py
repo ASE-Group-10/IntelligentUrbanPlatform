@@ -5,10 +5,16 @@ from decimal import Decimal
 
 from sqlalchemy import select, text
 
+from app.components.c05_planning.allocation import (
+    check_current_version,
+    get_delivery_route,
+)
 from app.components.c08_allocation.revisions import matches_event, route_fits
 from app.components.resources.service import ResourceService
 from app.infrastructure.database import resources
 from app.infrastructure.errors import APIError
+from app.shared.contracts import RunScopeSelector
+from app.shared.result import Failure
 
 
 def conflict(message):
@@ -19,6 +25,21 @@ def lock_key(conn, value):
     conn.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:value, 0))"),
         {"value": value},
+    )
+
+
+def has_driver_membership(conn, provider, driver):
+    # Hold a matching grant until the binding or allocation transaction commits.
+    return (
+        conn.execute(
+            text("""
+            SELECT 1 FROM c02_identity_access.provider_memberships
+            WHERE provider_id=:provider AND principal_id=:driver AND role='driver'
+            FOR SHARE
+        """),
+            {"provider": provider, "driver": driver},
+        ).scalar()
+        is not None
     )
 
 
@@ -65,8 +86,6 @@ class AllocationStore:
             )
             if not plan:
                 return "outside configured demo"
-            if payload.plan_version > plan["plan_version"]:
-                return "plan unavailable"
             # Lock before inspecting the existing commitment. An operator or driver
             # may be changing its state while this event is being delivered.
             lock_key(conn, f"c08:capacity:{event.run_id}:{plan['resource_id']}")
@@ -82,6 +101,44 @@ class AllocationStore:
                 .mappings()
                 .first()
             )
+            if plan["plan_version"] is None:
+                scope = RunScopeSelector(scope=event.scope, run_id=event.run_id)
+                # Look up a delivery in the event. If a revision replaced the bound
+                # delivery, the saved requirements let us retire its old commitment.
+                route = get_delivery_route(
+                    conn,
+                    scope,
+                    payload.plan_id,
+                    payload.plan_version,
+                    payload.requirements[0].delivery_id,
+                )
+                if isinstance(route, Failure):
+                    if (
+                        route.kind == "Unavailable"
+                        or route.message == "C05.CONFIRMED_VERSION_NOT_FOUND"
+                    ):
+                        return "plan unavailable"
+                    return "invalid saved delivery route"
+                current = check_current_version(
+                    conn, scope, payload.plan_id, payload.plan_version
+                )
+                if isinstance(current, Failure):
+                    return (
+                        "superseded"
+                        if current.kind == "Conflict"
+                        else "plan unavailable"
+                    )
+                # C05 now holds its shared plan lock through the allocation commit.
+                plan = {
+                    **plan,
+                    "plan_version": route.value.plan.version,
+                    "saved_revision": route.value.plan.model_dump(
+                        mode="json", by_alias=True, exclude_none=True
+                    ),
+                    "departure_at": route.value.planned_departure_at,
+                }
+            if payload.plan_version > plan["plan_version"]:
+                return "plan unavailable"
             saved = plan["saved_revision"]
             if (
                 existing
@@ -166,11 +223,13 @@ class AllocationStore:
         if (
             need.delivery_id != plan["delivery_id"]
             or need.capacity.unit != "kg"
-            or kg != plan["required_kg"]
+            or (plan["required_kg"] is not None and kg != plan["required_kg"])
         ):
             return "unsupported requirements"
         if not vehicle or vehicle["details"]["vehicle_category"] != need.resource_kind:
             return "ineligible vehicle"
+        if not has_driver_membership(conn, plan["provider_id"], plan["driver_id"]):
+            return "ineligible driver"
         if existing and (
             existing["capacity_kg"] != kg
             or existing["resource_id"] != vehicle["id"]
@@ -275,16 +334,32 @@ class AllocationStore:
             return outcome
 
     def check_current(self, conn, row):
-        version = conn.execute(
+        binding = conn.execute(
             text("""
             SELECT plan_version FROM c08_allocation.demo_plans
             WHERE plan_id=:plan AND run_id IS NOT DISTINCT FROM :run FOR SHARE
         """),
             {"plan": row["plan_id"], "run": row["run_id"]},
-        ).scalar()
+        ).one_or_none()
+        if binding is None:
+            raise conflict("The allocation's plan binding is missing.")
+        version = binding.plan_version
+        if version is None:
+            scope = RunScopeSelector(
+                scope="simulation" if row["run_id"] else "live", run_id=row["run_id"]
+            )
+            current = check_current_version(
+                conn, scope, row["plan_id"], row["plan_version"]
+            )
+            if isinstance(current, Failure):
+                if current.kind == "Unavailable":
+                    raise APIError(
+                        503, "UNAVAILABLE", "Cannot verify the current plan version."
+                    )
+                raise conflict("The saved plan has changed.")
         vehicle = self.vehicle(conn, row["provider_id"], row["resource_id"])
         if (
-            version != row["plan_version"]
+            (version is not None and version != row["plan_version"])
             or not vehicle
             or vehicle["version"] != row["resource_version"]
         ):
