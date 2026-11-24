@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -14,7 +15,7 @@ from app.components.c05_planning.store import PostgresPlanStore, lock_plan
 from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
 from app.components.c06_city_monitoring.router import libpq_url
 from app.components.c08_allocation.events import PlanReadyEvent
-from app.components.c08_allocation.store import AllocationStore
+from app.components.c08_allocation.store import AllocationStore, has_driver_membership
 from app.components.c08_allocation.worker import QUEUE
 from app.config import get_settings
 from app.demo.feed import load_scenario
@@ -98,14 +99,15 @@ def bind_vehicle(
             or eligible["details"]["vehicle_category"] != need.resource_kind
         ):
             raise ValueError("Select an eligible C03 van for this provider.")
-        member = conn.execute(
-            text("""
-            SELECT 1 FROM c02_identity_access.provider_memberships
-            WHERE provider_id=:provider AND principal_id=:driver AND role='driver'
-        """),
-            {"provider": provider, "driver": driver},
-        ).scalar()
-        if not member:
+        if need.capacity.unit != "kg":
+            raise ValueError("Vehicle binding requires a capacity in kilograms.")
+        rated_kg = Decimal(str(eligible["details"]["max_weight_kg"]))
+        if rated_kg < Decimal(str(need.capacity.amount)):
+            raise ValueError(
+                f"The vehicle is rated for {rated_kg} kg. "
+                f"The delivery requires {need.capacity.amount} kg."
+            )
+        if not has_driver_membership(conn, provider, driver):
             raise ValueError(
                 "The intended driver needs a C02 driver membership for this provider."
             )

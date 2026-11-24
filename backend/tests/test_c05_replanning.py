@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from itertools import count
 from threading import Barrier, Event
 from time import monotonic, sleep
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pika
 import psycopg
@@ -46,6 +46,7 @@ from app.shared.result import Failure, Ok
 from tests.c05_flow import flow as flow
 from tests.test_c08_driver_acceptance import headers
 from tests.test_c08_driver_acceptance import scenario as vehicle_scenario
+from tests.test_resources import PAYLOAD
 
 c08 = vehicle_scenario
 
@@ -683,10 +684,41 @@ def test_fresh_closure_after_delivery_deadline_requires_review(
         assert (versions, events) == (2, 1)
 
 
+def test_operator_can_retry_binding_after_selecting_an_undersized_van(
+    flow, c08, test_database_url
+):
+    small = c08.client.post(
+        "/api/v1/resources",
+        headers=headers(c08.operator),
+        json={
+            **PAYLOAD,
+            "external_identifier": "SMALL-VAN",
+            "details": {**PAYLOAD["details"], "max_weight_kg": 1},
+        },
+    )
+    assert small.status_code == 201, small.text
+    args = (
+        c08.store,
+        PostgresPlanStore(test_database_url),
+        flow.plan.run_scope.run_id,
+        flow.plan.plan_id,
+        c08.provider,
+    )
+    with pytest.raises(ValueError, match="rated for 1.*kg"):
+        bind_c05_proposal(*args, UUID(small.json()["id"]), c08.driver)
+    bind_c05_proposal(*args, c08.resource, c08.driver)
+    with psycopg.connect(test_database_url) as conn:
+        assert conn.execute(
+            "select resource_id from c08_allocation.demo_plans "
+            "where plan_id=%s and run_id=%s",
+            (flow.plan.plan_id, flow.plan.run_scope.run_id),
+        ).fetchall() == [(c08.resource,)]
+
+
 @pytest.mark.skipif(not os.getenv("TEST_RABBITMQ_URL"), reason="requires RabbitMQ")
-@pytest.mark.parametrize("already_accepted", [True, False])
+@pytest.mark.parametrize("driver_state", ["accepted", "pending", "revoked"])
 def test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq(
-    flow, city, scenario, clock, c07_database, monkeypatch, c08, already_accepted
+    flow, city, scenario, clock, c07_database, monkeypatch, c08, driver_state
 ):
     url = os.environ["TEST_RABBITMQ_URL"]
     exchange = f"test.hop8.{uuid4()}"
@@ -753,33 +785,54 @@ def test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq(
                     json={"response": "accept"},
                 )
 
-            if already_accepted:
+            if driver_state != "pending":
                 assert accept().status_code == 200
+            if driver_state == "revoked":
+                with psycopg.connect(c07_database) as conn:
+                    assert (
+                        conn.execute(
+                            "delete from c02_identity_access.provider_memberships "
+                            "where provider_id=%s and principal_id=%s "
+                            "and role='driver'",
+                            (c08.provider, c08.driver),
+                        ).rowcount
+                        == 1
+                    )
             closure = inject_closure(city, scenario, clock, flow)
             assert drain_outbox(city, publisher).value.published == 1
             assert consumer.consume_available(max_messages=1) == 1
             assert drain_outbox(plans, publisher).value.published == 1
             second = receive_plan(ch, inbox)
-            if not already_accepted:
+            if driver_state == "pending":
                 # C05 has committed v3 but C08 still holds the v2 offer.
                 assert accept().status_code == 409
             assert allocation.consume_available(max_messages=1) == 1
             publisher.publish(second)
             publisher.publish(first)
             assert allocation.consume_available(max_messages=2) == 2
-            if not already_accepted:
+            if driver_state == "pending":
                 assert accept().status_code == 200
-            [current] = c08.client.get(path, headers=headers(c08.driver)).json()
+            [current] = c08.client.get(path, headers=headers(c08.operator)).json()
             assert current["assignmentRef"] == initial["assignmentRef"]
             assert current["offerId"] == pending["offerId"]
             assert current["correlationId"] == str(flow.trace)
-            assert (current["planVersion"], current["status"]) == (3, "accepted")
+            assert current["planVersion"] == 3
+            assert current["status"] == (
+                "unresolved" if driver_state == "revoked" else "accepted"
+            )
             with psycopg.connect(c07_database) as conn:
                 assert conn.execute(
-                    "select count(*), sum(capacity_kg) from c08_allocation.allocations "
+                    "select count(*), coalesce(sum(capacity_kg) filter "
+                    "(where status in ('allocated', 'offered', 'accepted')), 0) "
+                    "from c08_allocation.allocations "
                     "where run_id=%s and plan_id=%s",
                     (run_id, plan_id),
-                ).fetchone() == (1, flow.plan.resource_needs[0].capacity.amount)
+                ).fetchone() == (
+                    1,
+                    0
+                    if driver_state == "revoked"
+                    else flow.plan.resource_needs[0].capacity.amount,
+                )
 
             assert_saved_events(c07_database, flow, closure, first, second, snapshots)
             store = PostgresDisruptionStore(c07_database)

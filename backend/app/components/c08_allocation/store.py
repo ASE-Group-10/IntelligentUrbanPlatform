@@ -28,6 +28,21 @@ def lock_key(conn, value):
     )
 
 
+def has_driver_membership(conn, provider, driver):
+    # Hold a matching grant until the binding or allocation transaction commits.
+    return (
+        conn.execute(
+            text("""
+            SELECT 1 FROM c02_identity_access.provider_memberships
+            WHERE provider_id=:provider AND principal_id=:driver AND role='driver'
+            FOR SHARE
+        """),
+            {"provider": provider, "driver": driver},
+        ).scalar()
+        is not None
+    )
+
+
 class AllocationStore:
     def __init__(self, engine, freshness_seconds):
         self.engine = engine
@@ -213,6 +228,8 @@ class AllocationStore:
             return "unsupported requirements"
         if not vehicle or vehicle["details"]["vehicle_category"] != need.resource_kind:
             return "ineligible vehicle"
+        if not has_driver_membership(conn, plan["provider_id"], plan["driver_id"]):
+            return "ineligible driver"
         if existing and (
             existing["capacity_kg"] != kg
             or existing["resource_id"] != vehicle["id"]
