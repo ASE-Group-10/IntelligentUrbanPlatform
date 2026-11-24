@@ -11,12 +11,12 @@ Each hop gets one status:
 
     PASS     exercised in this run over its real connection
     STUB     exercised, but the component on the other side is a labelled stub
-    WIRED    its route or queue consumer is up, but nothing in this run reached it
+    WIRED    a connection is available, with only part of the hop verified
     SKIPPED  needs a signed-in token (set ULOP_TOKEN)
     MISSING  the required connection or evidence of the call is missing
 
 The check uses runId and correlationId from fixtures/dublin-scenario.json.
-Pass --run-id and --correlation-id to follow an existing delivery instead.
+Pass --run-id, --correlation-id and --plan-id to follow one confirmed delivery.
 The script exits 1 unless every hop is PASS or STUB.
 
 Standard library only, so it runs with any Python 3.11+.
@@ -165,12 +165,8 @@ def wait_for_log(
                 line.get(key) == value for key, value in trace.items()
             ):
                 if wait_for_retry and line["message"].endswith("; will retry"):
-                    # One successful request already exercises the C07-to-C05 hop.
-                    # Only wait for redelivery when the first attempt reached none.
-                    status, _ = judge_hop8(
-                        trace["correlationId"], line["message"], None
-                    )
-                    if status == "MISSING":
+                    # A redelivery can complete a request C05 could not yet take.
+                    if not accepted_replan(line["message"]):
                         last_retry = line
                         continue
                 return line
@@ -207,27 +203,35 @@ def c09_note(correlation_id: str) -> str:
 _EVALUATED = re.compile(r"evaluated: (\w+), (\d+) replan request")
 
 
-def judge_hop8(
-    cid: str, message: str | None, listing: tuple[int, bool, str] | None
-) -> tuple[str, list[str]]:
-    """Hop 8 counts only if C07 created a disruption, sent C05 at least one
-    replan request for this correlationId and, when checked, lists it over HTTP.
+def accepted_replan(message: str) -> bool:
+    match = _EVALUATED.search(message)
+    # C07 reports "duplicate" when a redelivery resumes a pending replan.
+    return bool(match and match[1] in {"created", "duplicate"} and int(match[2]) > 0)
 
-    ``message`` is C07's ``evaluated: …`` log line (``None`` if it never came);
-    ``listing`` is ``(HTTP status, event listed?, event ID)`` when ULOP_TOKEN
-    let the script call ``listDisruptions``.
-    """
+
+def judge_hop8(
+    cid: str,
+    message: str | None,
+    listing: tuple[int, bool, str] | None,
+    *,
+    published_id: str | None = None,
+    received: bool = False,
+) -> tuple[str, list[str]]:
+    """Count hop 8 when a replan produced a published and received revision."""
     if message is None:
         return "MISSING", [f"C07 didn't evaluate {cid} within {WAIT_SECONDS}s"]
-    match = _EVALUATED.search(message)
-    if not match or match.group(1) != "created":
-        return "MISSING", [f"C07 {message} for {cid} (no disruption)"]
-    if int(match.group(2)) < 1:
+    if not accepted_replan(message):
         return "MISSING", [f"C07 {message} for {cid}: no replan request reached C05"]
-    status, notes = (
-        "STUB",
-        [f"C07 {message} for {cid}; C05 replan uses the stub pending hop 8 of #118"],
-    )
+    status, notes = "WIRED", [f"C07 {message} for {cid}"]
+    if published_id and received:
+        status = "PASS"
+        notes.append(f"C05 published revised PlanReady {published_id}; C08 received it")
+    elif published_id:
+        notes.append(
+            f"C05 published revised PlanReady {published_id}; C08 receipt pending"
+        )
+    else:
+        notes.append("No revised PlanReady was observed for this closure")
     if listing is not None:
         http_status, listed, event_id = listing
         if listed:
@@ -259,6 +263,11 @@ def main(argv: list[str] | None = None) -> int:
         type=uuid4_arg,
         default=scenario["correlationId"],
         help="delivery trace UUIDv4 (default: Dublin fixture)",
+    )
+    parser.add_argument(
+        "--plan-id",
+        type=uuid4_arg,
+        help="verify the revision of this confirmed plan when the run has several",
     )
     args = parser.parse_args(argv)
     run_id, cid = args.run_id, args.correlation_id
@@ -403,8 +412,33 @@ def main(argv: list[str] | None = None) -> int:
                 for d in body.get("disruptions", [])
             )
             listing = (status, listed, event_id)
+        message = evaluated["message"] if evaluated else None
+        published_id, received = None, False
+        if message and accepted_replan(message):
+            revision_trace = {
+                "scope": "simulation",
+                "runId": run_id,
+                "correlationId": cid,
+                "causationId": event_id,
+                "eventType": "PlanReady",
+            }
+            if args.plan_id:
+                revision_trace["planId"] = args.plan_id
+            revision = wait_for_log(
+                "c05-publisher", since, revision_trace, "published PlanReady"
+            )
+            if revision and (published_id := revision.get("eventId")):
+                received = (
+                    wait_for_log(
+                        "c08-worker",
+                        since,
+                        {**revision_trace, "eventId": published_id},
+                        "handled PlanReady: ack",
+                    )
+                    is not None
+                )
         status8, notes8 = judge_hop8(
-            cid, evaluated["message"] if evaluated else None, listing
+            cid, message, listing, published_id=published_id, received=received
         )
         hops[8].set(status8)
         hops[8].notes.extend(notes8)

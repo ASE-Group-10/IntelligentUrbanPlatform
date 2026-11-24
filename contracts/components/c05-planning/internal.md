@@ -227,6 +227,75 @@ returns the first outcome again. Because the key includes `basedOnPlanVersion`, 
 also returns the saved result when that disruption version already produced a
 revision for that plan and run, even if a retry carries a newer `basedOnPlanVersion`.
 
+#### Run the Dublin replan
+
+The C07 worker uses its existing `PlanningPort` in-process. Discovery starts
+from the current confirmed plans in the event's partition and reads progress
+through C04. The revision locks the plan, checks its base version and rereads
+the linked deliveries. It queries C06 for the latest conditions on the current
+route and the detour. A selected detour uses the delivery's current van and
+capacity requirements, the C09 policy evidence and the saved delivery window.
+After evaluating the route, C05 asks C06 to hold that snapshot version through
+commit. If city conditions changed meanwhile, C05 returns `Unavailable` so
+C07 can retry against current facts. A stale plan version returns `Conflict`
+for C07's one rediscovery attempt.
+The fixed route covers one unfinished Dublin delivery. An explicit open report
+for Abbey Street Lower must cover the full eight-minute trip. A reported delay
+or a speed too low for the 1,600 m detour requires operator review. C08 owns
+the vehicle and driver commitment.
+
+The revision, C10 decision with its evidence, request receipt and revised
+`PlanReady` commit together. The event's `causationId` is the triggering
+`CityStateUpdated.eventId`. C07 receives `PlanSaved` after commit. Replaying
+the same saved disruption version can recover that result without advancing
+the plan or publishing a third event. `NoChange` and `ReviewRequired` record
+the reason and retain the current plan.
+
+From `backend/`, point `TEST_DATABASE_URL` at a dedicated test database and
+`TEST_RABBITMQ_URL` at the test broker, then run:
+
+```sh
+uv run pytest -q tests/test_c05_replanning.py
+```
+
+The test confirms a generated delivery, injects the closure from the shared
+Dublin fixture, and follows the C06 outbox through RabbitMQ and the C07
+consumer to the revised C05 event. It uses a clock on the fixture's date and
+reads both saved routes through the C08 lookup.
+
+For a wall-clock run, start the stack and load the C09 demo corpus as in
+[hop 4](#run-hop-4-from-the-saved-delivery-example). From the repository
+root in a POSIX shell, give a fresh copy of the synthetic delivery a current
+window. The following uses the shared Dublin run and a new delivery trace.
+
+```sh
+run=$(python -c 'import json; print(json.load(open("fixtures/dublin-scenario.json"))["runId"])')
+trace=$(python -c 'from uuid import uuid4; print(uuid4())')
+python - <<'PY' | docker compose exec -T api python -m app.demo.c05 --run-id "$run" --correlation-id "$trace"
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from uuid import uuid4
+
+source = Path("contracts/components/c04-delivery-management/examples/delivery-submitted.json")
+delivery = json.loads(source.read_text(encoding="utf-8"))
+departure = datetime.now(timezone.utc) + timedelta(minutes=10)
+delivery["deliveryId"] = str(uuid4())
+delivery["timeWindow"] = {"start": departure.isoformat(),
+                          "end": (departure + timedelta(hours=2)).isoformat()}
+print(json.dumps(delivery))
+PY
+```
+
+Open the printed Plans link and confirm it with the operator session. Pass
+its plan UUID to distinguish it from other deliveries in the shared run.
+
+```sh
+printf 'Confirmed plan UUID: '
+read -r plan
+scripts/hello-world.sh --run-id "$run" --correlation-id "$trace" --plan-id "$plan"
+```
+
 ## Required interfaces
 
 | Provider | Operation | Use by C05 |

@@ -16,6 +16,8 @@ spec.loader.exec_module(hello_world)
 
 CID = "7c4c48ca-b13e-41f3-8954-7cb1026be165"
 EVENT = "edcb8146-d350-4ffd-98e3-d3396450033f"
+REVISION_EVENT = "69e38367-8c9f-4b99-8cf8-f1a7b8d1cca1"
+PLAN = "2d673b19-3034-41ee-b64f-6211c28ef230"
 CREATED = "evaluated: created, 1 replan request(s)"
 
 
@@ -29,10 +31,10 @@ def test_missing_docker_is_reported_as_an_unavailable_hop(monkeypatch):
         hello_world.compose("run", "demo-feed")
 
 
-def test_a_created_disruption_with_a_replan_request_counts_as_stub():
+def test_a_replan_request_alone_only_proves_the_connection():
     status, notes = hello_world.judge_hop8(CID, CREATED, None)
 
-    assert status == "STUB"
+    assert status == "WIRED"
     assert CID in notes[0]
 
 
@@ -51,7 +53,7 @@ def test_a_retry_that_still_sent_one_request_counts():
         "(1 replan request(s) not made: 1 Unavailable); will retry"
     )
 
-    assert hello_world.judge_hop8(CID, message, None)[0] == "STUB"
+    assert hello_world.judge_hop8(CID, message, None)[0] == "WIRED"
 
 
 @pytest.mark.parametrize(
@@ -67,14 +69,32 @@ def test_no_disruption_or_no_log_is_missing(message):
 
 
 def test_listed_disruption_keeps_the_hop():
-    status, notes = hello_world.judge_hop8(CID, CREATED, (200, True, EVENT))
+    status, notes = hello_world.judge_hop8(
+        CID, CREATED, (200, True, EVENT), published_id=REVISION_EVENT, received=True
+    )
 
-    assert status == "STUB"
+    assert status == "PASS"
     assert notes[-1] == "listDisruptions shows it"
 
 
+def test_resumed_request_can_pass_only_with_publication_and_receipt():
+    message = "evaluated: duplicate, 1 replan request(s)"
+    assert (
+        hello_world.judge_hop8(CID, message, None, published_id=REVISION_EVENT)[0]
+        == "WIRED"
+    )
+    assert (
+        hello_world.judge_hop8(
+            CID, message, None, published_id=REVISION_EVENT, received=True
+        )[0]
+        == "PASS"
+    )
+
+
 def test_a_200_listing_without_the_event_fails_the_hop():
-    status, notes = hello_world.judge_hop8(CID, CREATED, (200, False, EVENT))
+    status, notes = hello_world.judge_hop8(
+        CID, CREATED, (200, False, EVENT), published_id=REVISION_EVENT, received=True
+    )
 
     assert status == "MISSING"
     assert notes[-1] == f"listDisruptions → 200 without event {EVENT}"
@@ -88,15 +108,16 @@ def test_a_failed_listing_fails_the_hop():
 
 
 @pytest.mark.parametrize("override_ids", [False, True])
+@pytest.mark.parametrize("matching_receipt", [True, False])
 def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
-    override_ids, monkeypatch, capsys
+    override_ids, matching_receipt, monkeypatch, capsys
 ):
     scenario = json.loads(hello_world.SCENARIO_PATH.read_text(encoding="utf-8"))
     run_id, cid = scenario["runId"], scenario["correlationId"]
     argv = []
     if override_ids:
         run_id, cid = "eb7dac64-be2f-4123-af8f-78d8f1e2ff1d", CID
-        argv = ["--run-id", run_id, "--correlation-id", cid]
+        argv = ["--run-id", run_id, "--correlation-id", cid, "--plan-id", PLAN]
     trace = {
         "scope": "simulation",
         "runId": run_id,
@@ -120,6 +141,26 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
         if args[0] == "logs":
             if args[-1] == "c06-publisher":
                 return json.dumps({**trace, "message": "published CityStateUpdated"})
+            if args[-1] in {"c05-publisher", "c08-worker"}:
+                revision = {
+                    **trace,
+                    "causationId": EVENT,
+                    "eventId": REVISION_EVENT,
+                    "eventType": "PlanReady",
+                    "planId": PLAN,
+                    "message": "published PlanReady",
+                }
+                if args[-1] == "c08-worker":
+                    revision["message"] = "handled PlanReady: ack"
+                    if not matching_receipt:
+                        revision["eventId"] = CID
+                # Another confirmation/revision can share the delivery trace.
+                unrelated = {**revision, "eventId": CID, "causationId": None}
+                others = [unrelated]
+                if override_ids:
+                    # A single closure may revise two different plans in this run.
+                    others.append({**revision, "eventId": EVENT, "planId": CID})
+                return "\n".join(map(json.dumps, [*others, revision]))
             assert args[-1] == "c07-worker"
             stale = {**trace, "message": "evaluated: no_disruption, 0 replan requests"}
             lines = [{**stale, field: "other"} for field in trace]
@@ -149,6 +190,8 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     monkeypatch.setattr(hello_world, "compose", compose)
     monkeypatch.setattr(hello_world.urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(hello_world, "TOKEN", "test-token")
+    monkeypatch.setattr(hello_world, "WAIT_SECONDS", 0.02)
+    monkeypatch.setattr(hello_world.time, "sleep", lambda _: None)
     hello_world.main(argv)
     output = capsys.readouterr().out
     assert f"runId={run_id} correlationId={cid}" in output
@@ -158,3 +201,7 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     )
     assert hop4.endswith("MISSING")
     assert "listDisruptions shows it" in output
+    hop8 = next(line for line in output.splitlines() if "C07 → C05 replan" in line)
+    assert hop8.endswith("PASS" if matching_receipt else "WIRED")
+    if matching_receipt:
+        assert f"revised PlanReady {REVISION_EVENT}; C08 received it" in output

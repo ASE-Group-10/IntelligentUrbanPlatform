@@ -267,9 +267,10 @@ worker. Runs follow the `SHARED_RUN_IDS` rule above.
 
 Consumes `CityStateUpdated` from `ulop.events` (queue `c07.city-state-updated`)
 and runs `evaluateChange`. Disruptions and processed event IDs are kept in
-Postgres (`c07_disruption_detection`), so they survive a restart. Until C05
-exists it uses the labelled stub in `planning_stub.py`, which knows one demo plan
-on `seg:4471023`.
+Postgres (`c07_disruption_detection`), so they survive a restart. The worker
+calls C05 in-process on the same run. C05 reads the current confirmed plan,
+its linked C04 deliveries and C06 conditions. An eligible Eden Quay delivery
+can be revised onto Abbey Street Lower.
 
 ```sh
 DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable \
@@ -304,6 +305,12 @@ the queued event ID. The C06 publisher and C07 worker log the same
 add `--fresh` (`docker compose run --rm demo-feed --fresh`) to inject a new
 closure with new IDs at the current time. Use `--build` again after code
 changes, since the containers run the image, not your working tree.
+
+For a revision, confirm a delivery on Eden Quay first. Pass its `--run-id` and
+`--correlation-id` to the fresh feed while the delivery window still permits
+the detour. A run with no matching unfinished delivery produces no disruption.
+The [C05 contract](../contracts/components/c05-planning/internal.md#run-the-dublin-replan)
+includes the repeatable, fixed-time PostgreSQL and RabbitMQ check.
 
 To run the workers from your checkout instead (for debugging), start only
 `docker compose up -d db rabbitmq migrate`, run the workers you need in
