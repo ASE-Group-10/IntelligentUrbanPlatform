@@ -1,6 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import { act, render, screen, within } from "@testing-library/react";
 
 import { AuthContext, type Auth } from "@/features/auth/auth-context";
 import { SessionError } from "@/features/auth/identity";
@@ -58,13 +63,21 @@ function signedIn(request: Auth["request"]): Auth {
   };
 }
 
+/** The list inside a bare router, since its cards link to the map. */
 function renderList(auth: Auth, client = new QueryClient()) {
-  const wrap = (children: ReactNode) => (
+  const router = createRouter({
+    routeTree: createRootRoute({
+      component: () => <DisruptionList runId={DEMO_RUN_ID} runLabel="the Dublin simulation" />,
+    }),
+    history: createMemoryHistory({ initialEntries: ["/disruptions"] }),
+  });
+  render(
     <QueryClientProvider client={client}>
-      <AuthContext value={auth}>{children}</AuthContext>
-    </QueryClientProvider>
+      <AuthContext value={auth}>
+        <RouterProvider router={router} />
+      </AuthContext>
+    </QueryClientProvider>,
   );
-  render(wrap(<DisruptionList runId={DEMO_RUN_ID} runLabel="the Dublin simulation" />));
   return client;
 }
 
@@ -131,6 +144,26 @@ describe("DisruptionList", () => {
     expect(screen.getByText(/1 disruption in the Dublin simulation/)).toBeInTheDocument();
   });
 
+  it("links each disrupted road to the map with that road selected", async () => {
+    renderList(signedIn(replies([200, { disruptions: [DISRUPTION] }])));
+
+    const link = await screen.findByRole("link", { name: /Show Eden Quay on the map/ });
+    expect(link).toHaveAttribute("href", "/?segment=seg%3A4471023");
+  });
+
+  it("only links mapped roads on a card with mapped and unmapped segments", async () => {
+    const mixed = { ...DISRUPTION, segmentKeys: ["seg:999", "seg:4471023"] };
+    renderList(signedIn(replies([200, { disruptions: [mixed] }])));
+
+    const card = within(await screen.findByRole("region", { name: /Roadworks on/ }));
+    expect(card.getAllByRole("link")).toHaveLength(1);
+    expect(card.getByRole("link", { name: "Show Eden Quay on the map" })).toHaveAttribute(
+      "href",
+      "/?segment=seg%3A4471023",
+    );
+    expect(card.getByText("seg:999 · Map unavailable")).toBeVisible();
+  });
+
   it("says a replan is still pending when C05 hasn't taken it", async () => {
     const pending = {
       ...DISRUPTION,
@@ -147,10 +180,12 @@ describe("DisruptionList", () => {
     expect(await screen.findByText(/No disruptions yet/)).toBeInTheDocument();
   });
 
-  it("asks to sign in when there is no session", () => {
+  it("asks to sign in when there is no session", async () => {
     renderList({ ...signedIn(undefined), session: null, request: undefined });
 
-    expect(screen.getByRole("heading", { name: "Sign in to Disruptions" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Sign in to Disruptions" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the list as last known when C07 becomes unavailable", async () => {
