@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.components.c02_identity_access.tokens import SupabaseVerifier
@@ -29,6 +31,7 @@ from app.components.c07_disruption_detection.postgres_store import (
 )
 from app.components.c07_disruption_detection.router import router as disruptions_router
 from app.components.c08_allocation.router import router as allocation_router
+from app.components.c08_allocation.telemetry import C08Telemetry
 from app.components.c09_logistics_knowledge.demo_corpus import DEMO_ZONES
 from app.components.c09_logistics_knowledge.postgres_store import (
     PostgresKnowledgeStore,
@@ -106,9 +109,18 @@ def create_app(
             or DeliveryPlanningGateway(app.state.planning),
             clock=service_clock,
         )
-        yield
-        if engine is None:
-            app.state.engine.dispose()
+        endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        telemetry = C08Telemetry(endpoint) if endpoint else None
+        app.state.c08_telemetry = telemetry
+        try:
+            yield
+        finally:
+            try:
+                if telemetry is not None:
+                    await run_in_threadpool(telemetry.shutdown)
+            finally:
+                if engine is None:
+                    app.state.engine.dispose()
 
     app = FastAPI(
         title="Urban Logistics · UC01 Resource API",
@@ -129,7 +141,12 @@ def create_app(
             request.state.correlation_id = str(UUID(supplied))
         except ValueError:
             request.state.correlation_id = str(uuid4())
-        response = await call_next(request)
+        telemetry = request.app.state.c08_telemetry
+        response = (
+            await telemetry.observe_request(request, call_next)
+            if telemetry is not None
+            else await call_next(request)
+        )
         response.headers["X-Correlation-ID"] = request.state.correlation_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"

@@ -420,3 +420,28 @@ ending in `_test` and `TEST_RABBITMQ_URL`, then run
 test schemas, uses its own RabbitMQ exchange/queue, and substitutes token
 verification for interactive Supabase sign-in. Offer expiry, replacement selection,
 multi-agent negotiation and downstream evidence/disruption events are follow-up work.
+
+### C08 OpenTelemetry
+
+Set `DD_SITE=datadoghq.eu` and `DD_API_KEY` for the Datadog Agent.
+Enable C08 telemetry from the repository root:
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://datadog-agent:4318 \
+  docker compose up -d --build api c08-worker datadog-agent
+```
+
+For API/worker processes running on the host, use
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
+An unset or empty endpoint disables export.
+
+Search Datadog APM for `service:urban-logistics-c08`. The worker records
+`c08.plan_ready` spans including disposition, event metadata and correlation ID.
+HTTP spans cover listing assignments, issuing offers and responding to offers,
+including authentication/validation failures. Successful commands attach the
+stored allocation correlation ID, assignment reference and acceptance status.
+Both paths record `ulop.c08.operations` and `ulop.c08.duration` (milliseconds).
+Metric dimensions are operation and outcome/status, while identifiers appear
+on spans. Unexpected exceptions retain their stack trace and propagate.
+The PlanReady span and HTTP spans can be found by the same `correlationId`;
+each message starts a new trace until broker trace-context propagation is added.
