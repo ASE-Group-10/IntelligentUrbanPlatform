@@ -28,6 +28,7 @@ from app.components.c06_city_monitoring.store import (
     StoreUnavailableError,
 )
 from app.shared.contracts import ContractModel, EventEnvelope
+from app.shared.outbox import PostgresOutboxBatch
 
 
 def scope_key(state_scope: StateScope) -> str:
@@ -132,24 +133,6 @@ class PostgresReader:
         return {key: SegmentCondition.model_validate(value) for key, value in rows}
 
 
-class PostgresOutboxBatch:
-    """``OutboxBatch`` over rows locked with ``FOR UPDATE SKIP LOCKED``.
-
-    Concurrent publishers skip each other's rows, so an event is not claimed twice.
-    """
-
-    def __init__(self, conn: psycopg.Connection, events: list[EventEnvelope]) -> None:
-        self._conn = conn
-        self.events = events
-
-    def mark_published(self, event_id: UUID) -> None:
-        self._conn.execute(
-            "update c06_city_monitoring.outbox set published_at = now()"
-            " where event_id = %s",
-            (event_id,),
-        )
-
-
 class PostgresCityStateStore:
     """``CityStateStore`` backed by PostgreSQL (local Docker or Supabase).
 
@@ -191,15 +174,7 @@ class PostgresCityStateStore:
         with self._connect() as conn:
             try:
                 with conn.transaction():
-                    rows = conn.execute(
-                        "select envelope from c06_city_monitoring.outbox"
-                        " where published_at is null order by seq limit %s"
-                        " for update skip locked",
-                        (limit,),
-                    ).fetchall()
-                    yield PostgresOutboxBatch(
-                        conn, [EventEnvelope.model_validate(e) for (e,) in rows]
-                    )
+                    yield PostgresOutboxBatch(conn, "c06_city_monitoring", limit)
             except psycopg.OperationalError as error:
                 raise StoreUnavailableError(
                     f"City State store failed: {error}"

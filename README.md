@@ -159,7 +159,7 @@ See [database/README.md](database/README.md) for migration conventions.
 
 `docker compose up -d --build` also builds the backend image, applies the
 migrations and starts the API on <http://127.0.0.1:8000> (the frontend dev
-server proxies `/api` to it), the C06 outbox publisher and the C07 and C08
+server proxies `/api` to it), the C05 and C06 outbox publishers and the C07 and C08
 workers. Sign-in needs `SUPABASE_URL` in `backend/.env`. Then
 `docker compose run --rm demo-feed` sends the scenario's road closure through
 C06 → RabbitMQ → C07. See [backend/README.md](backend/README.md#demo-road-closure-through-c06-and-c07).

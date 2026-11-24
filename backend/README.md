@@ -218,13 +218,19 @@ docker compose up -d rabbitmq
 TEST_RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F uv run pytest
 ```
 
-## C06 outbox publisher
+## C05 and C06 outbox publishers
 
-Sends queued `CityStateUpdated` events from the C06 outbox to the `ulop.events`
-topic exchange (routing key = event type), at least once. Run it as a worker
-next to the database and broker:
+C05 publishes committed `PlanReady` events and C06 publishes `CityStateUpdated`
+events to the `ulop.events` topic exchange. Each worker declares the durable
+subscriber queues, routes by event type, and marks its own outbox row after
+RabbitMQ confirms delivery. Compose starts both workers. To run them directly,
+start each command in a separate terminal with the local database and broker.
 
 ```sh
+DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop \
+RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
+uv run python -m app.components.c05_planning.publisher
+
 DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop \
 RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
 uv run python -m app.components.c06_city_monitoring.publisher
@@ -287,7 +293,7 @@ The thin-slice event chain (#72 hops 7–8), using the shared scenario in
 `fixtures/dublin-scenario.json`. From the repository root:
 
 ```sh
-docker compose up -d --build          # db, rabbitmq, migrations, API, C06 publisher, C07 + C08 workers
+docker compose up -d --build          # db, rabbitmq, migrations, API, C05/C06 publishers, C07/C08 workers
 docker compose run --rm demo-feed     # inject the closure
 docker compose logs -f c06-publisher c07-worker
 ```

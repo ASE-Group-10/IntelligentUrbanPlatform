@@ -6,7 +6,7 @@ name: ulop
 
 # Shared settings for every service built from backend/Dockerfile.
 x-backend-env: &backend-env
-  # psycopg connection string (C06 publisher, C07 worker, demo feed).
+  # psycopg connection string for publishers, C07 worker and demo feed.
   DATABASE_URL: postgres://ulop:ulop@db:5432/ulop?sslmode=disable
   RABBITMQ_URL: amqp://${RABBITMQ_USER:-ulop}:${RABBITMQ_PASSWORD:-ulop}@rabbitmq:5672/%2F
   RABBITMQ_EXCHANGE: ulop.events
@@ -96,7 +96,7 @@ services:
     volumes:
       - ./database/migrations:/db/migrations:ro
 
-  # HTTP API for C01 (C02, C03, C06, C07, C08 routers) on http://127.0.0.1:8000.
+  # HTTP API for C01 (C02, C03, C05, C06, C07, C08 routers) on http://127.0.0.1:8000.
   # Supabase sign-in needs SUPABASE_URL, read from backend/.env when it exists;
   # the local DATABASE_URL below always wins over the one in that file.
   api:
@@ -118,6 +118,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+
+  # C05: publishes PlanReady after the plan transaction commits.
+  c05-publisher:
+    <<: *backend
+    command: ["python", "-m", "app.components.c05_planning.publisher"]
+    depends_on: *after-migrations
 
   # C06: publishes CityStateUpdated from the outbox to RabbitMQ.
   c06-publisher:

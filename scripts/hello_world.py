@@ -44,7 +44,7 @@ SCENARIO_PATH = (
     Path(__file__).resolve().parents[1] / "fixtures" / "dublin-scenario.json"
 )
 WAIT_SECONDS = int(os.environ.get("ULOP_WAIT_SECONDS", "30"))
-WORKERS = ("api", "c06-publisher", "c07-worker", "c08-worker")
+WORKERS = ("api", "c05-publisher", "c06-publisher", "c07-worker", "c08-worker")
 
 
 @dataclass
@@ -150,17 +150,32 @@ def log_lines(service: str, since: str) -> list[dict]:
 
 
 def wait_for_log(
-    service: str, since: str, trace: dict[str, str], needle: str
+    service: str,
+    since: str,
+    trace: dict[str, str],
+    needle: str,
+    *,
+    wait_for_retry: bool = False,
 ) -> dict | None:
     deadline = time.monotonic() + WAIT_SECONDS
+    last_retry = None
     while time.monotonic() < deadline:
         for line in log_lines(service, since):
             if needle in line.get("message", "") and all(
                 line.get(key) == value for key, value in trace.items()
             ):
+                if wait_for_retry and line["message"].endswith("; will retry"):
+                    # One successful request already exercises the C07-to-C05 hop.
+                    # Only wait for redelivery when the first attempt reached none.
+                    status, _ = judge_hop8(
+                        trace["correlationId"], line["message"], None
+                    )
+                    if status == "MISSING":
+                        last_retry = line
+                        continue
                 return line
         time.sleep(1)
-    return None
+    return last_retry
 
 
 def has_consumer(queues: dict[str, int], prefix: str) -> bool:
@@ -329,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         hops[6].set(
             "WIRED",
             "c08.plan-ready has a consumer and the assignment API is up; "
-            "no C05 PlanReady reaches it in this run",
+            "this check does not confirm a plan or verify its allocation",
         )
     else:
         hops[6].set("MISSING", "no c08.plan-ready consumer or assignment API")
@@ -372,7 +387,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             hops[7].set("MISSING", f"C06 didn't publish {cid} within {WAIT_SECONDS}s")
 
-        evaluated = wait_for_log("c07-worker", since, trace, "evaluated")
+        evaluated = wait_for_log(
+            "c07-worker", since, trace, "evaluated", wait_for_retry=True
+        )
         listing = None
         if evaluated and TOKEN:
             status, body = http(

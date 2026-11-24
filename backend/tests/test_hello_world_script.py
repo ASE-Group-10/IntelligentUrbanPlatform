@@ -48,7 +48,7 @@ def test_a_disruption_without_any_replan_request_is_not_counted():
 def test_a_retry_that_still_sent_one_request_counts():
     message = (
         "evaluated: created, 1 replan request(s) "
-        "(1 replan request(s) pending: C05 unavailable); will retry"
+        "(1 replan request(s) not made: 1 Unavailable); will retry"
     )
 
     assert hello_world.judge_hop8(CID, message, None)[0] == "STUB"
@@ -123,6 +123,12 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
             assert args[-1] == "c07-worker"
             stale = {**trace, "message": "evaluated: no_disruption, 0 replan requests"}
             lines = [{**stale, field: "other"} for field in trace]
+            lines.append(
+                {
+                    **trace,
+                    "message": "evaluated: unknown, 0 replan request(s); will retry",
+                }
+            )
             lines.append({**trace, "message": CREATED})
             return "\n".join(json.dumps(line) for line in lines)
         return ""
