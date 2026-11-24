@@ -82,6 +82,20 @@ def test_ingress_settings_load_without_database_url(monkeypatch):
     assert ingress.cors_origins == (FRONTEND_ORIGIN, "http://localhost:5173")
 
 
+def test_cors_origins_normalize_default_ports_but_keep_nondefault_ports(env):
+    env.setenv(
+        "CORS_ORIGINS",
+        f"{FRONTEND_ORIGIN}:443,{FRONTEND_ORIGIN},"
+        "http://localhost:80,http://localhost:5173",
+    )
+
+    assert settings().cors_origins == (
+        FRONTEND_ORIGIN,
+        "http://localhost",
+        "http://localhost:5173",
+    )
+
+
 @pytest.mark.parametrize(
     "bad_hosts",
     [
@@ -120,7 +134,7 @@ def test_app_enforces_configured_allowed_hosts_and_cors_headers():
             supabase_url=None,
             availability_max_age_seconds=86400,
             allowed_hosts=("localhost", PUBLIC_API_HOST),
-            cors_origins=(FRONTEND_ORIGIN,),
+            cors_origins=(f"{FRONTEND_ORIGIN}:443", "http://localhost:5173"),
         ),
     )
 
@@ -138,6 +152,18 @@ def test_app_enforces_configured_allowed_hosts_and_cors_headers():
         )
         assert preflight.status_code == 200
         assert preflight.headers["access-control-allow-origin"] == FRONTEND_ORIGIN
+        nondefault_preflight = client.options(
+            "/api/v1/resources",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        assert nondefault_preflight.status_code == 200
+        assert (
+            nondefault_preflight.headers["access-control-allow-origin"]
+            == "http://localhost:5173"
+        )
         allowed = {
             h.strip().lower()
             for h in preflight.headers["access-control-allow-headers"].split(",")

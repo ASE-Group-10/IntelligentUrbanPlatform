@@ -79,7 +79,17 @@ def _validate_cors_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
                 f"Invalid CORS_ORIGINS entry {origin!r}; "
                 "supply origins such as https://app.example.com"
             )
-        normalized.append(f"{parts.scheme}://{parts.netloc}")
+        try:
+            port = parts.port
+        except ValueError as exc:
+            raise ValueError(f"Invalid CORS_ORIGINS port in {origin!r}") from exc
+        hostname = parts.hostname
+        if hostname is None:
+            raise ValueError(f"Invalid CORS_ORIGINS hostname in {origin!r}")
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        default_port = 443 if parts.scheme == "https" else 80
+        suffix = f":{port}" if port is not None and port != default_port else ""
+        normalized.append(f"{parts.scheme}://{host}{suffix}")
     return tuple(dict.fromkeys(normalized))
 
 
