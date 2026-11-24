@@ -21,7 +21,7 @@ from app.shared.contracts import Affected
 from app.shared.result import Failure, Ok, Result
 
 from .models import Plan, PlanScope
-from .store import PostgresPlanStore
+from .store import PostgresPlanStore, lock_plan, scope_key
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def _commit_confirmation(
     decisions: DecisionRecords,
     clock: Callable[[], datetime],
 ) -> Result[_Confirmation]:
-    scoped = f"simulation:{scope.run_id}"
+    scoped = scope_key(scope.scope, scope.run_id)
     caller = (scoped, context.principal_id, context.acting_provider_id, key)
     # READ COMMITTED: statements after each lock see the previous caller's commit.
     # The key covers retries across plans. The plan lock covers competing keys.
@@ -105,8 +105,7 @@ def _commit_confirmation(
             return Failure("Conflict", "C05.IDEMPOTENCY_MISMATCH")
         saved = Plan.model_validate(previous[2], strict=False)
         return Ok(_Confirmation(saved, previous[3], None))
-    plan_lock = json.dumps(["C05.plan", scoped, str(plan_id)])
-    conn.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (plan_lock,))
+    lock_plan(conn, scope, plan_id)
     row = conn.execute(
         """select proposal, correlation_id, planned_departure_at
              from c05_planning.plan_versions

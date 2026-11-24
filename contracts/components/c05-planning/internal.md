@@ -111,6 +111,42 @@ saved row and the C08 event contract. Run it from `backend/` with
 uv run pytest tests/test_c05_confirm_plan.py tests/test_c05_outbox_publisher.py
 ```
 
+### Read a confirmed delivery route for allocation
+
+C08 can use two in-process functions from
+`app.components.c05_planning.allocation`. Both take a SQLAlchemy connection
+and the `RunScopeSelector` built from the received `PlanReady` envelope's
+`scope` and `runId`.
+
+| Operation | Result |
+| --- | --- |
+| `get_delivery_route(conn, run_scope, plan_id, plan_version, delivery_id)` | `Ok(ConfirmedDeliveryRoute)` contains the saved `plan`, its single matching `route` and the same version's offset-aware `planned_departure_at`. Pass the plan ID and version from the event payload and the delivery ID from its requirement. |
+| `check_current_version(conn, run_scope, plan_id, plan_version)` | `Ok(None)` when that version is the current confirmed plan. A different head or an unconfirmed head gives `Conflict`. An unknown plan in that scope gives `NotFound`. |
+
+The first read also works for an older confirmed version. A proposal, unknown
+version, different run or delivery with no matching route gives `NotFound`.
+Multiple matching routes give `Invalid`. The returned plan includes the
+decision ID and resource requirements for checking the envelope.
+
+For an allocation, call the current-version check immediately before saving
+the commitment, on the same connection inside `with engine.begin() as conn:`.
+Use PostgreSQL `READ COMMITTED`. On success, C05 holds a shared plan lock
+until that transaction ends. Confirmation and future revision writers must
+take the matching exclusive lock with `store.lock_plan` before advancing the
+version. A failed check must prevent the allocation from being committed.
+With DBAPI autocommit, a different isolation level or no active transaction,
+the check returns `Unavailable`. Let database exceptions leave the transaction
+so the worker can retry after rollback with the event still unprocessed.
+
+With a dedicated PostgreSQL database and RabbitMQ broker configured as above,
+run the following from `backend/`. The broker test reads the Dublin route using
+the identifiers from the delivered message. The lookup tests add a later
+confirmed version to check historical reads and concurrent allocation checks.
+
+```sh
+uv run pytest tests/test_c05_confirm_plan.py tests/test_c05_allocation_lookup.py
+```
+
 ### findAffectedWork(changeScope) → Result\<AffectedWork\>
 
 C07 asks C05 which unfinished work a change touches. C05 owns plans, so it
@@ -227,13 +263,10 @@ For UC07, `trigger.citySnapshotVersion` records the City State that triggered
 the request when C07 provides it. C05 reads current conditions in the same run
 and records the version it actually uses for the decision.
 
-C08 uses `planId`, `planVersion`, `deliveryId` and the event's run scope to
-look up the route and `plannedDepartureAt` together from that saved plan
-version. The timestamp includes `Z` or a UTC offset. C08 separately rechecks
-that the event version is still current before committing resources. The
-`requirements` list describes all resource needs for
+The `requirements` list in the `PlanReady` payload describes all resource needs for
 unfinished deliveries in that plan version. C08 checks which existing
-commitments still satisfy those needs against the revised route and timing.
+commitments still satisfy those needs using the
+[confirmed delivery route and departure](#read-a-confirmed-delivery-route-for-allocation).
 
 For mutating HTTP calls, a retry with the same caller, operation, run scope, key
 and request returns the first committed response. Reusing that key with a

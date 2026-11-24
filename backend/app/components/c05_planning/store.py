@@ -10,19 +10,31 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from app.shared.contracts import RunScope
+from app.shared.contracts import RunScope, RunScopeSelector
 
 
 class GenerationConflictError(Exception):
     """The caller reused a generation key with different input."""
 
 
-def _scope_key(scope: RunScope, run_id: UUID | str | None) -> str:
+def scope_key(scope: RunScope, run_id: UUID | str | None) -> str:
     if scope == "simulation" and run_id is not None:
         return f"simulation:{UUID(str(run_id))}"
     if scope == "live" and run_id is None:
         return "live"
     raise ValueError("simulation requires a run ID and live must omit it")
+
+
+def plan_lock_key(scope: RunScopeSelector, plan_id: UUID) -> str:
+    return json.dumps(["C05.plan", scope_key(scope.scope, scope.run_id), str(plan_id)])
+
+
+def lock_plan(conn: psycopg.Connection, scope: RunScopeSelector, plan_id: UUID) -> None:
+    """Serialize version checks and appends with C08's commit-time read lock."""
+    conn.execute(
+        "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (plan_lock_key(scope, plan_id),),
+    )
 
 
 class PostgresPlanStore:
@@ -46,7 +58,7 @@ class PostgresPlanStore:
         request: dict[str, Any],
     ) -> tuple[dict[str, Any], UUID] | None:
         """Return the original proposal and its delivery trace under the key lock."""
-        scoped = _scope_key(scope, run_id)
+        scoped = scope_key(scope, run_id)
         # Lock before querying C09 or writing a decision. Under READ COMMITTED
         # the next statement sees the first caller's receipt after waiting.
         lock_name = json.dumps(["C05.generatePlan", scoped, principal_id, key])
@@ -81,7 +93,7 @@ class PostgresPlanStore:
     ) -> None:
         """Save a version and receipt on the connection used for its C10 decision."""
         run_scope = proposal["runScope"]
-        scoped = _scope_key(run_scope["scope"], run_scope.get("runId"))
+        scoped = scope_key(run_scope["scope"], run_scope.get("runId"))
         if planned_departure_at.utcoffset() is None:
             raise ValueError("The planned departure must include a UTC offset.")
         conn.execute(
@@ -113,7 +125,7 @@ class PostgresPlanStore:
         version: int | None = None,
     ) -> dict[str, Any] | None:
         """Read a committed snapshot from this scope, by version or latest first."""
-        scoped = _scope_key(scope, run_id)
+        scoped = scope_key(scope, run_id)
         with self.transaction() as conn:
             row = conn.execute(
                 """select proposal from c05_planning.plan_versions
