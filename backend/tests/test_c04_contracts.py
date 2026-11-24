@@ -97,3 +97,10 @@ def test_update_request_requires_positive_expected_version(example):
     payload = deepcopy(example("submit-delivery-request.json")) | {"expectedVersion": 0}
     with pytest.raises(ValidationError):
         UpdateDeliveryRequest.model_validate(payload)
+
+
+def test_delivery_event_requires_provider_id(example):
+    missing_provider = deepcopy(example("delivery-submitted-event.json"))
+    missing_provider["payload"].pop("providerId")
+    with pytest.raises(ValidationError):
+        DeliveryEvent.model_validate(missing_provider)

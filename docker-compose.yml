@@ -119,6 +119,12 @@ services:
       timeout: 3s
       retries: 12
 
+  # C04: publishes DeliverySubmitted/Updated/ProgressChanged from the outbox.
+  c04-publisher:
+    <<: *backend
+    command: ["python", "-m", "app.components.c04_delivery_management.publisher"]
+    depends_on: *after-migrations
+
   # C05: publishes PlanReady after the plan transaction commits.
   c05-publisher:
     <<: *backend
