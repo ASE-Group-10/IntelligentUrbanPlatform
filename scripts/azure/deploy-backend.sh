@@ -78,7 +78,11 @@ TARGET_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
 COMPOSE_FILES=(-f compose.yaml -f backend-image.override.yml)
 HEALTH_BODY=""
 
-EXISTING_API_CID="$(docker compose -f compose.yaml ps -a -q api | head -n 1 || true)"
+if ! existing_api_cids="$(docker compose -f compose.yaml ps -a -q api)"; then
+  echo "ERROR: Could not list existing api containers; aborting to protect rollback." >&2
+  exit 1
+fi
+EXISTING_API_CID="${existing_api_cids%%$'\n'*}"
 PREVIOUS_IMAGE=""
 if [[ -n "${EXISTING_API_CID}" ]]; then
   PREVIOUS_IMAGE="$(docker inspect --format '{{.Config.Image}}' "${EXISTING_API_CID}" 2>/dev/null || true)"
@@ -142,6 +146,7 @@ persist_active_image() {
 
 verify_rollout() {
   local label="$1"
+  local expected_image="$2"
   echo "Verifying ${label} (${HEALTH_URL})..."
 
   local health_ok=0
@@ -193,7 +198,7 @@ verify_rollout() {
 
   # Confirm every backend service stayed running with zero restarts.
   for svc in "${SERVICES[@]}"; do
-    local cid status restarting restarts
+    local cid status restarting restarts actual_image
     cid="$(docker compose ps -q "${svc}")"
     if [[ -z "${cid}" ]]; then
       echo "ERROR: ${label} container for '${svc}' is missing" >&2
@@ -202,9 +207,14 @@ verify_rollout() {
     status="$(docker inspect --format '{{.State.Status}}' "${cid}" 2>/dev/null || echo missing)"
     restarting="$(docker inspect --format '{{.State.Restarting}}' "${cid}" 2>/dev/null || echo true)"
     restarts="$(docker inspect --format '{{.RestartCount}}' "${cid}" 2>/dev/null || echo 1)"
+    actual_image="$(docker inspect --format '{{.Config.Image}}' "${cid}" 2>/dev/null || true)"
     if [[ "${status}" != "running" || "${restarting}" != "false" || "${restarts}" != "0" ]]; then
       echo "ERROR: ${label} service '${svc}' unhealthy (status=${status}, restarting=${restarting}, restarts=${restarts})" >&2
       docker compose logs --tail=30 "${svc}" || true
+      return 1
+    fi
+    if [[ "${actual_image}" != "${expected_image}" ]]; then
+      echo "ERROR: ${label} service '${svc}' uses image '${actual_image:-unknown}', expected '${expected_image}'" >&2
       return 1
     fi
   done
@@ -224,7 +234,7 @@ rollback_and_verify() {
     return 1
   fi
 
-  if ! verify_rollout "rollback (${PREVIOUS_IMAGE})"; then
+  if ! verify_rollout "rollback (${PREVIOUS_IMAGE})" "${PREVIOUS_IMAGE}"; then
     echo "ROLLBACK_STATUS=FAILED (restored services did not pass health/worker verification)" >&2
     return 1
   fi
@@ -274,7 +284,7 @@ if ! BACKEND_IMAGE="${TARGET_IMAGE}" docker compose "${COMPOSE_FILES[@]}" up -d 
   exit 1
 fi
 
-if ! verify_rollout "deployment (${TARGET_IMAGE})"; then
+if ! verify_rollout "deployment (${TARGET_IMAGE})" "${TARGET_IMAGE}"; then
   rollback_and_verify || true
   exit 1
 fi
