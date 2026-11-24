@@ -99,7 +99,6 @@ class CaptureRecorder:
                     return "reject"
 
                 try:
-                    delivery_facts(event)
                     provider_id = delivery_provider(event)
                 except (KeyError, ValueError, TypeError):
                     return reject("Unusable C04 outcome")
@@ -109,6 +108,12 @@ class CaptureRecorder:
                     # A shared simulation can contain other providers' deliveries.
                     # Never record their state into this provider's saved archive.
                     return "ack"
+                # Foreign outcomes must not poison this provider's capture,
+                # including when their delivery details are malformed.
+                try:
+                    delivery_facts(event)
+                except (KeyError, ValueError, TypeError):
+                    return reject("Unusable C04 outcome")
                 value = event.model_dump(mode="json")
                 for old in body["events"]:
                     if old["event_id"] == str(event.event_id):

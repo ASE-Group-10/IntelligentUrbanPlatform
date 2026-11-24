@@ -56,6 +56,7 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
   const [seek, setSeek] = useState("0");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [playbackInterrupted, setPlaybackInterrupted] = useState(false);
 
   const sessionId = frame?.sessionId;
   const api = useCallback(
@@ -134,7 +135,7 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
 
   async function control(command: string, targetCursor?: number) {
     if (!frame) return;
-    await perform(async () =>
+    await perform(async () => {
       setFrame(
         await api(
           `/replay-sessions/${frame.sessionId}/controls`,
@@ -146,12 +147,13 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
           undefined,
           crypto.randomUUID(),
         ),
-      ),
-    );
+      );
+      setPlaybackInterrupted(false);
+    });
   }
 
   useEffect(() => {
-    if (frame?.status !== "playing") return;
+    if (frame?.status !== "playing" || playbackInterrupted) return;
     const abort = new AbortController();
     const timer = setTimeout(async () => {
       try {
@@ -162,14 +164,17 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
         );
         if (!abort.signal.aborted) setFrame(next);
       } catch (e) {
-        if (!abort.signal.aborted) setError(e instanceof Error ? e.message : "Replay read failed.");
+        if (!abort.signal.aborted) {
+          setError(e instanceof Error ? e.message : "Replay read failed.");
+          setPlaybackInterrupted(true);
+        }
       }
     }, 1000);
     return () => {
       clearTimeout(timer);
       abort.abort();
     };
-  }, [frame, api]);
+  }, [frame, api, playbackInterrupted]);
 
   return (
     <div className="space-y-6">
@@ -326,6 +331,7 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
                   if (!value.sessionId)
                     throw new Error(value.reason ?? "Cannot replay this range.");
                   setFrame(value);
+                  setPlaybackInterrupted(false);
                 })
               }
             >
@@ -335,8 +341,28 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
           {frame && (
             <>
               <p role="status">
-                {frame.status} · Cursor {frame.cursor} · {frame.simulationTime}
+                {playbackInterrupted ? "interrupted" : frame.status} · Cursor {frame.cursor} · {frame.simulationTime}
               </p>
+              {playbackInterrupted && (
+                <div className="space-y-2">
+                  <p>Playback interrupted. Retry to reload the latest saved position.</p>
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() =>
+                      perform(async () => {
+                        // A failed response may follow a committed tick. Read the
+                        // authoritative cursor before scheduling another advance.
+                        const latest = await api(`/replay-sessions/${frame.sessionId}`);
+                        setFrame(latest);
+                        setPlaybackInterrupted(false);
+                      })
+                    }
+                  >
+                    Retry playback
+                  </Button>
+                </div>
+              )}
               {frame.interruption && <p role="alert">{frame.interruption}</p>}
               <div className="flex flex-wrap gap-2">
                 {(["play", "pause", "resume", "stop"] as const).map((c) => (
@@ -345,6 +371,7 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
                     variant="outline"
                     disabled={
                       pending ||
+                      playbackInterrupted ||
                       !(c === "play"
                         ? frame.status === "ready"
                         : c === "pause"
@@ -369,7 +396,7 @@ export function AnalyticsWorkspace({ providerId, request }: ResourceScope) {
                 />
                 <Button
                   variant="outline"
-                  disabled={pending || ["completed", "stopped"].includes(frame.status)}
+                  disabled={pending || playbackInterrupted || ["completed", "stopped"].includes(frame.status)}
                   onClick={() => control("seek", Number(seek))}
                 >
                   Seek

@@ -270,6 +270,43 @@ def test_c12_shared_run_does_not_capture_another_providers_delivery(
     assert archive["steps"][0]["record"]["event"]["event_id"] == str(event.event_id)
 
 
+@pytest.mark.parametrize("same_provider", [False, True])
+@pytest.mark.parametrize("malformed_delivery", [None, {}])
+def test_capture_validates_details_only_after_provider_isolation(
+    integration_engine, context, same_provider, malformed_delivery
+):
+    from app.components.c12_simulation_replay.persistence import runs
+
+    event = source_event(provider_id=context.acting_provider_id)
+    event.scope, event.run_id = "simulation", uuid4()
+    recorder = CaptureRecorder(integration_engine)
+    recorder.begin(
+        event.run_id,
+        context.acting_provider_id,
+        event.observed_at - timedelta(minutes=1),
+        {"initialState": {}},
+        True,
+    )
+    malformed = event.model_copy(deep=True)
+    malformed.event_id = uuid4()
+    if not same_provider:
+        malformed.payload["providerId"] = str(uuid4())
+    malformed.payload["delivery"] = malformed_delivery
+    end = event.observed_at + timedelta(minutes=1)
+    if same_provider:
+        assert recorder.consume(malformed) == "reject"
+        with pytest.raises(ValueError, match="invalid or missing"):
+            recorder.seal(event.run_id, end)
+    else:
+        assert recorder.consume(malformed) == "ack"
+        assert recorder.consume(event) == "ack"
+        recorder.seal(event.run_id, end)
+        with integration_engine.connect() as conn:
+            archive = conn.execute(select(runs.c.archive)).scalar_one()
+        assert len(archive["steps"]) == 1
+        assert archive["steps"][0]["record"]["event"]["event_id"] == str(event.event_id)
+
+
 def test_replay_survives_repository_restart_and_checks_idempotency(
     integration_engine, context, replay_fixture
 ):

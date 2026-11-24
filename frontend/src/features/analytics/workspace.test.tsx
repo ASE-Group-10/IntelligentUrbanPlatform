@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AnalyticsWorkspace } from "./workspace";
 
 vi.mock("@/features/auth/resource-access", () => ({ ProviderPicker: () => <p>Test provider</p> }));
@@ -9,6 +9,59 @@ const response = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 
 describe("Analytics workspace", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    { failure: "503", latestCursor: 0 },
+    { failure: "network", latestCursor: 0 },
+    { failure: "503", latestCursor: 1 },
+  ])("recovers from $failure using saved cursor $latestCursor", async ({ failure, latestCursor }) => {
+    vi.useFakeTimers();
+    const frame = {
+      sessionId: "session-1", runId: "run-1", cursor: 0, status: "ready",
+      simulationTime: "2026-11-23T10:00:00Z", state: { synthetic: true },
+      recordedKpis: [], decisionIds: [],
+    };
+    let advances = 0;
+    const request = vi.fn(async (path: string) => {
+      if (path.startsWith("/simulation-runs")) return response({ items: [{
+        runId: "run-1", scenarioId: "partial-c04-capture", status: "incomplete",
+        availableRanges: [{ start: "2026-11-23T10:00:00Z", end: "2026-11-23T11:00:00Z" }],
+      }] });
+      if (path === "/replay-sessions") return response(frame, 201);
+      if (path.endsWith("/controls")) return response({ ...frame, status: "playing" });
+      if (path === "/replay-sessions/session-1")
+        return response({ ...frame, status: "playing", cursor: latestCursor });
+      if (path.endsWith("/advance")) {
+        if (advances++ === 0) {
+          if (failure === "network") throw new Error("Connection lost");
+          return response({ error: { message: "Temporarily unavailable" } }, 503);
+        }
+        return response({ ...frame, status: "completed", cursor: latestCursor + 1 });
+      }
+      throw new Error(`Unexpected request ${path}`);
+    });
+    render(<AnalyticsWorkspace providerId={provider} canRegister={false} request={request} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Load saved runs" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open replay" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^play$/ })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(screen.getByRole("status")).toHaveTextContent("interrupted");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      failure === "network" ? "Connection lost" : "Temporarily unavailable",
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(advances).toBe(1);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry playback" })); });
+    expect(request.mock.calls.some(([path]) => path === "/replay-sessions/session-1")).toBe(true);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(screen.getByRole("status")).toHaveTextContent("completed");
+    const ticks = request.mock.calls.filter(([path]) => path.endsWith("/advance")) as unknown as [string, RequestInit][];
+    expect(ticks).toHaveLength(2);
+    expect(JSON.parse(String(ticks[1]?.[1].body))).toEqual({ expectedCursor: latestCursor });
+  });
+
   it("sends the acting provider and keeps missing metrics unavailable", async () => {
     const request = vi.fn(async (path: string) =>
       path.endsWith("/query")

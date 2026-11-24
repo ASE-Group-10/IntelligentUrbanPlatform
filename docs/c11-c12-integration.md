@@ -24,7 +24,9 @@ credential change has been applied.
   invented metric contributions. Coverage 0/0 means the population is undefined.
 - C12 records only explicitly registered simulation runs. New capture requires
   authoritative C04 providerId and ignores other providers' outcomes in a shared
-  run. It stores original outcomes/configuration before ack, deduplicates retries,
+  run before inspecting their delivery details, so malformed foreign outcomes
+  cannot invalidate the registered provider's capture. Malformed own-provider
+  details still invalidate capture. It stores original outcomes/configuration before ack, deduplicates retries,
   and rejects conflicting history, backwards timestamps and overflow.
 - Sealing freezes initial state/configuration hashes and ordered snapshots. Current
   recording covers **C04 delivery outcomes only**, is labelled `incomplete`, and
@@ -34,6 +36,10 @@ credential change has been applied.
   GET polling is read-only. Playback uses a separate restricted SQL connection,
   does not call a planner, current KPI source or publisher, and fails closed if
   `REPLAY_DATABASE_URL` is absent. `/kpis` displays observations and replay controls.
+  A failed advance response (including 503 or a lost connection) interrupts local
+  playback pacing and visibly offers Retry playback. Recovery reads the latest
+  server frame before scheduling another tick, including if the failed response
+  followed a committed advance; it never blindly resends a stale cursor.
 
 ## One-command local Compose setup
 
