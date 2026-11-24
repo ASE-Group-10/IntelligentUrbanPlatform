@@ -10,6 +10,7 @@ from uuid import UUID
 import psycopg
 
 from app.components.c04_delivery_management import planning as deliveries
+from app.components.c10_decision_records.contracts import AuditOutcome
 from app.components.c10_decision_records.service import DecisionRecords
 from app.shared.auth import AuthContext, require_role
 from app.shared.c09_c10_common import AuthContext as ServiceContext
@@ -17,7 +18,7 @@ from app.shared.c09_c10_common import Outcome
 from app.shared.result import Failure, Ok, Result
 
 from .models import Plan, PlanScope
-from .store import PostgresPlanStore, lock_plan, scope_key
+from .store import DecisionRejectedError, PostgresPlanStore, lock_plan, scope_key
 from .versions import save_ready_version
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,66 @@ class _DeliveryRejectedError(Exception):
         self.ctx = ctx
         self.plan = plan
         super().__init__(failure.message)
+
+
+def _audit_confirmation(
+    conn: psycopg.Connection,
+    decisions: DecisionRecords,
+    context: AuthContext,
+    plan_id: UUID | None,
+    outcome: Outcome,
+    now: datetime,
+) -> None:
+    actor = ServiceContext(
+        principal_id=str(context.principal_id),
+        principal_type="User" if context.principal_type == "user" else "Service",
+        roles=[*context.roles, *context.platform_roles],
+        correlation_id=context.correlation_id,
+    )
+    result = decisions.record_outcome(
+        conn,
+        actor,
+        AuditOutcome(
+            operation="C05.confirmPlan",
+            outcome=outcome,
+            target_ids=[str(plan_id)] if plan_id is not None else [],
+            occurred_at=now,
+        ),
+    )
+    if isinstance(result, Failure):
+        raise DecisionRejectedError(result)
+
+
+def reject_confirmation(
+    store: PostgresPlanStore,
+    decisions: DecisionRecords,
+    clock: Callable[[], datetime],
+    context: AuthContext,
+    plan_id: UUID | None,
+    failure: Failure,
+    delivery_rejection: _DeliveryRejectedError | None = None,
+) -> Failure:
+    """Persist the authenticated command's rejection after any business rollback."""
+    try:
+        with store.transaction() as conn:
+            now = clock()
+            outcome = Outcome(failure.kind)
+            if delivery_rejection is not None:
+                result = deliveries.audit_link(
+                    conn,
+                    decisions,
+                    delivery_rejection.ctx,
+                    delivery_rejection.plan.plan_id,
+                    delivery_rejection.plan.request_ids,
+                    outcome,
+                    now,
+                )
+                if isinstance(result, Failure):
+                    raise DecisionRejectedError(result)
+            _audit_confirmation(conn, decisions, context, plan_id, outcome, now)
+    except (DecisionRejectedError, psycopg.Error):
+        return Failure("Unavailable", "C05.CONFIRMATION_AUDIT_UNAVAILABLE")
+    return failure
 
 
 def _commit_confirmation(
@@ -134,6 +195,7 @@ def _commit_confirmation(
            values (%s,%s,%s,%s,%s,%s,%s)""",
         (*caller, plan_id, expected_version, plan.version),
     )
+    _audit_confirmation(conn, decisions, context, plan_id, Outcome.OK, now)
     return Ok(_Confirmation(plan, correlation_id, event_id))
 
 
@@ -148,40 +210,46 @@ def confirm_plan(
     key: str,
 ) -> Result[Plan]:
     if isinstance(require_role(context, "operator"), Failure):
-        return Failure("Forbidden", "C05.OPERATOR_REQUIRED")
-    if run_scope.scope != "simulation":
-        return Failure("NotFound", "C05.PLAN_NOT_FOUND")
-    if not key.strip() or len(key) > 200 or expected_version < 1:
-        return Failure("Invalid", "C05.INVALID_CONFIRMATION")
+        failure = Failure("Forbidden", "C05.OPERATOR_REQUIRED")
+    elif run_scope.scope != "simulation":
+        failure = Failure("NotFound", "C05.PLAN_NOT_FOUND")
+    elif not key.strip() or len(key) > 200 or expected_version < 1:
+        failure = Failure("Invalid", "C05.INVALID_CONFIRMATION")
+    else:
+        failure = None
+    if failure:
+        return reject_confirmation(store, decisions, clock, context, plan_id, failure)
     try:
-        try:
-            with store.transaction() as conn:
-                result = _commit_confirmation(
-                    conn,
-                    context,
-                    run_scope,
-                    plan_id,
-                    expected_version,
-                    key,
-                    decisions,
-                    clock,
-                )
-        except _DeliveryRejectedError as rejected:
-            with store.transaction() as audit_conn:
-                audit = deliveries.audit_link(
-                    audit_conn,
-                    decisions,
-                    rejected.ctx,
-                    plan_id,
-                    rejected.plan.request_ids,
-                    Outcome(rejected.failure.kind),
-                    clock(),
-                )
-            return audit if isinstance(audit, Failure) else rejected.failure
+        with store.transaction() as conn:
+            result = _commit_confirmation(
+                conn,
+                context,
+                run_scope,
+                plan_id,
+                expected_version,
+                key,
+                decisions,
+                clock,
+            )
+            if isinstance(result, Failure):
+                raise DecisionRejectedError(result)
+    except _DeliveryRejectedError as rejected:
+        return reject_confirmation(
+            store, decisions, clock, context, plan_id, rejected.failure, rejected
+        )
+    except DecisionRejectedError as rejected:
+        return reject_confirmation(
+            store, decisions, clock, context, plan_id, rejected.failure
+        )
     except psycopg.Error:
-        return Failure("Unavailable", "C05.CONFIRMATION_UNAVAILABLE")
-    if isinstance(result, Failure):
-        return result
+        return reject_confirmation(
+            store,
+            decisions,
+            clock,
+            context,
+            plan_id,
+            Failure("Unavailable", "C05.CONFIRMATION_UNAVAILABLE"),
+        )
     committed = result.value
     trace = {
         "component": "C05",

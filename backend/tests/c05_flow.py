@@ -21,6 +21,7 @@ class Flow:
     plan: Plan
     trace: UUID
     headers: dict[str, str]
+    operator: UUID
 
     def confirm(self, **changes):
         body = {
@@ -84,4 +85,4 @@ def flow(example, test_database_url):
             "X-Correlation-ID": str(trace),
             "X-Acting-Provider": str(provider),
         }
-        yield Flow(client, result.value, trace, headers)
+        yield Flow(client, result.value, trace, headers, operator)

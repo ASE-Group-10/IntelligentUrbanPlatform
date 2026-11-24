@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import UUID4, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from app.infrastructure.errors import APIError, correlation_id
 from app.integrations.identity import authenticate
@@ -46,6 +47,40 @@ _ERROR_CODES = {
 }
 
 
+def _confirmation_actor(
+    request: Request, context: Annotated[AuthContext, Depends(authenticate)]
+) -> AuthContext:
+    # Typed body/path/header validation can reject a request before the handler.
+    request.state.confirmation_actor = context
+    return context
+
+
+def _requested_plan_id(request: Request) -> UUID | None:
+    # Only store a well-formed identifier supplied by this caller, never raw input.
+    try:
+        plan_id = UUID(request.path_params["planId"])
+    except ValueError:
+        return None
+    return plan_id if plan_id.version == 4 else None
+
+
+def _confirmation_error(result: Failure) -> APIError:
+    status = {
+        "Invalid": 400,
+        "Forbidden": 403,
+        "NotFound": 404,
+        "Conflict": 409,
+    }.get(result.kind, 503)
+    message = {
+        400: "Invalid confirmation request.",
+        403: "Operator access is required.",
+        404: "The plan or one of its deliveries was not found in this scope.",
+        409: "Confirmation conflicts with current state. Reload the plan.",
+        503: "Confirmation is unavailable. Retry with the same key.",
+    }[status]
+    return APIError(status, _ERROR_CODES[status], message)
+
+
 class PlanningRoute(APIRoute):
     """Translate shared identity and validation errors to the C05 HTTP contract."""
 
@@ -60,6 +95,16 @@ class PlanningRoute(APIRoute):
                     400,
                     "Check the plan identifier, scope and required fields.",
                 )
+                actor = getattr(request.state, "confirmation_actor", None)
+                if actor is not None:
+                    result = await run_in_threadpool(
+                        request.app.state.planning.reject_confirmation,
+                        actor,
+                        _requested_plan_id(request),
+                        Failure("Invalid", "C05.INVALID_CONFIRMATION"),
+                    )
+                    error = _confirmation_error(result)
+                    status, message = error.status, error.message
             except APIError as exc:
                 status = 400 if exc.status == 422 else exc.status
                 message = exc.message
@@ -134,25 +179,20 @@ def confirm_plan(
     plan_id: Annotated[UUID4, Path(alias="planId")],
     command: ConfirmationRequest,
     key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
-    context: Annotated[AuthContext, Depends(authenticate)],
+    context: Annotated[AuthContext, Depends(_confirmation_actor)],
 ) -> Plan:
-    require_run_access(request, command.run_scope.run_id)
+    try:
+        require_run_access(request, command.run_scope.run_id)
+    except APIError as exc:
+        result = request.app.state.planning.reject_confirmation(
+            context, plan_id, Failure("Forbidden", "C05.RUN_FORBIDDEN")
+        )
+        if result.kind == "Unavailable":
+            raise _confirmation_error(result) from exc
+        raise
     result = request.app.state.planning.confirm_plan(
         context, command.run_scope, plan_id, command.expected_version, key
     )
     if isinstance(result, Failure):
-        status = {
-            "Invalid": 400,
-            "Forbidden": 403,
-            "NotFound": 404,
-            "Conflict": 409,
-        }.get(result.kind, 503)
-        message = {
-            400: "Invalid confirmation request.",
-            403: "Operator access is required.",
-            404: "The plan or one of its deliveries was not found in this scope.",
-            409: "Confirmation conflicts with current state. Reload the plan.",
-            503: "Confirmation is unavailable. Retry with the same key.",
-        }[status]
-        raise APIError(status, _ERROR_CODES[status], message)
+        raise _confirmation_error(result)
     return result.value

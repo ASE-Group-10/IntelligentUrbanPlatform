@@ -82,6 +82,14 @@ class PlanningService:
             key,
         )
 
+    def reject_confirmation(
+        self, context: OperatorContext, plan_id: UUID | None, failure: Failure
+    ) -> Failure:
+        """Audit an authenticated HTTP rejection using only the requested target."""
+        return confirmation.reject_confirmation(
+            self._store, self._decisions, self._clock, context, plan_id, failure
+        )
+
     def generate_plan(
         self,
         delivery: SavedDelivery,
