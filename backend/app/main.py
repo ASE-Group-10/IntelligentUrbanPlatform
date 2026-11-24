@@ -14,6 +14,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.components.c02_identity_access.tokens import SupabaseVerifier
+from app.components.c04_delivery_management.router import router as deliveries_router
+from app.components.c04_delivery_management.service import DeliveryService
+from app.components.c05_planning.delivery_gateway import DeliveryPlanningGateway
+from app.components.c05_planning.router import router as planning_router
+from app.components.c05_planning.service import PlanningService
+from app.components.c05_planning.store import PostgresPlanStore
 from app.components.c06_city_monitoring.ingestion import CityMonitoring
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
 from app.components.c06_city_monitoring.router import libpq_url
@@ -23,15 +29,24 @@ from app.components.c07_disruption_detection.postgres_store import (
 )
 from app.components.c07_disruption_detection.router import router as disruptions_router
 from app.components.c08_allocation.router import router as allocation_router
+from app.components.c09_logistics_knowledge.demo_corpus import DEMO_ZONES
+from app.components.c09_logistics_knowledge.postgres_store import (
+    PostgresKnowledgeStore,
+)
+from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
+from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
+from app.components.c10_decision_records.service import DecisionRecords
 from app.components.c11_kpi_analytics.router import router as analytics_router
 from app.components.c12_simulation_replay.router import router as replay_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
+from app.demo.feed import load_scenario
 from app.infrastructure.database import make_engine
 from app.infrastructure.errors import APIError, api_error_handler
 from app.integrations.identity import router as identity_router
 from app.integrations.mocks import LOCATIONS
+from app.shared.logging import configure_logging
 
 STATIC = Path(__file__).parent / "static"
 logger = logging.getLogger("urban.resources")
@@ -44,10 +59,13 @@ def create_app(
     identity_verifier=None,
     city_state_store=None,
     disruption_store=None,
+    deliveries=None,
+    planning_gateway=None,
     clock=None,
 ):
     @asynccontextmanager
     async def lifespan(app):
+        configure_logging("API")
         app.state.settings = settings or get_settings()
         if not app.state.settings.mock_dependencies:
             raise RuntimeError(
@@ -57,9 +75,10 @@ def create_app(
         app.state.identity_verifier = identity_verifier or (
             SupabaseVerifier(str(project_url)) if project_url else None
         )
-        app.state.engine = engine or make_engine(
-            app.state.settings.database_url.get_secret_value()
-        )
+        database_url = app.state.settings.database_url.get_secret_value()
+        conninfo = libpq_url(database_url)
+        service_clock = clock or (lambda: datetime.now(UTC))
+        app.state.engine = engine or make_engine(database_url)
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
         )
@@ -68,14 +87,30 @@ def create_app(
             make_engine(replay_url.get_secret_value()) if replay_url else None
         )
         app.state.city_monitoring = CityMonitoring(
-            store=city_state_store
-            or PostgresCityStateStore(
-                libpq_url(app.state.settings.database_url.get_secret_value())
-            ),
-            clock=clock or (lambda: datetime.now(UTC)),
+            store=city_state_store or PostgresCityStateStore(conninfo),
+            clock=service_clock,
         )
         app.state.disruption_store = disruption_store or PostgresDisruptionStore(
-            libpq_url(app.state.settings.database_url.get_secret_value())
+            conninfo
+        )
+        # C09 runs in-process; C05 calls app.state.knowledge.query_knowledge
+        app.state.knowledge = LogisticsKnowledge(
+            PostgresKnowledgeStore(conninfo, DEMO_ZONES),
+            clock=service_clock,
+        )
+        app.state.dublin_scenario = load_scenario()
+        app.state.planning = PlanningService(
+            PostgresPlanStore(conninfo),
+            app.state.knowledge,
+            DecisionRecords(PostgresDecisionStore(), clock=service_clock),
+            app.state.dublin_scenario,
+            clock=service_clock,
+        )
+        app.state.deliveries = deliveries or DeliveryService(
+            app.state.engine,
+            planning_gateway=planning_gateway
+            or DeliveryPlanningGateway(app.state.planning),
+            clock=service_clock,
         )
         yield
         if app.state.replay_engine is not None:
@@ -87,7 +122,8 @@ def create_app(
         title="Urban Logistics · UC01 Resource API",
         version="0.1.0",
         description="C02 identity, persistent resources, mock mapping and C08. "
-        "C10 uses a durable audit stand-in. Events stay in an unpublished outbox.",
+        "C05 generates simulation proposals with C09 policy evidence and C10 "
+        "decision records. Resource registration uses a durable audit stand-in.",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -168,8 +204,10 @@ def create_app(
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.include_router(allocation_router)
+    app.include_router(planning_router)
     app.include_router(identity_router)
     app.include_router(router)
+    app.include_router(deliveries_router)
     app.include_router(city_state_router)
     app.include_router(analytics_router)
     app.include_router(replay_router)

@@ -8,7 +8,7 @@ from uuid import uuid4
 from sqlalchemy import Column, Table, Uuid, insert, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.components.c11_kpi_analytics.store import delivery_facts
+from app.components.c11_kpi_analytics.store import delivery_facts, delivery_provider
 from app.components.c12_simulation_replay.contracts import (
     Checkpoint,
     RecordingRecord,
@@ -100,8 +100,15 @@ class CaptureRecorder:
 
                 try:
                     delivery_facts(event)
+                    provider_id = delivery_provider(event)
                 except (KeyError, ValueError, TypeError):
                     return reject("Unusable C04 outcome")
+                if provider_id is None:
+                    return reject("Missing authoritative C04 providerId")
+                if provider_id != row["provider_id"]:
+                    # A shared simulation can contain other providers' deliveries.
+                    # Never record their state into this provider's saved archive.
+                    return "ack"
                 value = event.model_dump(mode="json")
                 for old in body["events"]:
                     if old["event_id"] == str(event.event_id):

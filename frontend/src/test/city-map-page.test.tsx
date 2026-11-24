@@ -74,7 +74,7 @@ function stubApi() {
   return snapshotAuth;
 }
 
-async function renderMap(signedIn: boolean) {
+async function renderMap(signedIn: boolean, path = "/") {
   auth.onAuthStateChange.mockImplementation((callback) => {
     callback("INITIAL_SESSION", signedIn ? session : null);
     return { data: { subscription: { unsubscribe: vi.fn() } } };
@@ -84,7 +84,7 @@ async function renderMap(signedIn: boolean) {
   const router = createRouter({
     routeTree,
     context: { queryClient },
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries: [path] }),
   });
   render(
     <ThemeProvider>
@@ -116,5 +116,23 @@ describe("City map page", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/sign in/i);
     expect(snapshotAuth.every((value) => value === null)).toBe(true);
+  });
+
+  it("opens with the road from ?segment= selected", async () => {
+    stubApi();
+
+    await renderMap(true, "/?segment=seg:4471023");
+
+    const details = await screen.findByRole("region", { name: "Eden Quay" });
+    expect(details).toHaveTextContent("Closed");
+    expect(details).toHaveTextContent("roadworks");
+  });
+
+  it("ignores a malformed ?segment=", async () => {
+    stubApi();
+
+    await renderMap(true, "/?segment=not-a-segment");
+
+    expect(await screen.findByText(/Click a road to see its details/)).toBeInTheDocument();
   });
 });

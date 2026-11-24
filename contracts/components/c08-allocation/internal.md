@@ -22,9 +22,18 @@ finalisation and UC08 negotiation are internal C08 operations.
 - The C05 [confirmed simulation v3](../c05-planning/examples/confirmed-plan.json)
   and [route-only revision event v4](../c05-planning/examples/plan-ready-revision-event.json) share a
   plan and run ID. The route and schedule are read from the saved C05 version
-  for that run. The requirements stay the same; C08 reuses commitments that
+  for that run. The [C05 lookup](../c05-planning/internal.md#planning-and-persistence-rules)
+  supplies the delivery's route and offset-aware `plannedDepartureAt` together
+  from the same confirmed version. The requirements stay the same; C08 reuses commitments that
   still fit the revised route and schedule and checks that the plan version
   is current before committing resources.
+  For the single-vehicle slice C08 verifies the confirmed revision, driver,
+  resource need, eligibility, remaining capacity, route distance and operating
+  hours. A compatible revision preserves the offer and any driver acceptance.
+  If C08 cannot verify the commitment (including restrictions without matching
+  route evidence), it records `unresolved` and releases capacity in the same
+  transaction. The operator can see the unresolved assignment in C01. Selection
+  of a replacement and notification of C07 are pending cross-component work.
 - `ResourceAvailabilityChanged` uses [C03's producer contract](../c03-resource-management/events.yaml).
   UC04 checks whether the change affects the vehicle selected for a pending
   assignment. See the [C03 availability example](examples/resource-availability-changed-event.json).

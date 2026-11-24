@@ -32,7 +32,14 @@ def make_consumer(store, url, exchange=DEFAULT_EXCHANGE, queue=QUEUE):
         result = store.consume(event)
         level = (
             logging.WARNING
-            if result in {"ineligible vehicle", "insufficient capacity"}
+            if result
+            in {
+                "ineligible vehicle",
+                "insufficient capacity",
+                "unresolved",
+                "event differs from saved plan",
+                "incompatible route",
+            }
             else logging.INFO
         )
         log.log(level, "PlanReady: %s", result, extra=trace(event))

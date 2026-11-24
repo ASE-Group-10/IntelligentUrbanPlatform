@@ -8,6 +8,12 @@ proposal's no-runtime/no-database statements below. No completed paired session 
 full thin-slice integration is claimed. C11 values remain unavailable until metric
 formulas are agreed; C12 C04-only captures remain explicitly incomplete.
 
+Current capture requires authoritative C04 `payload.providerId` matching the
+explicitly registered run provider; other providers' outcomes are not recorded.
+Root local Compose starts both workers and provisions a restricted local playback
+login outside shared database migrations. Shared/deployed credentials remain
+separately provisioned by the database owner.
+
 
 Original contract proposal (historical context; current runtime noted above). Follows #35/#46;
 HTTP publication is tracked by #48. Pair: Jolin + Qingyuan. Requested HTTP reviewers:

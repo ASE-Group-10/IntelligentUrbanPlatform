@@ -1,7 +1,7 @@
-# Add to the shared stack AFTER #79 (backend/Dockerfile, api and migrate).
+# Optional synthetic demo only. Workers/setup now live in docker-compose.yml.
 # docker compose -f docker-compose.yml -f compose.c11-c12.yml up -d --build
-# Reuses #79's image. Does not replace or copy another pair's Compose services.
-x-analytics-worker: &analytics-worker
+# Reuses the shared image, never starts a second worker for the same queue.
+x-analytics-demo: &analytics-demo
   image: ulop-backend:dev
   restart: unless-stopped
   environment: &analytics-env
@@ -17,16 +17,8 @@ x-analytics-worker: &analytics-worker
       condition: service_healthy
 
 services:
-  c11-worker:
-    <<: *analytics-worker
-    command: ["python", "-m", "app.components.c11_kpi_analytics.worker"]
-
-  c12-worker:
-    <<: *analytics-worker
-    command: ["python", "-m", "app.components.c12_simulation_replay.worker"]
-
   analytics-demo:
-    <<: *analytics-worker
+    <<: *analytics-demo
     profiles: ["demo"]
     restart: "no"
     entrypoint: ["python", "-m", "app.components.analytics_demo"]

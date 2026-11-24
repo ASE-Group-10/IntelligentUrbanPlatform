@@ -10,7 +10,7 @@ interface Assignment {
   assignmentRef: string;
   offerId: string | null;
   resourceName: string;
-  status: "allocated" | "offered" | "accepted" | "rejected";
+  status: "allocated" | "offered" | "accepted" | "rejected" | "unresolved";
   canOffer: boolean;
   canRespond: boolean;
 }
@@ -19,10 +19,16 @@ const statusLabel = {
   offered: "Awaiting driver response",
   accepted: "Driver accepted",
   rejected: "Driver declined",
+  unresolved: "Revised plan needs a new allocation",
 };
 type Action = "offer" | "accept" | "reject";
 
-export function AssignmentList({ providerId, request, runId }: ResourceScope & { runId?: string }) {
+export function AssignmentList({
+  providerId,
+  request,
+  runId,
+  confirmedPlan,
+}: ResourceScope & { runId?: string; confirmedPlan?: Pick<Assignment, "planId" | "planVersion"> }) {
   const query = runId ? `?runId=${encodeURIComponent(runId)}` : "";
   const [rows, setRows] = useState<Assignment[]>([]);
   const [revision, setRevision] = useState(0);
@@ -31,6 +37,11 @@ export function AssignmentList({ providerId, request, runId }: ResourceScope & {
   const [error, setError] = useState("");
   const scope = useRef(new AbortController());
   const keys = useRef(new Map<string, string>());
+  const awaitingAllocation =
+    confirmedPlan &&
+    !rows.some(
+      (row) => row.planId === confirmedPlan.planId && row.planVersion >= confirmedPlan.planVersion,
+    );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,7 +86,7 @@ export function AssignmentList({ providerId, request, runId }: ResourceScope & {
 
   async function submit(row: Assignment, action: Action) {
     const { signal } = scope.current;
-    const key = row.assignmentRef + action;
+    const key = `${row.assignmentRef}:${row.planVersion}:${action}`;
     const idempotencyKey = keys.current.get(key) ?? crypto.randomUUID();
     keys.current.set(key, idempotencyKey);
     setBusy(true);
@@ -135,6 +146,10 @@ export function AssignmentList({ providerId, request, runId }: ResourceScope & {
       )}
       {loading ? (
         <p role="status">Loading assignments…</p>
+      ) : awaitingAllocation && !error ? (
+        <p role="status">
+          No vehicle assignment for this plan version yet. Refresh to check for updates.
+        </p>
       ) : (
         !rows.length && !error && <p>No vehicle assignments for this provider.</p>
       )}

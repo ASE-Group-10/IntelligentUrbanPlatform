@@ -18,7 +18,7 @@ from sqlalchemy import select
 from app.components.analytics_admin import uuid4 as uuid4_argument
 from app.components.analytics_verify import LocalAPI, verify_http
 from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
-from app.components.c11_kpi_analytics.store import ObservationStore, observations
+from app.components.c11_kpi_analytics.store import observations
 from app.components.c11_kpi_analytics.worker import make_consumer as c11_consumer
 from app.components.c12_simulation_replay.recording import CaptureRecorder, captures
 from app.components.c12_simulation_replay.worker import make_consumer as c12_consumer
@@ -29,7 +29,7 @@ from app.shared.events import DEFAULT_EXCHANGE
 from app.shared.logging import configure_logging
 
 
-def fixture_events(run_id, delivery_id, correlation_id, now):
+def fixture_events(run_id, delivery_id, correlation_id, now, provider_id):
     """Two labelled synthetic outcomes, one trace and an explicit causal chain."""
     folder = (
         Path(__file__).resolve().parents[3]
@@ -52,7 +52,11 @@ def fixture_events(run_id, delivery_id, correlation_id, now):
             entityVersions={str(delivery_id): version},
         )
         payload = raw["payload"]
-        payload.update(deliveryId=str(delivery_id), deliveryVersion=version)
+        payload.update(
+            deliveryId=str(delivery_id),
+            deliveryVersion=version,
+            providerId=str(provider_id),
+        )
         payload["delivery"].update(deliveryId=str(delivery_id), version=version)
         payload["delivery"]["progress"]["updatedAt"] = when.isoformat()
         events.append(EventEnvelope.model_validate(raw))
@@ -131,13 +135,12 @@ def main():
         broker, exchange=os.environ.get("RABBITMQ_EXCHANGE", DEFAULT_EXCHANGE)
     )
     delivery_id = uuid4()
-    events = fixture_events(args.run_id, delivery_id, correlation_id, now)
+    events = fixture_events(
+        args.run_id, delivery_id, correlation_id, now, args.provider_id
+    )
     try:
         for subscriber in subscribers:
             subscriber.declare()
-        ObservationStore(engine).bind_delivery(
-            args.provider_id, delivery_id, "simulation", args.run_id
-        )
         for message in events:
             publisher.publish(message)
         if not args.external_workers:

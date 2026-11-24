@@ -7,7 +7,7 @@ info:
     CityStateUpdated below remains a proposed input, not an implemented subscription.
     Preserves the #15/#22 review gate while adopting the component layout (#35).
     C06 owns CityStateUpdated; this consumer references that definition unchanged.
-    C04/C05/C08 operational event types and C10 access contracts remain pending
+    C05/C08 operational event consumption and C10 access contracts remain pending
     producer/consumer agreement. No substitute message definitions are invented.
     See internal.md for service boundaries, limitations and remaining agreements.
     C12 publishes no event under this proposal.
@@ -24,8 +24,9 @@ channels:
     address: ulop.events
     description: >-
       Queue c12.delivery-recordings. Receives C04-owned version 1 delivery outcomes.
-      C11 preserves unbound observations privately until trusted provider binding.
-      C12 records only explicitly registered simulation runs; captured coverage is
+      C11 binds authoritative C04 payload.providerId atomically; legacy unbound
+      observations stay private. C12 records only explicitly registered simulation
+      runs and matching providerId; captured coverage is
       C04-only and is labelled incomplete. Playback has no broker input/output.
     messages:
       submitted:

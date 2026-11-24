@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from pydantic import TypeAdapter
+from pydantic import UUID4, TypeAdapter
 from sqlalchemy import (
     JSON,
     Column,
@@ -78,8 +78,8 @@ def scope_key(scope, run_id):
 def delivery_facts(event):
     """Validate only the consumer's required facts; C04 owns the full schema.
 
-    This private input projection is not a replacement producer DTO. No provider
-    ID is inferred from untrusted payload fields or the user's selected provider.
+    This private input projection is not a replacement producer DTO. Ownership
+    comes only from C04's authoritative providerId, never the UI selection.
     """
     if (
         event.producer != "C04"
@@ -134,6 +134,33 @@ def delivery_facts(event):
     )
 
 
+def delivery_provider(event):
+    """Missing legacy ownership stays unbound; malformed ownership is rejected."""
+    if "providerId" not in event.payload:
+        return None
+    return TypeAdapter(UUID4).validate_python(event.payload["providerId"])
+
+
+def bind_on_connection(conn, provider_id, delivery_id, key):
+    old = conn.execute(
+        select(bindings.c.provider_id).where(
+            bindings.c.scope_key == key, bindings.c.delivery_id == delivery_id
+        )
+    ).scalar_one_or_none()
+    if old is not None:
+        if old != provider_id:
+            raise ValueError("delivery ownership cannot be reassigned")
+        return
+    conn.execute(
+        insert(bindings).values(
+            scope_key=key,
+            delivery_id=delivery_id,
+            provider_id=provider_id,
+            created_at=datetime.now(UTC),
+        )
+    )
+
+
 class ObservationStore:
     def __init__(self, engine):
         self.engine = engine
@@ -141,6 +168,7 @@ class ObservationStore:
     def consume(self, event):
         try:
             delivery_id, version, occurred, facts = delivery_facts(event)
+            provider_id = delivery_provider(event)
         except (ValueError, KeyError, TypeError):
             return "reject"
         digest = hashlib.sha256(
@@ -154,7 +182,17 @@ class ObservationStore:
                     )
                 ).scalar_one_or_none()
                 if old is not None:
-                    return "ack" if old == digest else "reject"
+                    if old != digest:
+                        return "reject"
+                if provider_id is not None:
+                    bind_on_connection(
+                        conn,
+                        provider_id,
+                        delivery_id,
+                        scope_key(event.scope, event.run_id),
+                    )
+                if old is not None:
+                    return "ack"
                 conn.execute(
                     insert(observations).values(
                         event_id=event.event_id,
@@ -168,6 +206,8 @@ class ObservationStore:
                     )
                 )
             return "ack"
+        except ValueError:
+            return "reject"  # conflicting ownership rolls back the whole outcome
         except IntegrityError:
             # Concurrent duplicate: retry after the winning transaction commits.
             return "retry"
@@ -177,28 +217,12 @@ class ObservationStore:
     def bind_delivery(self, provider_id, delivery_id, scope, run_id):
         """Trusted operator-only mapping, immutable once established.
 
-        No public write endpoint exists. Until C04 publishes authoritative provider
-        ownership, an unbound observation cannot be exposed to any provider.
+        No public write endpoint exists. This remains available for trusted legacy
+        imports. Current C04 events bind atomically during ingestion.
         """
         key = scope_key(scope, run_id)
         with self.engine.begin() as conn:
-            old = conn.execute(
-                select(bindings.c.provider_id).where(
-                    bindings.c.scope_key == key, bindings.c.delivery_id == delivery_id
-                )
-            ).scalar_one_or_none()
-            if old is not None:
-                if old != provider_id:
-                    raise ValueError("delivery ownership cannot be reassigned")
-                return
-            conn.execute(
-                insert(bindings).values(
-                    scope_key=key,
-                    delivery_id=delivery_id,
-                    provider_id=provider_id,
-                    created_at=datetime.now(UTC),
-                )
-            )
+            bind_on_connection(conn, provider_id, delivery_id, key)
 
 
 class ObservationSource:

@@ -144,8 +144,11 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
     from app.components.analytics_verify import verify_http
     from app.components.c06_city_monitoring.publisher import RabbitMQPublisher
     from app.components.c11_kpi_analytics import worker as c11_worker
-    from app.components.c11_kpi_analytics.store import ObservationStore
     from app.components.c12_simulation_replay import worker as c12_worker
+    from app.components.c12_simulation_replay.local_setup import (
+        LOCAL_PASSWORD,
+        provision,
+    )
     from app.components.c12_simulation_replay.recording import CaptureRecorder
     from app.shared.auth import AuthContext
     from tests.test_c11_c12_integration import client
@@ -164,13 +167,15 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
     )
     context = context.model_copy(update={"provider_ids": [context.acting_provider_id]})
     now, run_id, delivery_id = datetime.now(UTC), uuid4(), uuid4()
-    events = fixture_events(run_id, delivery_id, context.correlation_id, now)
+    events = fixture_events(
+        run_id, delivery_id, context.correlation_id, now, context.acting_provider_id
+    )
     exchange = "analytics.trace." + uuid4().hex
     queues = {
         exchange + ".c11": [e.event_type for e in events],
         exchange + ".c12": [e.event_type for e in events],
     }
-    store, recorder = ObservationStore(engine), CaptureRecorder(engine)
+    recorder = CaptureRecorder(engine)
     monkeypatch.setenv("RABBITMQ_EXCHANGE", exchange)
     # Isolate test queues, but use the actual worker factories/configuration.
     consumers = []
@@ -183,6 +188,10 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
     # The publisher must not create subscriber bindings: routing now proves
     # that each worker read RABBITMQ_EXCHANGE and declared its own binding.
     publisher = RabbitMQPublisher(broker, exchange)
+    playback_role = "replay_login_test_" + uuid4().hex
+    restricted = create_engine(
+        engine.url.set(username=playback_role, password=LOCAL_PASSWORD)
+    )
     try:
         for consumer in consumers:
             consumer.declare()
@@ -193,9 +202,6 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
             {"initialState": {"deliveries": {}}},
             True,
         )
-        store.bind_delivery(
-            context.acting_provider_id, delivery_id, "simulation", run_id
-        )
         for event in events:
             publisher.publish(event)
             publisher.publish(event)  # both consumers must deduplicate retries
@@ -203,6 +209,17 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
             assert consumer.consume_available(max_messages=4) == 4
         wait_for_recording(engine, run_id, events, timeout=0)
         recorder.seal(run_id, now + timedelta(minutes=1))
+        import psycopg
+
+        # The exact Compose provisioning path is repeatable, uses a real login,
+        # and supplies the HTTP adapter's separate restricted replay connection.
+        for _ in range(2):
+            with psycopg.connect(test_database_url) as conn:
+                provision(conn, role=playback_role, expected_database="ulop_test")
+        with restricted.connect() as conn:
+            assert (
+                conn.execute(text("SELECT current_user")).scalar_one() == playback_role
+            )
 
         def live_snapshot():
             with engine.connect() as conn:
@@ -229,7 +246,7 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
             pytest.fail("Replay attempted to publish an event")
 
         monkeypatch.setattr(RabbitMQPublisher, "publish", no_publish)
-        with client(engine, context) as http:
+        with client(engine, context, replay_engine=restricted) as http:
             http.app.state.settings.shared_run_ids = (run_id,)
 
             def call(method, path, body=None, key=None):
@@ -244,7 +261,35 @@ def test_real_broker_c04_trace_is_recorded_and_replayed_without_live_changes(
 
             verify_http(call, context.acting_provider_id, run_id, events, now)
         assert live_snapshot() == before
+        for table, column in [
+            ("c12_simulation_replay.runs", "archive"),
+            ("c12_simulation_replay.captures", "body"),
+            ("c04_delivery_management.deliveries", "version"),
+            ("c08_allocation.allocations", "status"),
+        ]:
+            with pytest.raises(DBAPIError), restricted.begin() as conn:
+                conn.execute(
+                    text(f"UPDATE {table} SET {column} = {column} WHERE false")
+                )
+        # An unexpected existing grant must abort setup rather than silently
+        # treating a broader login as the least-privilege playback identity.
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "GRANT SELECT ON c04_delivery_management.deliveries "
+                f'TO "{playback_role}"'
+            )
+        with pytest.raises(ValueError, match="unexpected component access"):
+            with psycopg.connect(test_database_url) as conn:
+                provision(conn, role=playback_role, expected_database="ulop_test")
     finally:
+        restricted.dispose()
+        with engine.begin() as conn:
+            if conn.execute(
+                text("select 1 from pg_roles where rolname = :role"),
+                {"role": playback_role},
+            ).first():
+                conn.exec_driver_sql(f'DROP OWNED BY "{playback_role}"')
+                conn.exec_driver_sql(f'DROP ROLE "{playback_role}"')
         publisher.close()
         for consumer in consumers:
             consumer.close()

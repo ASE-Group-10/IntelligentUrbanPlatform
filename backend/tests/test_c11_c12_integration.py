@@ -92,7 +92,7 @@ def context():
     )
 
 
-def source_event():
+def source_event(*, provider_id=None):
     import json
 
     path = (
@@ -100,7 +100,12 @@ def source_event():
         / "contracts/components/c04-delivery-management/examples"
         / "delivery-progress-changed-event.json"
     )
-    return EventEnvelope.model_validate(json.loads(path.read_text()))
+    raw = json.loads(path.read_text())
+    # Keep explicit legacy fixtures independent of the producer's #126 examples.
+    raw["payload"].pop("providerId", None)
+    if provider_id is not None:
+        raw["payload"]["providerId"] = str(provider_id)
+    return EventEnvelope.model_validate(raw)
 
 
 def query(context):
@@ -201,6 +206,7 @@ def test_provider_binding_and_run_scope_cannot_widen_reads(integration_engine, c
         .value.records
         == []
     )
+
     q = query(context)
     q.scope.scope, q.scope.run_id = "simulation", uuid4()
     assert (
@@ -209,6 +215,59 @@ def test_provider_binding_and_run_scope_cannot_widen_reads(integration_engine, c
         .value.records
         == []
     )
+
+
+def test_c04_provider_binds_atomically_and_cannot_be_reassigned(
+    integration_engine, context
+):
+    event = source_event(provider_id=context.acting_provider_id)
+    store = ObservationStore(integration_engine)
+    assert store.consume(event) == store.consume(event) == "ack"
+    page = (
+        ObservationSource(integration_engine)
+        .breakdown(query(context), "delivery-time", 20, None)
+        .value
+    )
+    assert page.source_event_ids == [event.event_id]
+    other = event.model_copy(deep=True)
+    other.event_id = uuid4()
+    other.payload["providerId"] = str(uuid4())
+    assert store.consume(other) == "reject"
+    invalid = event.model_copy(deep=True)
+    invalid.event_id = uuid4()
+    invalid.payload["providerId"] = "not-a-provider"
+    assert store.consume(invalid) == "reject"
+    with integration_engine.connect() as conn:
+        assert conn.execute(select(observations.c.event_id)).scalars().all() == [
+            event.event_id
+        ]
+
+
+def test_c12_shared_run_does_not_capture_another_providers_delivery(
+    integration_engine, context
+):
+    from app.components.c12_simulation_replay.persistence import runs
+
+    event = source_event(provider_id=context.acting_provider_id)
+    event.scope, event.run_id = "simulation", uuid4()
+    recorder = CaptureRecorder(integration_engine)
+    recorder.begin(
+        event.run_id,
+        context.acting_provider_id,
+        event.observed_at - timedelta(minutes=1),
+        {"initialState": {}},
+        True,
+    )
+    foreign = event.model_copy(deep=True)
+    foreign.event_id = uuid4()
+    foreign.payload["providerId"] = str(uuid4())
+    assert recorder.consume(foreign) == "ack"
+    assert recorder.consume(event) == "ack"
+    recorder.seal(event.run_id, event.observed_at + timedelta(minutes=1))
+    with integration_engine.connect() as conn:
+        archive = conn.execute(select(runs.c.archive)).scalar_one()
+    assert len(archive["steps"]) == 1
+    assert archive["steps"][0]["record"]["event"]["event_id"] == str(event.event_id)
 
 
 def test_replay_survives_repository_restart_and_checks_idempotency(
@@ -251,10 +310,10 @@ def test_replay_survives_repository_restart_and_checks_idempotency(
     assert restarted.operate(other_provider, frame.session_id).kind == "NotFound"
 
 
-def client(engine, context):
+def client(engine, context, replay_engine=None):
     app = FastAPI()
     app.state.engine = engine
-    app.state.replay_engine = engine  # SQL role isolation is tested on Postgres below.
+    app.state.replay_engine = replay_engine if replay_engine is not None else engine
     app.state.settings = type("Settings", (), {"shared_run_ids": ()})()
     app.dependency_overrides[authenticate] = lambda: context
 
@@ -277,7 +336,9 @@ def test_synthetic_trace_verifies_http_and_fails_if_a_worker_is_missing(
 
     now = datetime.now(UTC)
     run_id = uuid4()
-    events = fixture_events(run_id, uuid4(), context.correlation_id, now)
+    events = fixture_events(
+        run_id, uuid4(), context.correlation_id, now, context.acting_provider_id
+    )
     assert {e.correlation_id for e in events} == {context.correlation_id}
     assert events[1].causation_id == events[0].event_id
     recorder = CaptureRecorder(integration_engine)
@@ -289,7 +350,6 @@ def test_synthetic_trace_verifies_http_and_fails_if_a_worker_is_missing(
         True,
     )
     store = ObservationStore(integration_engine)
-    bind(store, events[0], context)
     for event in events:
         assert store.consume(event) == "ack"
     with pytest.raises(RuntimeError, match="worker evidence missing"):
@@ -334,6 +394,8 @@ def test_app_keeps_disruptions_analytics_and_replay_routes_after_merge():
     from app.main import create_app
 
     paths = create_app().openapi()["paths"]
+    assert "post" in paths["/api/v1/deliveries"]
+    assert "post" in paths["/api/v1/plans/{planId}/confirmation"]
     assert "get" in paths["/api/v1/disruptions"]
     assert "post" in paths["/api/v1/analytics/kpis/query"]
     assert "get" in paths["/api/v1/simulation-runs"]
@@ -369,7 +431,7 @@ def test_capture_is_durable_scoped_and_explicitly_partial(integration_engine, co
     from datetime import timedelta
 
     recorder = CaptureRecorder(integration_engine)
-    event = source_event().model_copy(deep=True)
+    event = source_event(provider_id=context.acting_provider_id).model_copy(deep=True)
     event.scope, event.run_id = "simulation", uuid4()
     start = event.observed_at - timedelta(minutes=1)
     config = {"initialState": {"deliveries": {}}, "scenario": "synthetic-C04-only"}
@@ -406,7 +468,7 @@ def test_capture_with_conflicting_history_cannot_be_sealed(integration_engine, c
     from datetime import timedelta
 
     recorder = CaptureRecorder(integration_engine)
-    event = source_event().model_copy(deep=True)
+    event = source_event(provider_id=context.acting_provider_id).model_copy(deep=True)
     event.scope, event.run_id = "simulation", uuid4()
     recorder.begin(
         event.run_id,

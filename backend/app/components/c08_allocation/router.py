@@ -42,7 +42,7 @@ class AssignmentView(ContractModel):
     resource_id: UUID
     resource_name: str
     offer_id: UUID | None
-    status: Literal["allocated", "offered", "accepted", "rejected"]
+    status: Literal["allocated", "offered", "accepted", "rejected", "unresolved"]
     correlation_id: UUID
     can_offer: bool
     can_respond: bool
