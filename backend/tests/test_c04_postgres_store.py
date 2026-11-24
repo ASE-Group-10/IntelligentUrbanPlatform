@@ -110,6 +110,7 @@ def test_c04_postgres_submit_plan_link_and_progress(c04_database, example):
             events = conn.execute(select(c04_store.outbox)).mappings().all()
         assert len(events) == 2
         for row in events:
-            DeliveryEvent.model_validate(row["envelope"])
+            parsed = DeliveryEvent.model_validate(row["envelope"])
+            assert parsed.payload.provider_id == provider_id
     finally:
         engine.dispose()

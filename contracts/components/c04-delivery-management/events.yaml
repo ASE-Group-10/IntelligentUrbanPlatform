@@ -95,7 +95,7 @@ components:
       description: >-
         Typed payload for all C04 delivery events. Authoritative progress lives
         exclusively at payload.delivery.progress (never duplicated at top level).
-      required: [deliveryId, deliveryVersion, status, delivery]
+      required: [deliveryId, deliveryVersion, providerId, status, delivery]
       properties:
         deliveryId:
           type: string
@@ -103,6 +103,12 @@ components:
         deliveryVersion:
           type: integer
           minimum: 1
+        providerId:
+          type: string
+          format: uuid
+          description: >-
+            Authoritative logistics provider UUID owning this delivery request,
+            sourced from C04's authenticated provider scope.
         status:
           $ref: '#/components/schemas/DeliveryStatus'
         delivery:

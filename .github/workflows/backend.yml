@@ -7,6 +7,8 @@ on:
       - 'fixtures/**'
       - 'database/migrations/**'
       - 'scripts/**'
+      - 'docker-compose.yml'
+      - 'compose.walking-skeleton.yml'
       - '.dockerignore'
       - '.github/workflows/backend.yml'
   push:
@@ -16,6 +18,8 @@ on:
       - 'backend/**'
       - 'fixtures/**'
       - 'scripts/**'
+      - 'docker-compose.yml'
+      - 'compose.walking-skeleton.yml'
       - '.dockerignore'
       - '.github/workflows/backend.yml'
 
@@ -77,10 +81,80 @@ jobs:
       - name: Check backend formatting
         run: uv run --project backend ruff format --check --config backend/pyproject.toml backend scripts
 
+  compose-smoke:
+    name: Local walking-skeleton connections
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE_FILE: docker-compose.yml:compose.walking-skeleton.yml
+      COMPOSE_PROJECT_NAME: ulop-slice-${{ github.run_id }}-${{ github.run_attempt }}
+      API_PORT: '18000'
+      ULOP_API: http://127.0.0.1:18000
+      ULOP_TEST_IDENTITY: '1'
+      ULOP_ACTING_PROVIDER: 97c553b2-b1ca-4b68-893a-1de87ca13c12
+      SLICE_RUN: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
+      SLICE_TRACE: 835ffac5-9411-4f5f-87bf-a466a84bf820
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Prepare isolated test issuer
+        run: uv run --project backend --locked --python 3.12 python scripts/compose_identity.py prepare --folder .tmp/slice-auth
+      - name: Build and start the complete local stack
+        run: docker compose up -d --build --wait --wait-timeout 180
+      - name: Load the published synthetic C09 corpus
+        run: docker compose exec -T api python -m app.components.c09_logistics_knowledge.demo_corpus
+      - name: Create the test C02 memberships
+        run: |
+          docker compose exec -T -e ULOP_LOCAL_TRACE=1 -e ULOP_TEST_IDENTITY api \
+            python -m app.demo.analytics_trace seed-identity \
+            --principal-id 4c6a8532-956e-4aa9-a21c-de9cf9ca4c11 \
+            --provider-id "$ULOP_ACTING_PROVIDER" --run-id "$SLICE_RUN" \
+            --correlation-id "$SLICE_TRACE"
+      - name: Submit over real HTTP, publish, observe, record and replay
+        run: |
+          export ULOP_TOKEN="$(cat .tmp/slice-auth/token)"
+          docker compose exec -T -e ULOP_LOCAL_TRACE=1 -e ULOP_TEST_IDENTITY -e ULOP_TOKEN api \
+            python -m app.demo.analytics_trace run \
+            --provider-id "$ULOP_ACTING_PROVIDER" --run-id "$SLICE_RUN" \
+            --correlation-id "$SLICE_TRACE" > .tmp/analytics-proof.json
+          scripts/hello-world.sh --analytics-only --run-id "$SLICE_RUN" \
+            --correlation-id "$SLICE_TRACE" > .tmp/hello-analytics.txt
+          cat .tmp/hello-analytics.txt
+      - name: Missing evidence and stopped consumers must not pass
+        run: |
+          export ULOP_TOKEN="$(cat .tmp/slice-auth/token)"
+          if scripts/hello-world.sh --analytics-only \
+            --run-id 00000000-0000-4000-8000-000000000099 --correlation-id "$SLICE_TRACE"; then
+            echo 'Missing recorded trace incorrectly passed'; exit 1
+          fi
+          docker compose stop c11-worker
+          if scripts/hello-world.sh --analytics-only --run-id "$SLICE_RUN" \
+            --correlation-id "$SLICE_TRACE"; then
+            echo 'Stopped consumer incorrectly passed'; exit 1
+          fi
+      - name: Collect connection evidence
+        if: always()
+        run: |
+          docker compose ps -a > .tmp/compose-ps.txt
+          docker compose logs --no-color --tail 100 api c04-publisher c11-worker c12-worker c12-local-setup > .tmp/compose-smoke.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: walking-skeleton-connections
+          path: |
+            .tmp/analytics-proof.json
+            .tmp/hello-analytics.txt
+            .tmp/compose-ps.txt
+            .tmp/compose-smoke.log
+      - name: Remove this isolated test stack
+        if: always()
+        run: docker compose down -v --remove-orphans
+
   publish-image:
     name: Publish backend image
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    needs: backend
+    needs: [backend, compose-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -73,13 +73,13 @@ class LocalAPI:
             conn.close()
 
 
-def verify_http(call, provider_id, run_id, events, now):
+def verify_http(call, provider_id, run_id, events, now, period=None):
     """Fail if the C01-facing HTTP operations cannot see the same saved run.
 
     The caller supplies an authenticated transport. CI can supply a TestClient
     with an explicitly declared C02 double; that is not sign-in/deployment proof.
     """
-    period = {
+    period = period or {
         "start": (now - timedelta(minutes=2)).isoformat(),
         "end": (now + timedelta(minutes=1)).isoformat(),
     }
@@ -175,3 +175,9 @@ def verify_http(call, provider_id, run_id, events, now):
         call("GET", session_path) == frame,
         "C12 final frame did not persist",
     )
+    return {
+        "sessionId": frame["sessionId"],
+        "cursor": frame["cursor"],
+        "status": frame["status"],
+        "sourceEventIds": breakdown["sourceEventIds"],
+    }

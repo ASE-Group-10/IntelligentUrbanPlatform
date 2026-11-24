@@ -165,3 +165,47 @@ integration; the #72 agreed event set and same-trace live walkthrough; demo-depl
 login and broker isolation proof; complete C05/C08/C10 histories and metric agreements
 for later full functionality. The thin slice permits labelled simple logic and does
 not require polished UI or full KPI formulas. Both #16/#17 remain open.
+
+## Complete local connection check (integrated #126)
+
+The integration branch includes merged #126's real C04 outbox publisher. The
+existing backend workflow now also boots the whole local Compose stack, including
+the actual API, publishers, workers, PostgreSQL, RabbitMQ and local playback setup.
+`compose.walking-skeleton.yml` adds an explicitly test-only HTTPS/JWKS issuer:
+its keys/token are generated per run and never use personal/Supabase credentials.
+The normal API validates TLS, JWT signature/issuer/audience/expiry and C02 database
+memberships; no authentication dependency or consumer handler is replaced.
+This verifies authentication wiring, not the hosted Supabase sign-in screen.
+
+The check loads the existing synthetic C09 corpus and creates isolated C02 test
+memberships, then uses `app.demo.analytics_trace run` to register a capture and
+submit a synthetic delivery through the real C04 HTTP route. Only the actual
+C04 outbox publisher delivers it to RabbitMQ; only the independent C11/C12 workers
+ingest it. It waits for broker confirmation and both persistent stores, seals
+the C04-only recording, and verifies authorised observations and replay through
+the API's actual restricted playback login. Operational/frozen rows must remain
+unchanged after playback. No direct consumer calls or fixture event publication
+can stand in for those connections.
+
+`scripts/hello-world.sh --analytics-only --run-id <run> --correlation-id <trace>`
+rechecks an already sealed local run with `ULOP_TOKEN` and
+`ULOP_ACTING_PROVIDER` set. The same verification is also used by the full script.
+Routes/consumers alone stay WIRED. Missing or mismatched trace evidence cannot
+produce PASS. The selected-mode result covers only hops 9/10, explicitly not the
+whole-platform result. The CI check also proves a missing run and a stopped C11
+consumer exit unsuccessfully.
+
+For a disposable local reproduction, generate fixture keys with
+`ULOP_TEST_IDENTITY=1 uv run --project backend python scripts/compose_identity.py
+prepare --folder .tmp/slice-auth`, then use the two Compose files shown in the
+workflow. Run the seed/capture/check steps exactly as in
+`.github/workflows/backend.yml`'s `compose-smoke` job. Normal root Compose does
+not use this issuer. Test keys, tokens and local volumes are excluded from Git;
+the evidence artifact contains only the trace proof, selected-hop report,
+service statuses and service logs. It never uploads the issuer directory.
+
+The workflow uses its own Compose project and removes only that disposable
+project at the end. A green result is local container/HTTP/RabbitMQ/storage
+evidence with synthetic business input and a temporary test identity. Full-platform
+recording, hosted sign-in, the visual browser walkthrough and deployed networking
+remain separately verifiable work.
