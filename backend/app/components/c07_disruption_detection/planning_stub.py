@@ -1,11 +1,4 @@
-"""STUB of C05 Planning for the walking skeleton; replace with the real C05 adapter.
-
-Labelled stand-in so the C06 → C07 → C05 hop runs end to end before C05 exists
-(#59, #72). It knows one demo plan that uses the demo segment, taken from the
-contract examples in ``contracts/components/c05-planning/examples/``, answers
-``requestReplan`` with ``PlanSaved`` and is idempotent on the request key. Like the
-real port, it returns the shared ``Result``.
-"""
+"""C05 test double for isolated C07 worker and redelivery tests."""
 
 from uuid import UUID, uuid4
 

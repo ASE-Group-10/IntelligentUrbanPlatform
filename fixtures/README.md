@@ -9,7 +9,7 @@ all use the same values. Agreed in #42.
 | `runId` | Simulation run the demo uses (all events carry it) |
 | `seed` | Seed for anything random in the run |
 | `startTime` | Demo start time (UTC) |
-| `correlationId` | Trace ID of the scripted closure, to follow it through the logs |
+| `correlationId` | Shared trace for the demo delivery and the closure that revises its plan |
 | `closure` | The road closure the feed script injects into C06 |
 | `segments` | Demo road segments with GeoJSON geometry (`[lon, lat]`) for the C01 map and C05 routes (#43) |
 

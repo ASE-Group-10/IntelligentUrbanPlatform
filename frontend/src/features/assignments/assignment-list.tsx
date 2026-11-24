@@ -23,7 +23,12 @@ const statusLabel = {
 };
 type Action = "offer" | "accept" | "reject";
 
-export function AssignmentList({ providerId, request, runId }: ResourceScope & { runId?: string }) {
+export function AssignmentList({
+  providerId,
+  request,
+  runId,
+  confirmedPlan,
+}: ResourceScope & { runId?: string; confirmedPlan?: Pick<Assignment, "planId" | "planVersion"> }) {
   const query = runId ? `?runId=${encodeURIComponent(runId)}` : "";
   const [rows, setRows] = useState<Assignment[]>([]);
   const [revision, setRevision] = useState(0);
@@ -32,6 +37,11 @@ export function AssignmentList({ providerId, request, runId }: ResourceScope & {
   const [error, setError] = useState("");
   const scope = useRef(new AbortController());
   const keys = useRef(new Map<string, string>());
+  const awaitingAllocation =
+    confirmedPlan &&
+    !rows.some(
+      (row) => row.planId === confirmedPlan.planId && row.planVersion >= confirmedPlan.planVersion,
+    );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -136,6 +146,10 @@ export function AssignmentList({ providerId, request, runId }: ResourceScope & {
       )}
       {loading ? (
         <p role="status">Loading assignments…</p>
+      ) : awaitingAllocation && !error ? (
+        <p role="status">
+          No vehicle assignment for this plan version yet. Refresh to check for updates.
+        </p>
       ) : (
         !rows.length && !error && <p>No vehicle assignments for this provider.</p>
       )}

@@ -1,0 +1,300 @@
+"""Hop 5 using the HTTP app, committed C04 input, PostgreSQL and the C08 envelope."""
+
+import json
+import os
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from threading import Barrier
+from uuid import uuid4
+
+import pika
+import psycopg
+import pytest
+
+from app.components.c05_planning.allocation import (
+    check_current_version,
+    get_delivery_route,
+)
+from app.components.c05_planning.publisher import PostgresPlanOutbox
+from app.components.c08_allocation.events import PlanReadyEvent
+from app.components.c10_decision_records.service import DecisionRecords
+from app.shared.contracts import RunScopeSelector
+from app.shared.publisher import RabbitMQPublisher, drain_outbox
+from app.shared.result import Failure, Ok
+from tests.c05_flow import flow as flow
+
+
+def state(conn, plan):
+    delivery = conn.execute(
+        "select status, version, plan_id "
+        "from c04_delivery_management.deliveries where run_id=%s and delivery_id=%s",
+        (plan.run_scope.run_id, plan.request_ids[0]),
+    ).fetchone()
+    versions = conn.execute(
+        "select version, proposal->>'status' from c05_planning.plan_versions "
+        "where plan_id=%s order by version",
+        (plan.plan_id,),
+    ).fetchall()
+    events = conn.execute(
+        "select event_id, envelope, published_at from c05_planning.outbox "
+        "where plan_id=%s",
+        (plan.plan_id,),
+    ).fetchall()
+    return delivery, versions, events
+
+
+def confirmation_audits(conn, trace):
+    return conn.execute(
+        "select outcome, principal_id, entry->'targetIds' "
+        "from c10_decision_records.audit_outcomes where operation='C05.confirmPlan' "
+        "and correlation_id=%s order by seq",
+        (trace,),
+    ).fetchall()
+
+
+def test_concurrent_confirmations_link_once_and_replay_the_committed_response(
+    flow, test_database_url
+):
+    gate = Barrier(2)
+    click_trace = uuid4()
+    flow.headers["X-Correlation-ID"] = str(click_trace)
+
+    def click():
+        gate.wait(timeout=5)
+        return flow.confirm()
+
+    with ThreadPoolExecutor(2) as pool:
+        responses = [pool.submit(click) for _ in range(2)]
+        first, retry = (f.result(timeout=15) for f in responses)
+    assert first.status_code == retry.status_code == 200, first.text
+    assert first.json() == retry.json()
+    assert first.json()["decisionId"] == str(flow.plan.decision_id)
+    assert first.json()["version"] == 2 and first.json()["status"] == "confirmed"
+    assert flow.confirm(expectedVersion=2).status_code == 409
+    flow.headers["Idempotency-Key"] = "another-click"
+    assert flow.confirm().status_code == 409
+    with psycopg.connect(test_database_url) as conn:
+        delivery, versions, events = state(conn, flow.plan)
+        audit = conn.execute(
+            "select count(*) from c10_decision_records.audit_outcomes where "
+            "operation='C04.markRequestsPlanned' and correlation_id=%s",
+            (flow.trace,),
+        ).fetchone()
+        expected_actor = (str(flow.operator), [str(flow.plan.plan_id)])
+        assert confirmation_audits(conn, click_trace) == [
+            ("Ok", *expected_actor),
+            ("Conflict", *expected_actor),
+            ("Conflict", *expected_actor),
+        ]
+        assert confirmation_audits(conn, flow.trace) == []
+        assert conn.execute(
+            "select response_body->>'planId' "
+            "from c04_delivery_management.command_receipts "
+            "where scope_key=%s and operation='C04.markRequestsPlanned'",
+            (f"simulation:{flow.plan.run_scope.run_id}",),
+        ).fetchall() == [(str(flow.plan.plan_id),)]
+    assert delivery == ("planned", 2, flow.plan.plan_id)
+    assert versions == [(1, "awaiting_confirmation"), (2, "confirmed")]
+    assert len(events) == 1 and events[0][2] is None
+    assert audit == (1,)
+
+
+def test_outbox_insert_failure_rolls_back_link_version_receipt_and_success_audit(
+    flow, test_database_url
+):
+    # On the dedicated test database, reject new inserts while preserving prior rows.
+    with psycopg.connect(test_database_url, autocommit=True) as observer:
+        observer.execute(
+            "alter table c05_planning.outbox add constraint test_refuse_event "
+            "check (false) not valid"
+        )
+        try:
+            response = flow.confirm()
+            assert response.status_code == 503, response.text
+            assert state(observer, flow.plan) == (
+                ("pending", 1, None),
+                [(1, "awaiting_confirmation")],
+                [],
+            )
+            assert observer.execute(
+                "select count(*) from c05_planning.confirmation_receipts "
+                "where plan_id=%s",
+                (flow.plan.plan_id,),
+            ).fetchone() == (0,)
+            assert observer.execute(
+                "select count(*) from c10_decision_records.audit_outcomes where "
+                "operation='C04.markRequestsPlanned' and correlation_id=%s "
+                "and outcome='Ok'",
+                (flow.trace,),
+            ).fetchone() == (0,)
+        finally:
+            observer.execute(
+                "alter table c05_planning.outbox drop constraint test_refuse_event"
+            )
+        assert flow.confirm().status_code == 200
+
+
+def test_changed_delivery_or_unauthorised_run_cannot_confirm(flow, test_database_url):
+    with psycopg.connect(test_database_url, autocommit=True) as conn:
+        denied = flow.confirm(runScope={"scope": "simulation", "runId": str(uuid4())})
+        assert denied.status_code == 403
+        conn.execute(
+            "update c04_delivery_management.deliveries set version=2, delivery = "
+            "jsonb_set(delivery, '{version}', '2') where delivery_id=%s",
+            (flow.plan.request_ids[0],),
+        )
+        conflict = flow.confirm()
+        assert conflict.status_code == 409, conflict.text
+        assert state(conn, flow.plan) == (
+            ("pending", 2, None),
+            [(1, "awaiting_confirmation")],
+            [],
+        )
+        assert conn.execute(
+            "select outcome from c10_decision_records.audit_outcomes "
+            "where operation='C04.markRequestsPlanned' and correlation_id=%s",
+            (flow.trace,),
+        ).fetchall() == [("Conflict",)]
+        assert confirmation_audits(conn, flow.trace) == [
+            ("Forbidden", str(flow.operator), [str(flow.plan.plan_id)]),
+            ("Conflict", str(flow.operator), [str(flow.plan.plan_id)]),
+        ]
+
+
+def test_invalid_and_forbidden_confirmation_audit_trusted_identity(
+    flow, test_database_url
+):
+    with psycopg.connect(test_database_url, autocommit=True) as conn:
+        response = flow.client.post(
+            "/api/v1/plans/bad-id/confirmation",
+            headers=flow.headers,
+            json={
+                "expectedVersion": 1,
+                "runScope": flow.plan.run_scope.model_dump(mode="json", by_alias=True),
+            },
+        )
+        assert response.status_code == 400
+        assert flow.confirm(expectedVersion=True).status_code == 400
+        assert flow.confirm(runScope={"scope": "live"}).status_code == 404
+        conn.execute(
+            "update c02_identity_access.provider_memberships set role='driver' "
+            "where principal_id=%s",
+            (flow.operator,),
+        )
+        assert flow.confirm().status_code == 403
+        assert confirmation_audits(conn, flow.trace) == [
+            ("Invalid", str(flow.operator), []),
+            ("Invalid", str(flow.operator), [str(flow.plan.plan_id)]),
+            ("NotFound", str(flow.operator), [str(flow.plan.plan_id)]),
+            ("Forbidden", str(flow.operator), [str(flow.plan.plan_id)]),
+        ]
+        assert state(conn, flow.plan) == (
+            ("pending", 1, None),
+            [(1, "awaiting_confirmation")],
+            [],
+        )
+
+
+def test_failed_c05_audit_rolls_back_the_entire_confirmation(
+    flow, test_database_url, monkeypatch
+):
+    record = DecisionRecords.record_outcome
+
+    def reject_success(self, conn, actor, outcome):
+        result = record(self, conn, actor, outcome)
+        if outcome.operation == "C05.confirmPlan" and outcome.outcome == "Ok":
+            return Failure("Unavailable", "C10.AUDIT_UNAVAILABLE")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(DecisionRecords, "record_outcome", reject_success)
+        assert flow.confirm().status_code == 503
+    with psycopg.connect(test_database_url) as conn:
+        assert state(conn, flow.plan) == (
+            ("pending", 1, None),
+            [(1, "awaiting_confirmation")],
+            [],
+        )
+        assert conn.execute(
+            "select count(*) from c05_planning.confirmation_receipts where plan_id=%s",
+            (flow.plan.plan_id,),
+        ).fetchone() == (0,)
+        assert conn.execute(
+            "select count(*) from c10_decision_records.audit_outcomes "
+            "where operation='C04.markRequestsPlanned' and correlation_id=%s",
+            (flow.trace,),
+        ).fetchone() == (0,)
+        assert confirmation_audits(conn, flow.trace) == [
+            ("Unavailable", str(flow.operator), [str(flow.plan.plan_id)])
+        ]
+    assert flow.confirm().status_code == 200
+
+
+@pytest.mark.skipif(
+    not os.getenv("TEST_RABBITMQ_URL"), reason="requires a test RabbitMQ broker"
+)
+def test_operator_confirmation_reaches_rabbitmq_with_the_saved_event_id(
+    flow, example, test_database_url
+):
+    url = os.environ["TEST_RABBITMQ_URL"]
+    exchange = f"test.confirm.{uuid4()}"
+    publisher = RabbitMQPublisher(url, exchange)
+    with pika.BlockingConnection(pika.URLParameters(url)) as broker:
+        ch = broker.channel()
+        ch.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
+        queue = ch.queue_declare(queue="", exclusive=True).method.queue
+        ch.queue_bind(queue=queue, exchange=exchange, routing_key="PlanReady")
+        try:
+            # Isolate this publisher pass from previous tests on the test database.
+            with psycopg.connect(test_database_url) as conn:
+                conn.execute(
+                    "truncate c05_planning.replan_receipts, c05_planning.outbox"
+                )
+            store = PostgresPlanOutbox(test_database_url)
+            assert flow.confirm().status_code == 200
+            assert flow.confirm().status_code == 200
+            assert ch.basic_get(queue, auto_ack=True)[0] is None
+            drained = drain_outbox(store, publisher)
+            assert isinstance(drained, Ok) and drained.value.published == 1
+            method, props, raw = ch.basic_get(queue, auto_ack=False)
+            assert method is not None and method.routing_key == "PlanReady"
+            event = PlanReadyEvent.model_validate_json(raw)
+            with psycopg.connect(test_database_url) as conn:
+                _, _, [(event_id, saved, published_at)] = state(conn, flow.plan)
+            assert json.loads(raw) == saved
+            assert PlanReadyEvent.model_validate_json(json.dumps(saved)) == event
+            assert published_at is not None and props.message_id == str(
+                event_id
+            ) == str(event.event_id)
+            assert (event.run_id, event.correlation_id) == (
+                flow.plan.run_scope.run_id,
+                flow.trace,
+            )
+            assert (event.payload.plan_id, event.payload.plan_version) == (
+                flow.plan.plan_id,
+                2,
+            )
+            assert event.payload.decision_id == flow.plan.decision_id
+            assert event.payload.requirements == flow.plan.resource_needs
+            payload = event.payload
+            scope = RunScopeSelector(scope=event.scope, run_id=event.run_id)
+            (need,) = payload.requirements
+            with flow.client.app.state.engine.begin() as conn:
+                read = get_delivery_route(
+                    conn, scope, payload.plan_id, payload.plan_version, need.delivery_id
+                )
+                assert isinstance(read, Ok), read
+                assert read.value.plan.decision_id == payload.decision_id
+                assert read.value.route == flow.plan.routes[0]
+                window = example("delivery-submitted.json")["timeWindow"]
+                assert read.value.planned_departure_at == datetime.fromisoformat(
+                    window["start"]
+                )
+                assert check_current_version(
+                    conn, scope, payload.plan_id, payload.plan_version
+                ) == Ok(None)
+            ch.basic_ack(method.delivery_tag)
+            assert ch.basic_get(queue, auto_ack=True)[0] is None
+        finally:
+            publisher.close()
+            ch.exchange_delete(exchange=exchange)

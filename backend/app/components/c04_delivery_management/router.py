@@ -95,6 +95,7 @@ def submit_delivery(
         cid,
         MockDeliveryLocationValidator(location_result),
     )
+    request.state.correlation_id = str(outcome.correlation_id)
     payload = outcome.delivery.to_wire()
     headers = {"Idempotency-Replayed": str(outcome.replayed).lower()}
     if outcome.status_code == 201:

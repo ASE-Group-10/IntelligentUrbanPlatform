@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import { Package, Pencil, RefreshCw } from "lucide-react";
 
 import scenario from "../../../../fixtures/dublin-scenario.json";
@@ -8,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/features/auth/auth-context";
 import { ProviderPicker, type ResourceScope } from "@/features/auth/resource-access";
+import { proposalLink } from "@/features/planning/proposal";
 
 import {
   DELIVERY_STATUSES,
-  DUBLIN_DEMO_DRAFT,
+  dublinDemoDraft,
   DeliveryAccessDenied,
   DeliveryRequestError,
   VEHICLE_KINDS,
@@ -54,14 +56,9 @@ function formatDublinTime(iso: string): string {
 
 export function DeliveryWorkspace({ providerId, request: authenticatedRequest }: ResourceScope) {
   const { identity } = useAuth();
-  const canSubmit = Boolean(
-    identity?.platformRoles.includes("admin") ||
-    identity?.memberships.some(
-      (entry) =>
-        entry.providerId === providerId &&
-        (entry.roles.includes("operator") || entry.roles.includes("manager")),
-    ),
-  );
+  const roles = identity?.memberships.find((entry) => entry.providerId === providerId)?.roles;
+  const canReview = identity?.platformRoles.includes("admin") || roles?.includes("operator");
+  const canSubmit = canReview || roles?.includes("manager");
 
   const [denied, setDenied] = useState(false);
   const [runId, setRunId] = useState<string>(scenario.runId);
@@ -69,17 +66,18 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [listVersion, setListVersion] = useState(0);
-  const [draft, setDraft] = useState<DeliveryDraft>(DUBLIN_DEMO_DRAFT);
+  const [draft, setDraft] = useState<DeliveryDraft>(dublinDemoDraft);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [lastSubmitted, setLastSubmitted] = useState<SubmitDeliveryResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [retryPlanning, setRetryPlanning] = useState(false);
   const [editing, setEditing] = useState<Delivery | null>(null);
   const [editDraft, setEditDraft] = useState<DeliveryDraft | null>(null);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const submitKeyRef = useRef<string>(crypto.randomUUID());
+  const submission = useRef<{ idempotencyKey: string; correlationId: string } | null>(null);
   const editKeyRef = useRef<string>(crypto.randomUUID());
   const sessionRef = useRef(new AbortController());
 
@@ -94,13 +92,18 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
     setListVersion((v) => v + 1);
   }
 
+  function startNewSubmission() {
+    submission.current = null;
+    setRetryPlanning(false);
+  }
+
   function updateDraft<K extends keyof DeliveryDraft>(field: K, value: DeliveryDraft[K]) {
     setDraft((prev) => ({ ...prev, [field]: value }));
     setFieldErrors((prev) => {
       if (!(field in prev)) return prev;
       return Object.fromEntries(Object.entries(prev).filter(([key]) => key !== field));
     });
-    submitKeyRef.current = crypto.randomUUID();
+    startNewSubmission();
   }
 
   function toggleVehicleKind(kind: VehicleKind) {
@@ -156,20 +159,27 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
     setError("");
     setSubmitting(true);
     try {
+      submission.current ??= {
+        idempotencyKey: crypto.randomUUID(),
+        correlationId: crypto.randomUUID(),
+      };
+      const command = submission.current;
       const result = await submitDeliveryRequest(
         authenticatedRequest,
         providerId,
         validated.payload,
         {
-          idempotencyKey: submitKeyRef.current,
-          correlationId: crypto.randomUUID(),
+          ...command,
           runId,
           signal: session.signal,
         },
       );
       if (!isCurrent()) return;
       setLastSubmitted(result);
-      submitKeyRef.current = crypto.randomUUID();
+      if (submission.current === command) {
+        if (result.runId && !result.planId) setRetryPlanning(true);
+        else startNewSubmission();
+      }
       refresh();
     } catch (caught) {
       if (!isCurrent()) return;
@@ -254,6 +264,15 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
     );
   }
 
+  const review =
+    canReview && lastSubmitted && !lastSubmitted.planStub
+      ? proposalLink.safeParse({
+          planId: lastSubmitted.planId,
+          runId: lastSubmitted.runId,
+          correlationId: lastSubmitted.correlationId,
+        }).data
+      : undefined;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -266,10 +285,12 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
               <select
                 className="rounded-lg border border-input bg-background px-2 py-1"
                 value={runId}
+                disabled={submitting}
                 onChange={(event) => {
                   setLoading(true);
                   setRunId(event.target.value);
                   setLastSubmitted(null);
+                  startNewSubmission();
                 }}
               >
                 <option value={scenario.runId}>Dublin simulation</option>
@@ -284,7 +305,7 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
         }
       />
 
-      {lastSubmitted ? (
+      {lastSubmitted && lastSubmitted.runId === (runId || null) ? (
         <div
           role="status"
           className="rounded-lg border border-status-open/30 bg-status-open/10 px-4 py-3 text-sm"
@@ -293,6 +314,14 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
             Delivery {lastSubmitted.delivery.deliveryId} submitted (v
             {lastSubmitted.delivery.version})
           </p>
+          {review && (
+            <Link to="/plans" search={review} className="font-medium text-primary underline">
+              Review plan
+            </Link>
+          )}
+          {retryPlanning && (
+            <p>The delivery is saved. Use Retry planning to request its proposal again.</p>
+          )}
           <p className="mt-1 text-xs text-muted-foreground">
             {lastSubmitted.correlationId ? `Correlation ID: ${lastSubmitted.correlationId}` : null}
             {lastSubmitted.planId
@@ -321,10 +350,10 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setDraft(DUBLIN_DEMO_DRAFT);
+                  setDraft(dublinDemoDraft());
                   setFieldErrors({});
                   setError("");
-                  submitKeyRef.current = crypto.randomUUID();
+                  startNewSubmission();
                 }}
               >
                 Dublin preset
@@ -500,7 +529,11 @@ export function DeliveryWorkspace({ providerId, request: authenticatedRequest }:
                 </fieldset>
 
                 <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? "Submitting…" : "Submit delivery"}
+                  {submitting
+                    ? "Submitting…"
+                    : retryPlanning
+                      ? "Retry planning"
+                      : "Submit delivery"}
                 </Button>
               </form>
             </CardContent>

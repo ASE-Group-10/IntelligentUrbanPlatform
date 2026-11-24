@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import UUID4, Field
+from pydantic import UUID4, Field, TypeAdapter
 
 from app.components.c06_city_monitoring.contracts import (
     CitySnapshotQuery,
@@ -102,16 +102,21 @@ def feed_closure(
     scenario: Scenario,
     clock: Callable[[], datetime],
     fresh: bool = False,
+    *,
+    run_id: UUID | None = None,
+    correlation_id: UUID | None = None,
 ) -> Result[FeedReport]:
-    """Ingest the scenario's closure (or, with ``fresh``, a new one) into C06."""
+    """Inject the Dublin closure, optionally in an existing delivery's trace."""
     closure = scenario.closure
+    run_id = run_id or scenario.run_id
     if fresh:
-        observation_id, observed_at, correlation_id = uuid4(), clock(), uuid4()
+        observation_id, observed_at = uuid4(), clock()
+        correlation_id = correlation_id or uuid4()
         values: dict[str, Any] = {"status": "closed", "cause": closure.cause}
     else:
         observation_id = closure.observation_id
         observed_at = closure.observed_at
-        correlation_id = scenario.correlation_id
+        correlation_id = correlation_id or scenario.correlation_id
         values = {"status": "closed", "cause": closure.cause}
         if closure.valid_until:
             values["validUntil"] = closure.valid_until.isoformat().replace(
@@ -133,7 +138,7 @@ def feed_closure(
         return queued[-1]
 
     service = CityMonitoring(store=store, clock=clock, new_id=new_event_id)
-    scope = StateScope(scope="simulation", run_id=scenario.run_id)
+    scope = StateScope(scope="simulation", run_id=run_id)
     ingested = service.ingest_observation(
         SourceContext(state_scope=scope, correlation_id=correlation_id), observation
     )
@@ -151,7 +156,7 @@ def feed_closure(
 
     return Ok(
         FeedReport(
-            run_id=scenario.run_id,
+            run_id=run_id,
             correlation_id=correlation_id,
             observation_id=observation_id,
             segment_key=closure.segment_key,
@@ -172,13 +177,27 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--scenario", type=Path, default=SCENARIO_PATH)
     parser.add_argument(
-        "--fresh", action="store_true", help="inject a new closure with new IDs, now"
+        "--fresh",
+        action="store_true",
+        help="inject a new observation at the current time",
+    )
+    uuid4_arg = TypeAdapter(UUID4).validate_python
+    parser.add_argument("--run-id", type=uuid4_arg, help="simulation run UUIDv4")
+    parser.add_argument(
+        "--correlation-id", type=uuid4_arg, help="original delivery trace UUIDv4"
     )
     args = parser.parse_args(argv)
 
     scenario = load_scenario(args.scenario)
     store = PostgresCityStateStore(os.environ["DATABASE_URL"])
-    result = feed_closure(store, scenario, lambda: datetime.now(UTC), args.fresh)
+    result = feed_closure(
+        store,
+        scenario,
+        lambda: datetime.now(UTC),
+        args.fresh,
+        run_id=args.run_id,
+        correlation_id=args.correlation_id,
+    )
     if isinstance(result, Failure):
         print(f"C06 refused the closure: {result.kind}: {result.message}")
         return 1

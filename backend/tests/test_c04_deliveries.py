@@ -249,17 +249,35 @@ def test_submit_delivery_persists_emits_outbox_logs_trace_and_calls_c05(
     assert count(engine, c04_store.audit_outcomes) == 1
 
 
-def test_submit_idempotent_replay_and_conflict(env, example):
-    client, engine, _, _ = env
+@pytest.mark.parametrize("legacy_receipt", [False, True], ids=["current", "legacy"])
+def test_submit_idempotent_replay_and_conflict(env, example, legacy_receipt):
+    client, engine, _, planner = env
     payload = example("submit-delivery-request.json")
+    original_trace = uuid4()
 
-    first = client.post(BASE, headers=auth_headers("operator"), json=payload)
+    first = client.post(
+        BASE,
+        headers=auth_headers("operator", **{"X-Correlation-ID": str(original_trace)}),
+        json=payload,
+    )
     assert first.status_code == 201
 
-    replay = client.post(BASE, headers=auth_headers("operator"), json=payload)
+    if legacy_receipt:
+        with engine.begin() as conn:
+            conn.execute(
+                c04_store.command_receipts.update().values(response_body=first.json())
+            )
+    replay = client.post(
+        BASE,
+        headers=auth_headers("operator", **{"X-Correlation-ID": str(uuid4())}),
+        json=payload,
+    )
     assert replay.status_code == 200
     assert replay.headers["idempotency-replayed"] == "true"
     assert replay.json() == first.json()
+    assert replay.headers["x-correlation-id"] == str(original_trace)
+    assert [call[2] for call in planner.calls] == [original_trace, original_trace]
+    assert planner.calls[0][3] == planner.calls[1][3]
     assert count(engine, c04_store.deliveries) == 1
     assert count(engine, c04_store.outbox) == 1
 
@@ -269,6 +287,35 @@ def test_submit_idempotent_replay_and_conflict(env, example):
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "C04.IDEMPOTENCY_CONFLICT"
     assert count(engine, c04_store.deliveries) == 1
+
+
+def test_submit_replay_cannot_return_a_delivery_from_another_acting_provider(
+    env, example
+):
+    client, engine, _, planner = env
+    payload = example("submit-delivery-request.json")
+    with engine.begin() as conn:
+        conn.execute(
+            records.memberships.insert().values(
+                principal_id=PRINCIPALS["operator"],
+                provider_id=PROVIDER_B,
+                role="operator",
+            )
+        )
+
+    def submit_as(provider):
+        return client.post(
+            BASE,
+            headers=auth_headers("operator", **{"X-Acting-Provider": str(provider)}),
+            json=payload,
+        )
+
+    first = submit_as(PROVIDER_A)
+    assert first.status_code == 201
+    other = submit_as(PROVIDER_B)
+    assert other.status_code == 409 and "x-plan-id" not in other.headers
+    assert first.json()["deliveryId"] not in other.text
+    assert len(planner.calls) == 1
 
 
 def test_submit_location_and_validation_failures_store_nothing(env, example):
