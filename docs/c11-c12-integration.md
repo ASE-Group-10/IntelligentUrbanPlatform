@@ -168,6 +168,12 @@ not require polished UI or full KPI formulas. Both #16/#17 remain open.
 
 ## Complete local connection check (integrated #126)
 
+The first full-stack check caught a dbmate version collision between the unmerged
+C11 migration and C08's `20261123160000`. C11 is now
+`20261123160200_create_c11_observations.sql`; its SQL is unchanged. No applied
+shared migration is renamed. A generic migration-version uniqueness test prevents
+this from being hidden by SQL-only tests.
+
 The integration branch includes merged #126's real C04 outbox publisher. The
 existing backend workflow now also boots the whole local Compose stack, including
 the actual API, publishers, workers, PostgreSQL, RabbitMQ and local playback setup.

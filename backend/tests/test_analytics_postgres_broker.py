@@ -15,7 +15,7 @@ def test_owned_migrations_can_rollback_and_reapply(test_database_url):
 
     folder = Path(__file__).resolve().parents[2] / "database/migrations"
     names = [
-        "20261123160000_create_c11_observations.sql",
+        "20261123160200_create_c11_observations.sql",
         "20261123160100_create_c12_replay_storage.sql",
     ]
     with psycopg.connect(test_database_url) as conn:
