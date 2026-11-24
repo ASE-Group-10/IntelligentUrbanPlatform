@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -38,7 +39,7 @@ from app.components.c10_decision_records.postgres_store import PostgresDecisionS
 from app.components.c10_decision_records.service import DecisionRecords
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
-from app.config import get_settings
+from app.config import get_ingress_settings, get_settings
 from app.demo.feed import load_scenario
 from app.infrastructure.database import make_engine
 from app.infrastructure.errors import APIError, api_error_handler
@@ -118,9 +119,7 @@ def create_app(
         "decision records. Resource registration uses a durable audit stand-in.",
         lifespan=lifespan,
     )
-    app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "testserver"]
-    )
+    allowed_hosts, cors_origins = get_ingress_settings(settings)
 
     @app.middleware("http")
     async def request_context(request, call_next):
@@ -135,6 +134,29 @@ def create_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-Acting-Provider",
+                "X-Correlation-ID",
+            ],
+            expose_headers=[
+                "Idempotency-Replayed",
+                "Location",
+                "X-Correlation-ID",
+                "X-Plan-Id",
+                "X-Plan-Stub",
+                "X-Plan-Version",
+            ],
+        )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
 
     app.add_exception_handler(APIError, api_error_handler)
 
