@@ -2,7 +2,8 @@
 
 UC03 and UC07 contracts (#32), with the Dublin walking-skeleton implementation
 tracked in [#118](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/118).
-Pair Ye + Zecheng. Reviewers Bruno or Alejandro for C07 compatibility.
+Pair Ye + Zecheng. Bruno accepted external review of #118 and requested Alejandro
+for the shared C01/C07 and integration changes. [Review discussion](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/118#issuecomment-7134488845).
 
 C05 owns proposals, confirmed plans and revisions. C08 owns actual allocation
 and operational commitments. Planning reads those facts when checking feasibility.
@@ -90,16 +91,22 @@ Open the `/plans?…` link printed by the generation command in the running
 frontend. Sign in as an operator and select the acting provider. The page
 loads the proposal for that run and displays **Confirm plan** above the vehicle
 assignments. The URL carries `planId`, `scope`, `runId` and the original
-`correlationId`.
+`correlationId`. The shell sends the selected `X-Acting-Provider` and the delivery's
+`X-Correlation-ID` on the read and confirmation. The page shows the saved plan ID
+and version, including after a revision. Vehicle allocation follows asynchronously.
 
 The action sends `POST /api/v1/plans/{planId}/confirmation` with the saved
 version in `expectedVersion`, the same `runScope`, and a stable
 `Idempotency-Key`. C05 calls C04's `markRequestsPlanned` on the same PostgreSQL
 connection. C04 checks each delivery version and records the link and its C10
-audit. C05 saves the next confirmed version with its original decision ID, the
-confirmation receipt and the first `PlanReady` outbox entry. These writes
-commit together. A lost response can be recovered with the same key and
-request. A conflicting version requires a fresh read.
+audit under the C05 service identity. C05 records `C05.confirmPlan` with the
+operator principal and request correlation ID from C02. Both audits, the next
+confirmed version with its original decision ID, the receipt and the first
+`PlanReady` outbox entry commit together. A retry of the same successful
+command returns its receipt without another success audit or event. A
+conflicting version requires a fresh read. If C05 rejects an authenticated
+confirmation, it records the outcome in a separate transaction after any
+business rollback.
 
 The `c05-publisher` worker sends the committed envelope to the topic exchange
 with routing key `PlanReady`. It marks the row published after RabbitMQ
@@ -339,17 +346,25 @@ has incomplete evidence.
 | C06 | `getCitySnapshot(scope, freshnessPolicy)` | Read versioned and quality-labelled city conditions; definition in [C06](../c06-city-monitoring/internal.md) |
 | C09 | `queryKnowledge(context, policyQuery)` | Obtain applicable policy evidence and provenance |
 | C10 | `recordDecision(conn, ctx, record)` | Save actual input versions, alternatives, reasons and exact evidence on the C05 transaction's connection |
+| C10 | `recordOutcome(conn, ctx, outcome)` | Record the signed-in operator's confirmation outcome using the request context |
 
 C02/C03/C04/C09/C10 provider definitions remain authoritative as their contracts
 are published. Required operations listed here do not define their fields.
 
+The [C02 service identity contract](../c02-identity-access/internal.md) also
+specifies a backend-issued caller context for workers such as C07. C02 tracks
+worker identities as follow-up in [#56](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/56). The current
+C04 generation and C07 replan ports take the run and trace. Adding a trusted
+caller context to those ports and covering their protected service writes
+with C10 requires coordination with C02 and the calling components. C05's
+producer identity on an outgoing decision identifies the decision author.
+
 ## Planning and persistence rules
 
-The proposed C01 HTTP operations are in `openapi.yaml`. Authentication is obtained
-from the bearer token. HTTP paths use `/api/v1/plans`; HTTP errors use the
-C11/C12-style `error { code, message, correlationId }` envelope proposal, pending
-shared frontend review. This transport mapping does not change the internal
-`Result` contract or C07 models. Authorisation and scope checks use C02.
+The C01 read and confirmation operations are in `openapi.yaml`. The API uses
+the shell's bearer token and provider context, enforces run access and returns
+`error { code, message, correlationId }` on these operations. Internal C07 calls
+use the typed `Result` contract.
 An initial proposal awaits operator confirmation. Confirmation checks its expected version, links its
 deliveries and queues `PlanReady` atomically with the confirmed state and decision
 references. A saved revision atomically records its expected-version update,
@@ -399,7 +414,8 @@ Versions 3 and 4 have the same van capacity requirement. The
 [PlanReady event](examples/plan-ready-revision-event.json) carries that requirement
 with version 4 and its decision ID. It retains the closure correlation ID and
 simulation run ID and has its own event ID.
-HTTP examples and this event illustrate proposed fields pending consumer review.
+These are contract examples. A fresh walking-skeleton delivery starts at v1,
+confirms at v2 and takes the detour at v3.
 
 ## Agreed with C07 (#59, 20 Nov 2026)
 
@@ -422,9 +438,10 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
 4. **ReplanOutcome.** It gains `reason` (text, optional), required when `status` is
    `ReviewRequired`. `Infeasible` is no longer a failure. The remaining failures are
    `Invalid`, `NotFound`, `Conflict` and `Unavailable`.
-5. **PlanSaved.** It is returned when the revision and its `PlanReady` outbox entry
-   are saved together. C05 owns the publication state; it is not part of the
-   response to C07.
+5. **PlanSaved.** C05 returns the committed revision's `newPlanVersion` and
+   `decisionId` after saving the revision and its `PlanReady` outbox entry
+   together. C05 owns the publication state. C07 owns recording the returned
+   version for the Disruptions view.
 6. **Port.** `PlanningPort` returns a typed `Result` (`app.shared.result`: `Ok` or
    `Failure`) from both calls, instead of raising exceptions.
 7. **Unavailable and retry.** C07 marks the detection result as `retryable` only
@@ -448,7 +465,5 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
   delivery submission to the Plans page. The generation path for #118 is the
   in-process call above. The `POST /api/v1/plans` entry in the UC03 OpenAPI
   draft describes a separate HTTP operation.
-- Exchange/routing and the canonical shared event envelope are tracked in #28.
-  The event draft refers to the existing C06 envelope to avoid another copy.
-- C05 receives replanning through an internal call from C07. No direct subscription
-  to `CityStateUpdated` is currently proposed.
+- C08's consumer still needs to connect its allocation transaction to the
+  [C05 version lookup agreed in #114](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950).
