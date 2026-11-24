@@ -235,6 +235,7 @@ def test_submit_delivery_persists_emits_outbox_logs_trace_and_calls_c05(
     assert event.run_id == DEMO_RUN
     assert event.entity_versions == {str(delivery.delivery_id): 1}
     assert event.payload.delivery_id == delivery.delivery_id
+    assert event.payload.provider_id == PROVIDER_A
 
     # Structured log record carries correlationId, component, scope, runId.
     c04_records = [r for r in caplog.records if getattr(r, "component", None) == "C04"]
@@ -604,6 +605,7 @@ def test_internal_get_requests_mark_planned_and_update_progress(env, example):
     ev = DeliveryEvent.model_validate(rows[0]["envelope"])
     assert ev.observed_at == business_time
     assert ev.affected.plan_ids == [plan_id]
+    assert ev.payload.provider_id == PROVIDER_A
     assert ev.payload.delivery.progress.updated_at == business_time
 
 
