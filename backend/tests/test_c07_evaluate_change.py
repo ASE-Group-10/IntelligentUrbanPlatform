@@ -133,6 +133,18 @@ def test_replan_outcome_is_recorded_without_bumping_the_version(
     (plan,) = disruption.affected_plans
     assert (plan.plan_id, plan.plan_version) == (PLAN_ID, 3)
     assert (plan.replan_requested, plan.replan_outcome) == (True, "PlanSaved")
+    # the version C05 saved, so the Disruptions screen can show v3 → v4
+    assert plan.new_plan_version == 4
+
+
+def test_a_pending_replan_has_no_new_plan_version(example, planning, store):
+    planning.replan_unavailable = True
+
+    make_service(planning, store).evaluate_change(make_event(example))
+
+    (disruption,) = store.disruptions("simulation", RUN_ID)
+    (plan,) = disruption.affected_plans
+    assert (plan.replan_requested, plan.new_plan_version) == (False, None)
 
 
 def test_same_event_twice_is_a_duplicate_without_new_effects(example, planning, store):

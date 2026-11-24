@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: C07 Disruption Detection API
-  version: 1.0.0
+  version: 1.1.0
   summary: Read the disruptions C07 recorded and the replans they triggered.
   description: |
     Synchronous HTTP contract for C07 Disruption Detection (UC06).
@@ -66,6 +66,7 @@ paths:
                         planVersion: 3
                         replanRequested: true
                         replanOutcome: PlanSaved
+                        newPlanVersion: 4
                     triggerEventIds: [5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e]
                     quality: good
                     createdAt: '2026-11-20T08:14:32Z'
@@ -203,6 +204,14 @@ components:
           oneOf:
             - type: string
               enum: [NoChange, ReviewRequired, PlanSaved]
+            - type: 'null'
+        newPlanVersion:
+          description: |
+            The plan version C05 saved for this replan, set with `PlanSaved`.
+            Together with `planVersion` it shows the revision (e.g. v2 → v3).
+          oneOf:
+            - type: integer
+              minimum: 1
             - type: 'null'
     C07ErrorResponse:
       type: object
