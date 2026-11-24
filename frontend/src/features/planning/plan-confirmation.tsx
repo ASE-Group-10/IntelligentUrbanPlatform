@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ResourceScope } from "@/features/auth/resource-access";
-import { segmentName } from "@/features/disruptions/disruptions";
+import { findDemoSegment } from "@/features/city-monitoring/demo-segments";
 
 import { PlanError, requestPlan, type Plan, type ProposalLink } from "./proposal";
 
@@ -82,7 +82,8 @@ export function PlanConfirmation({
               <p className="text-sm break-words">Delivery {plan.requestIds.join(", ")}</p>
               {plan.routes.map((route, index) => (
                 <p key={index} className="text-sm text-muted-foreground">
-                  Route: {route.segmentKeys.map(segmentName).join(" → ")}
+                  Route:{" "}
+                  {route.segmentKeys.map((key) => findDemoSegment(key)?.name ?? key).join(" → ")}
                 </p>
               ))}
             </>

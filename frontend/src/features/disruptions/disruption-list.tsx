@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/features/auth/auth-context";
 import { SignInForm } from "@/features/auth/resource-access";
-import { DEMO_SEGMENTS } from "@/features/city-monitoring/demo-segments";
+import { findDemoSegment } from "@/features/city-monitoring/demo-segments";
 
 import type { AffectedPlan, Disruption } from "./disruptions";
 import { useDisruptions } from "./use-disruptions";
@@ -105,7 +105,7 @@ function DisruptionCard({ disruption }: { disruption: Disruption }) {
   const severity = SEVERITY[disruption.severity];
   const roads = disruption.segmentKeys.map((key) => ({
     key,
-    segment: DEMO_SEGMENTS.find((segment) => segment.segmentKey === key),
+    segment: findDemoSegment(key),
   }));
   const where =
     roads.map(({ key, segment }) => segment?.name ?? key).join(", ") || "No road segment";

@@ -67,6 +67,22 @@ async function openPlans(
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("keeps an unmapped segment in route order and lets the operator confirm", async () => {
+  const route = {
+    ...proposal.routes[0],
+    segmentKeys: ["seg:4471023", "seg:999999999", "seg:4471024"],
+  };
+  await openPlans((_url, init) =>
+    Response.json({ ...(init.method === "POST" ? confirmed : proposal), routes: [route] }),
+  );
+
+  const routeText = "Route: Eden Quay → seg:999999999 → Abbey Street Lower";
+  expect(await screen.findByText(routeText)).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Confirm plan" }));
+  expect(await screen.findByText(`Plan confirmed · Version ${confirmed.version}`)).toBeVisible();
+  expect(screen.getByText(routeText)).toBeVisible();
+});
+
 it("opens the newly linked proposal in the same run after viewing live assignments", async () => {
   const next = { ...proposal, planId: "d0713709-dedc-4b08-b5ba-e3a61a7ea8b2" };
   const router = await openPlans((url) =>
