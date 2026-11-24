@@ -8,7 +8,11 @@ import scenario from "../../../fixtures/dublin-scenario.json";
 import { ThemeProvider } from "@/lib/theme";
 import { routeTree } from "@/routeTree.gen";
 
-const auth = vi.hoisted(() => ({ onAuthStateChange: vi.fn(), getSession: vi.fn() }));
+const auth = vi.hoisted(() => ({
+  onAuthStateChange: vi.fn(),
+  getSession: vi.fn(),
+  refreshSession: vi.fn(),
+}));
 vi.mock("@/features/auth/supabase", () => ({ supabase: { auth } }));
 
 const session = {
@@ -26,6 +30,7 @@ async function openPlans(
   planApi: (url: string, init: RequestInit) => Response | Promise<Response>,
   url = link,
   role = "operator",
+  assignments = () => Response.json([]),
 ) {
   auth.onAuthStateChange.mockImplementation((callback) => {
     callback("INITIAL_SESSION", session);
@@ -44,7 +49,7 @@ async function openPlans(
           memberships: [{ ...provider, roles: [role] }],
           platformRoles: [],
         });
-      if (path.includes("/vehicle-assignments")) return Response.json([]);
+      if (path.includes("/vehicle-assignments")) return assignments();
       return planApi(path, init);
     }),
   );
@@ -78,9 +83,84 @@ it("keeps an unmapped segment in route order and lets the operator confirm", asy
 
   const routeText = "Route: Eden Quay → seg:999999999 → Abbey Street Lower";
   expect(await screen.findByText(routeText)).toBeVisible();
+  expect(screen.getByText(`Plan ID ${proposal.planId}`)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Confirm plan" }));
   expect(await screen.findByText(`Plan confirmed · Version ${confirmed.version}`)).toBeVisible();
   expect(screen.getByText(routeText)).toBeVisible();
+});
+
+it("shows the saved ID and revision when reopening the same plan", async () => {
+  const revised = {
+    ...confirmed,
+    version: confirmed.version + 1,
+    routes: [{ ...confirmed.routes[0], segmentKeys: ["seg:4471024"] }],
+  };
+  await openPlans(() => Response.json(revised));
+  expect(await screen.findByText(`Plan confirmed · Version ${revised.version}`)).toBeVisible();
+  expect(screen.getByText(`Plan ID ${proposal.planId}`)).toBeVisible();
+  expect(screen.getByText("Route: Abbey Street Lower")).toBeVisible();
+  expect(await screen.findByText(/no vehicle assignment for this plan version yet/i)).toBeVisible();
+});
+
+it("keeps the allocation hint in the confirmed run until the matching assignment is visible", async () => {
+  const target = {
+    planId: proposal.planId,
+    planVersion: confirmed.version,
+    deliveryId: proposal.requestIds[0],
+    assignmentRef: "dublin-van",
+    resourceName: "Dublin van",
+    status: "allocated",
+  };
+  let rows = [{ ...target, planId: "d0713709-dedc-4b08-b5ba-e3a61a7ea8b2" }];
+  let saved = proposal;
+  await openPlans(
+    (_url, init) => {
+      if (init.method === "POST") saved = confirmed;
+      return Response.json(saved);
+    },
+    link,
+    "operator",
+    () => Response.json(rows),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Confirm plan" }));
+  const hint = /no vehicle assignment for this plan version yet/i;
+  expect(await screen.findByText(hint)).toBeVisible();
+  const scope = screen.getByRole("combobox", { name: "Plan and assignment scope" });
+  await userEvent.selectOptions(scope, "");
+  expect(screen.queryByText(hint)).not.toBeInTheDocument();
+  await userEvent.selectOptions(scope, runScope.runId);
+  expect(await screen.findByText(hint)).toBeVisible();
+  rows = [target];
+  await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  expect(await screen.findByText("Vehicle allocated")).toBeVisible();
+  expect(screen.queryByText(hint)).not.toBeInTheDocument();
+});
+
+it("retries a 401 confirmation once with the same provider, command, trace and key", async () => {
+  const sends: RequestInit[] = [];
+  auth.refreshSession.mockResolvedValue({
+    data: { session: { ...session, access_token: "refreshed-token" } },
+  });
+  await openPlans((_url, init) => {
+    if (init.method !== "POST") return Response.json(proposal);
+    sends.push(init);
+    return sends.length === 1 ? new Response(null, { status: 401 }) : Response.json(confirmed);
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "Confirm plan" }));
+  expect(await screen.findByText(`Plan confirmed · Version ${confirmed.version}`)).toBeVisible();
+  expect(sends).toHaveLength(2);
+  const [first, retry] = sends as [RequestInit, RequestInit];
+  const initial = new Headers(first.headers);
+  const retried = new Headers(retry.headers);
+  expect(initial.get("Authorization")).toBe("Bearer test-token");
+  expect(retried.get("Authorization")).toBe("Bearer refreshed-token");
+  expect(initial.get("Idempotency-Key")).toBeTruthy();
+  for (const name of ["Idempotency-Key", "X-Acting-Provider", "X-Correlation-ID"]) {
+    expect(retried.get(name)).toBe(initial.get(name));
+  }
+  expect(initial.get("X-Acting-Provider")).toBe(provider.providerId);
+  expect(initial.get("X-Correlation-ID")).toBe(trace);
+  expect(retry.body).toBe(first.body);
 });
 
 it("opens the newly linked proposal in the same run after viewing live assignments", async () => {
