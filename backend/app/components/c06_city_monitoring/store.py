@@ -19,6 +19,7 @@ from app.components.c06_city_monitoring.contracts import (
     SegmentCondition,
 )
 from app.shared.contracts import EventEnvelope, RunScope
+from app.shared.outbox import OutboxBatch, OutboxUnavailableError
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ class StateScope:
             raise ValueError("live scope must not have a run_id")
 
 
-class StoreUnavailableError(Exception):
+class StoreUnavailableError(OutboxUnavailableError):
     """The City State store could not complete the operation; nothing was saved."""
 
 
@@ -95,17 +96,6 @@ class CityStateReader(Protocol):
         Segments without a condition are left out. The returned objects are copies:
         changing them never changes the store.
         """
-        ...
-
-
-class OutboxBatch(Protocol):
-    """Oldest unpublished outbox events, claimed for one publishing pass."""
-
-    events: list[EventEnvelope]
-    """Events in the order they were written (oldest first)."""
-
-    def mark_published(self, event_id: UUID) -> None:
-        """Record that the event bus confirmed ``event_id``; kept on normal exit."""
         ...
 
 

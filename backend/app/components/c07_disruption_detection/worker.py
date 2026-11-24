@@ -2,7 +2,7 @@
 
 Walking-skeleton hop 8. Disruptions are kept in Postgres
 (``PostgresDisruptionStore``), so they survive a restart and the API can read
-them. Until C05 exists it uses the labelled C05 stub (``planning_stub.py``).
+them. The C05 planning port reads the confirmed plan and saves its revision.
 
 Run from ``backend/``::
 
@@ -15,10 +15,11 @@ import logging
 import os
 import signal
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 
+from app.components.c05_planning.replanning import make_replanning
 from app.components.c07_disruption_detection.detection import DisruptionDetection
-from app.components.c07_disruption_detection.planning_stub import DemoPlanningStub
 from app.components.c07_disruption_detection.postgres_store import (
     PostgresDisruptionStore,
 )
@@ -79,13 +80,20 @@ def make_consumer(
     )
 
 
+def make_detection(
+    conninfo: str, *, clock: Callable[[], datetime] | None = None
+) -> DisruptionDetection:
+    now = clock or (lambda: datetime.now(UTC))
+    return DisruptionDetection(
+        planning=make_replanning(conninfo, clock=now),
+        store=PostgresDisruptionStore(conninfo),
+        clock=now,
+    )
+
+
 def main() -> None:  # pragma: no cover - process entry point
     configure_logging("C07")
-    detection = DisruptionDetection(
-        planning=DemoPlanningStub(),
-        store=PostgresDisruptionStore(os.environ["DATABASE_URL"]),
-        clock=lambda: datetime.now(UTC),
-    )
+    detection = make_detection(os.environ["DATABASE_URL"])
     consumer = make_consumer(
         detection,
         os.environ["RABBITMQ_URL"],
@@ -94,7 +102,7 @@ def main() -> None:  # pragma: no cover - process entry point
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
-    log.info("C07 worker started (C05 stub, Postgres store)")
+    log.info("C07 worker started (C05 planning, Postgres store)")
     try:
         consumer.run(stop)
     finally:

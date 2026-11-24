@@ -2,7 +2,7 @@
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -88,6 +88,28 @@ def test_fresh_feed_injects_a_new_closure_with_new_ids(store, scenario):
     assert fresh.observation_id != scenario.closure.observation_id
     assert fresh.correlation_id != scenario.correlation_id
     assert isinstance(fresh.correlation_id, UUID)
+
+
+def test_fresh_closure_keeps_the_delivery_trace_in_its_run(store, scenario):
+    run_id, correlation_id = uuid4(), uuid4()
+    report = feed_closure(
+        store,
+        scenario,
+        lambda: NOW,
+        fresh=True,
+        run_id=run_id,
+        correlation_id=correlation_id,
+    ).value
+
+    assert report.observation_id != scenario.closure.observation_id
+    assert report.run_id == run_id
+    assert report.correlation_id == correlation_id
+    assert not store.state(run_scope(scenario)).outbox
+    (event,) = store.state(StateScope(scope="simulation", run_id=run_id)).outbox
+    assert event.event_id == report.queued_event_id
+    assert event.run_id == run_id
+    assert event.correlation_id == correlation_id
+    assert event.affected.segment_keys == [scenario.closure.segment_key]
 
 
 def test_unavailable_store_is_reported(scenario):
