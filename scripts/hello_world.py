@@ -351,7 +351,8 @@ def check_saved_plan(
                 "api",
                 None,
                 api_trace,
-                f"submitDelivery: C05 generated plan {trace['planId']} v{generated['version']} for delivery {did}",
+                f"submitDelivery: C05 generated plan {trace['planId']} "
+                f"v{generated['version']} for delivery {did}",
             )
             if submitted:
                 hops[3].set(
@@ -369,7 +370,8 @@ def check_saved_plan(
                 )
         else:
             hops[4].notes.append(
-                f"Entry point: saved C04 delivery {did}, plan {trace['planId']}. HTTP submission is unverified."
+                f"Entry point: saved C04 delivery {did}, plan {trace['planId']}. "
+                "HTTP submission is unverified."
             )
 
     confirmed = saved["confirmation"]
@@ -496,7 +498,8 @@ def submit_dublin_delivery(
     """Submit through the real C04 API; retain the response identifiers for hop 4."""
     example = (
         SCENARIO_PATH.parents[1]
-        / "contracts/components/c04-delivery-management/examples/submit-delivery-request.json"
+        / "contracts/components/c04-delivery-management/examples"
+        / "submit-delivery-request.json"
     )
     payload = json.loads(example.read_text(encoding="utf-8"))
     start = datetime.now(UTC) + timedelta(minutes=30)
@@ -682,11 +685,13 @@ def main(argv: list[str] | None = None) -> int:
     if submitted_delivery:
         if plan_id:
             print(
-                f"Confirm /plans?planId={plan_id}&scope=simulation&runId={run_id}&correlationId={cid}",
+                f"Confirm /plans?planId={plan_id}&scope=simulation"
+                f"&runId={run_id}&correlationId={cid}",
                 flush=True,
             )
             print(
-                f"Then rerun with --run-id {run_id} --correlation-id {cid} --plan-id {plan_id}.",
+                f"Then rerun with --run-id {run_id} --correlation-id {cid} "
+                f"--plan-id {plan_id}.",
                 flush=True,
             )
         for hop in (7, 8):
