@@ -73,3 +73,28 @@ def test_a_failed_listing_fails_the_hop():
 
     assert status == "MISSING"
     assert "503" in notes[-1]
+
+
+def test_hop3_passes_when_delivery_saved_and_logged():
+    status, notes = hello_world.judge_hop3(
+        CID,
+        201,
+        {"deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"},
+        {"correlationId": CID, "message": "submitDelivery: delivery persisted"},
+    )
+
+    assert status == "PASS"
+    assert CID in notes[0]
+
+
+def test_hop3_missing_when_http_fails_or_log_absent():
+    assert hello_world.judge_hop3(CID, 503, None, None)[0] == "MISSING"
+    assert (
+        hello_world.judge_hop3(
+            CID,
+            201,
+            {"deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"},
+            None,
+        )[0]
+        == "MISSING"
+    )
