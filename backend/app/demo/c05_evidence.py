@@ -16,6 +16,7 @@ from app.components.c05_planning.models import Plan, SavedDelivery
 from app.components.c05_planning.store import scope_key
 from app.components.c06_city_monitoring.router import libpq_url
 from app.components.c07_disruption_detection.contracts import (
+    Disruption,
     ReplanOutcome,
     ReplanTrigger,
 )
@@ -267,8 +268,10 @@ def _revision(
     )
     decision = _decision(rows[3], revised, "Replan", confirmed.decision_id)
     cur.execute(
-        """select r.trigger, r.outcome, c.published_at
+        """select r.trigger, r.outcome, c.published_at, d.disruption
              from c05_planning.replan_receipts r
+             join c07_disruption_detection.disruptions d
+               on d.scope_key = r.scope_key and d.disruption_id = r.disruption_id
              join c06_city_monitoring.outbox c on c.scope_key = r.scope_key
               and c.event_id = %s and c.event_type = 'CityStateUpdated'
               and c.envelope->>'eventId' = c.event_id::text
@@ -295,7 +298,9 @@ def _revision(
         ),
     )
     receipt = cur.fetchone()
-    _require(receipt, "Missing the matching C06 closure or C05 replan receipt.")
+    _require(
+        receipt, "Missing the matching C06 closure, C07 disruption or C05 receipt."
+    )
     outcome = ReplanOutcome.model_validate(receipt["outcome"])
     trigger = ReplanTrigger.model_validate(receipt["trigger"])
     _require(
@@ -312,9 +317,34 @@ def _revision(
     )
     if receipt["published_at"] is None:
         raise _PublicationPendingError("The C06 closure publication mark is pending.")
+    disruption = Disruption.model_validate(receipt["disruption"])
+    _require(
+        closure_event_id in disruption.trigger_event_ids
+        and disruption.disruption_id == trigger.disruption_id
+        and disruption.version == trigger.disruption_version,
+        "The C07 disruption does not identify this closure and trigger.",
+    )
+    affected = next(
+        (p for p in disruption.affected_plans if p.plan_id == revised.plan_id), None
+    )
+    _require(
+        affected is not None, "C07 did not record this plan among the affected plans."
+    )
+    if not affected.replan_requested:
+        # C07 persists the response after C05 commits. The event can arrive first.
+        return {
+            "ok": False,
+            "pendingOutcome": True,
+            "detail": "The C07 replan outcome is pending.",
+        }
+    _require(
+        affected.plan_version == trigger.based_on_plan_version
+        and affected.replan_outcome == "PlanSaved",
+        "C07 did not record PlanSaved for this plan and base version.",
+    )
     return _ok(
         revised,
-        "Closure, C10 replan decision, detour and second published PlanReady.",
+        "C07 recorded PlanSaved for the detour and C05 published its second PlanReady.",
         evidenceSnapshotIds=[str(s.snapshot_id) for s in decision.evidence_snapshots],
         **_event(rows[3], revised, correlation_id, closure_event_id),
     )

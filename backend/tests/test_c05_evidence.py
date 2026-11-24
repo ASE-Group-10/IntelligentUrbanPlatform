@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
 from app.components.c07_disruption_detection.worker import make_detection
@@ -101,6 +102,33 @@ def test_evidence_tracks_one_delivery_from_proposal_to_closure(
     assert full["confirmation"]["eventId"] == str(first)
     assert full["revision"]["eventId"] == str(second)
     assert full["revision"]["decisionId"] != full["generation"]["decisionId"]
+    # C05 has committed the revision, but C07 may still be recording which
+    # plans received PlanSaved. Another plan's success cannot complete this one.
+    other = {
+        "planId": str(uuid4()),
+        "planVersion": 2,
+        "replanRequested": True,
+        "replanOutcome": "PlanSaved",
+    }
+    target = {**other, "planId": str(flow.plan.plan_id)}
+    with conn.transaction(force_rollback=True):
+        for fields, pending in [
+            ({"replanRequested": False, "replanOutcome": None}, True),
+            ({"replanOutcome": "NoChange"}, False),
+        ]:
+            conn.execute(
+                """update c07_disruption_detection.disruptions
+                      set disruption=jsonb_set(disruption, '{affectedPlans}', %s)
+                    where scope_key=%s and disruption_id=%s""",
+                (
+                    Jsonb([other, {**target, **fields}]),
+                    f"simulation:{flow.plan.run_scope.run_id}",
+                    evaluated.value.disruption_id,
+                ),
+            )
+            revision = read(closure_event_id=closure_id)["revision"]
+            assert not revision["ok"]
+            assert bool(revision.get("pendingOutcome")) == pending
     assert not read(closure_event_id=uuid4())["revision"]["ok"]
     for key in ("run_id", "correlation_id", "plan_id"):
         other = read(closure_event_id=closure_id, **{key: uuid4()})

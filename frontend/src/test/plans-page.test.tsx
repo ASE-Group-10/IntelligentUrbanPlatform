@@ -62,9 +62,32 @@ async function openPlans(
     </ThemeProvider>,
   );
   await act(() => router.load());
+  return router;
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("opens the newly linked proposal in the same run after viewing live assignments", async () => {
+  const next = { ...proposal, planId: "d0713709-dedc-4b08-b5ba-e3a61a7ea8b2" };
+  const router = await openPlans((url) =>
+    Response.json(url.includes(next.planId) ? next : proposal),
+  );
+  await screen.findByRole("button", { name: "Confirm plan" });
+  const scope = screen.getByRole("combobox", { name: "Plan and assignment scope" });
+  await userEvent.selectOptions(scope, "");
+  expect(screen.queryByRole("heading", { name: "Delivery plan" })).not.toBeInTheDocument();
+
+  await act(() =>
+    router.navigate({
+      to: "/plans",
+      search: { ...runScope, planId: next.planId, correlationId: trace },
+    }),
+  );
+  expect(await screen.findByRole("button", { name: "Confirm plan" })).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "Plan and assignment scope" })).toHaveValue(
+    runScope.runId,
+  );
+});
 
 it("opens the linked run and retries an unacknowledged confirmation with the original command", async () => {
   const sends: RequestInit[] = [];

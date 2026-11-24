@@ -40,7 +40,8 @@ defines the saved fields. Wiring the C04 submit handler is pending.
 | `key` | A stable, nonblank key of at most 200 characters. The demo uses `c04:generate:{deliveryId}:v{version}`. |
 
 The Dublin proposal uses the Eden Quay segment and one van with the saved cargo
-weight. The delivery and its progress must both be pending, and its constraints
+weight. Supply the version as a JSON integer and the weight as a JSON number.
+The delivery and its progress must both be pending, and its constraints
 must allow a van. Departure is the later of the scenario start and the delivery
 window start. The six-minute route must finish within that window. C05 queries
 C09 for van delivery in Dublin D1/D2 during the saved window and passes the
@@ -102,7 +103,10 @@ request. A conflicting version requires a fresh read.
 The `c05-publisher` worker sends the committed envelope to the topic exchange
 with routing key `PlanReady`. It marks the row published after RabbitMQ
 confirms receipt. If that mark is lost, the worker sends the same event ID
-again. The integration test receives the message and checks it against the
+again. Concurrent publishers can process different plans or runs. For one
+plan in one run, the confirmation event must have a committed publication
+mark before a worker can claim the revision event.
+The integration test receives the message and checks it against the
 saved row and the C08 event contract. Run it from `backend/` with
 `TEST_DATABASE_URL` pointing to a dedicated test database and
 `TEST_RABBITMQ_URL` pointing to the test broker.
@@ -239,6 +243,9 @@ After evaluating the route, C05 asks C06 to hold that snapshot version through
 commit. If city conditions changed meanwhile, C05 returns `Unavailable` so
 C07 can retry against current facts. A stale plan version returns `Conflict`
 for C07's one rediscovery attempt.
+Once C05 holds that version, it rechecks departure, road validity and the
+delivery deadline at decision time. If the detour no longer fits, it records
+`ReviewRequired` and keeps the current plan.
 The fixed route covers one unfinished Dublin delivery. An explicit open report
 for Abbey Street Lower must cover the full eight-minute trip. A reported delay
 or a speed too low for the 1,600 m detour requires operator review. C08 owns
@@ -302,7 +309,7 @@ The report follows the plan through the following records.
 | --- | --- |
 | 4 | The saved C04 delivery and generation receipt identify the proposal. The C10 decision for that proposal contains the C09 evidence recorded at generation. Starting from the saved example leaves hop 4 at `WIRED` until the C04 submission itself can be verified. |
 | 5 | The operator confirmation receipt, linked C04 delivery, confirmed version and published outbox envelope identify the first `PlanReady`. The checker looks back in the C08 worker logs for acknowledgement of that exact event. |
-| 8 | The C06 closure, C07 request, revision of the same plan, C10 replan decision and second outbox envelope identify the detour. C05 publisher and C08 worker logs must match the revised event and its triggering closure in the same run and trace. |
+| 8 | C07 must record `PlanSaved` for this plan and its confirmed base version under the triggering closure. The C10 replan decision, revised plan and second outbox envelope identify the detour. C05 publisher and C08 worker logs must match the revised event in the same run and trace. |
 
 To review the same delivery again, pass the C06 closure event ID from the
 first run. This mode reads the saved records and retained worker logs. A

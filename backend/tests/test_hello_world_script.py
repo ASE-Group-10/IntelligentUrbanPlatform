@@ -163,7 +163,14 @@ def test_observed_event_must_match_the_saved_revision(monkeypatch):
         "detail": "awaiting publication",
         "pendingPublication": True,
     }
-    snapshots = iter([{**saved, "confirmation": pending}, saved])
+    pending_outcome = {"ok": False, "detail": "awaiting C07", "pendingOutcome": True}
+    snapshots = iter(
+        [
+            {**saved, "confirmation": pending},
+            {**saved, "revision": pending_outcome},
+            saved,
+        ]
+    )
     monkeypatch.setattr(
         hello_world, "saved_plan_evidence", lambda *args: next(snapshots)
     )

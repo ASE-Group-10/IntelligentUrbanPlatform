@@ -40,7 +40,7 @@ function Plans() {
       <ResourceAccess area="Plans">
         {(scope) => (
           <PlansWorkspace
-            key={link?.runId ?? ""}
+            key={link ? `${link.runId}:${link.planId}:${link.correlationId}` : ""}
             scope={scope}
             link={link}
             operator={Boolean(operator)}
@@ -89,7 +89,7 @@ function PlansWorkspace({
       {link &&
         link.runId === runId &&
         (operator ? (
-          <PlanConfirmation key={`${link.planId}:${link.correlationId}`} {...scope} link={link} />
+          <PlanConfirmation {...scope} link={link} />
         ) : (
           <p role="alert">Operator access is required to review this proposal.</p>
         ))}

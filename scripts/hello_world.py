@@ -295,11 +295,11 @@ def check_saved_plan(
         deadline = time.monotonic() + WAIT_SECONDS
         while True:
             saved = saved_plan_evidence(trace, closure_id)
-            # Broker delivery can precede the publisher's batch commit.
+            # Delivery can precede the publication mark or C07 saving its response.
             pending = any(
                 saved[phase].get("pendingPublication")
                 for phase in ("confirmation", "revision")
-            )
+            ) or saved["revision"].get("pendingOutcome")
             if not pending or time.monotonic() >= deadline:
                 break
             time.sleep(1)
