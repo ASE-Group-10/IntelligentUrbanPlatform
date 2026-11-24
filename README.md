@@ -169,8 +169,14 @@ C06 → RabbitMQ → C07. See [backend/README.md](backend/README.md#demo-road-cl
 With the stack up, `scripts/hello-world.sh` checks every hop of the hello-world
 path and prints one line per hop: `PASS`, `STUB` (exercised, other side is a
 labelled stub), `WIRED` (route or consumer up, not reached in this run),
-`SKIPPED` or `MISSING`. It injects the demo closure and follows its
-`correlationId` through C06 and C07. Set `ULOP_TOKEN` to a Supabase access token
+`SKIPPED` or `MISSING`. It reads the simulation `runId` and `correlationId`
+from [the Dublin scenario](fixtures/dublin-scenario.json) and prints both before
+checking the stack. To follow an existing delivery, run
+`scripts/hello-world.sh --run-id <run-uuid> --correlation-id <delivery-trace-uuid>`.
+On Windows, `python scripts/hello_world.py` accepts the same arguments. Each
+check injects a fresh closure observation and follows that specific event
+through C06 and C07 under the selected run and trace.
+Set `ULOP_TOKEN` to a Supabase access token
 to also run the signed-in hops. It exits 1 until every hop passes.
 
 ### Frontend

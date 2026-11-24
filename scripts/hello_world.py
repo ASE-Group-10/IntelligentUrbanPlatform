@@ -15,15 +15,16 @@ Each hop gets one status:
     SKIPPED  needs a signed-in token (set ULOP_TOKEN)
     MISSING  its route or consumer doesn't exist yet
 
-The closure from ``demo-feed`` carries one correlationId through hops 7 and 8.
-Once C04 and C05 exist, hop 3 starts the run and that correlationId should
-reach every hop. The script exits 1 unless every hop is PASS or STUB.
+The check uses runId and correlationId from fixtures/dublin-scenario.json.
+Pass --run-id and --correlation-id to follow an existing delivery instead.
+The script exits 1 unless every hop is PASS or STUB.
 
 Standard library only, so it runs with any Python 3.11+.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -34,10 +35,14 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
+from uuid import UUID
 
 API = os.environ.get("ULOP_API", "http://127.0.0.1:8000").rstrip("/")
 TOKEN = os.environ.get("ULOP_TOKEN")
-DEMO_RUN = "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+SCENARIO_PATH = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "dublin-scenario.json"
+)
 WAIT_SECONDS = int(os.environ.get("ULOP_WAIT_SECONDS", "30"))
 WORKERS = ("api", "c06-publisher", "c07-worker", "c08-worker")
 
@@ -67,8 +72,12 @@ def compose(*args: str, check: bool = True) -> str:
     return result.stdout
 
 
-def http(method: str, path: str, auth: bool = False) -> tuple[int, object]:
+def http(
+    method: str, path: str, auth: bool = False, *, correlation_id: str | None = None
+) -> tuple[int, object]:
     request = urllib.request.Request(f"{API}{path}", method=method)
+    if correlation_id:
+        request.add_header("X-Correlation-ID", correlation_id)
     if auth and TOKEN:
         request.add_header("Authorization", f"Bearer {TOKEN}")
     try:
@@ -136,13 +145,13 @@ def log_lines(service: str, since: str) -> list[dict]:
 
 
 def wait_for_log(
-    service: str, since: str, correlation_id: str, needle: str
+    service: str, since: str, trace: dict[str, str], needle: str
 ) -> dict | None:
     deadline = time.monotonic() + WAIT_SECONDS
     while time.monotonic() < deadline:
         for line in log_lines(service, since):
-            if line.get("correlationId") == correlation_id and needle in line.get(
-                "message", ""
+            if needle in line.get("message", "") and all(
+                line.get(key) == value for key, value in trace.items()
             ):
                 return line
         time.sleep(1)
@@ -153,7 +162,7 @@ def has_consumer(queues: dict[str, int], prefix: str) -> bool:
     return any(name.startswith(prefix) and count > 0 for name, count in queues.items())
 
 
-def c09_note() -> str:
+def c09_note(correlation_id: str) -> str:
     """Load the C09 demo corpus and run C05's query in-process (#85). Only a
     note: hop 4's status stays C05's, the caller that doesn't exist yet."""
     try:
@@ -165,6 +174,8 @@ def c09_note() -> str:
             "-m",
             "app.components.c09_logistics_knowledge.demo_corpus",
             "--query",
+            "--correlation-id",
+            correlation_id,
         )
     except RuntimeError as error:
         return f"C09: demo corpus/query failed: {error}"
@@ -208,7 +219,31 @@ def judge_hop8(
     return status, notes
 
 
-def main() -> int:
+def uuid4_arg(value: str) -> str:
+    parsed = UUID(value)
+    if parsed.version != 4:
+        raise argparse.ArgumentTypeError("expected a UUIDv4")
+    return str(parsed)
+
+
+def main(argv: list[str] | None = None) -> int:
+    scenario = json.loads(SCENARIO_PATH.read_text(encoding="utf-8"))
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--run-id",
+        type=uuid4_arg,
+        default=scenario["runId"],
+        help="simulation run UUIDv4 (default: Dublin fixture)",
+    )
+    parser.add_argument(
+        "--correlation-id",
+        type=uuid4_arg,
+        default=scenario["correlationId"],
+        help="delivery trace UUIDv4 (default: Dublin fixture)",
+    )
+    args = parser.parse_args(argv)
+    run_id, cid = args.run_id, args.correlation_id
+    print(f"Dublin simulation runId={run_id} correlationId={cid}", flush=True)
     hops = {
         n: Hop(n, name)
         for n, name in enumerate(
@@ -249,7 +284,9 @@ def main() -> int:
     elif not TOKEN:
         hops[1].set("SKIPPED", "route is up; set ULOP_TOKEN to call it signed in")
     else:
-        status, profile = http("GET", "/api/v1/identity/me", auth=True)
+        status, profile = http(
+            "GET", "/api/v1/identity/me", auth=True, correlation_id=cid
+        )
         if status == 200 and isinstance(profile, dict):
             hops[1].set("PASS", f"signed in as {profile.get('displayName')}")
         else:
@@ -274,7 +311,7 @@ def main() -> int:
             hops[n].set("WIRED", f"{what} is served; this script doesn't call it yet")
         else:
             hops[n].set("MISSING", f"{what} ({method} {path}) isn't served")
-    hops[4].notes.append(c09_note())
+    hops[4].notes.append(c09_note(cid))
 
     # Hop 6: C08 consumes PlanReady and serves the assignment routes.
     if (
@@ -289,43 +326,63 @@ def main() -> int:
     else:
         hops[6].set("MISSING", "no c08.plan-ready consumer or assignment API")
 
-    # Hops 7–8: inject the demo closure and follow its correlationId.
+    # Hops 7–8: follow this observation even when the fixture trace is reused.
     since = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        feed = compose("--profile", "demo", "run", "--rm", "-T", "demo-feed", "--fresh")
+        feed = compose(
+            "--profile",
+            "demo",
+            "run",
+            "--rm",
+            "-T",
+            "demo-feed",
+            "--fresh",
+            "--run-id",
+            run_id,
+            "--correlation-id",
+            cid,
+        )
     except RuntimeError as error:
         feed = ""
         hops[7].set("MISSING", f"demo-feed failed: {error}")
-    correlation = re.search(r"correlationId:\s+(\S+)", feed)
-    event = re.search(r"queued event:\s+CityStateUpdated (\S+)", feed)
-    if correlation:
-        cid = correlation.group(1)
+    event = re.search(r"^queued event:\s+CityStateUpdated ([0-9a-f-]{36})$", feed, re.M)
+    if event:
+        event_id = event.group(1)
+        trace = {
+            "scope": "simulation",
+            "runId": run_id,
+            "correlationId": cid,
+            "eventId": event_id,
+        }
         published = wait_for_log(
-            "c06-publisher", since, cid, "published CityStateUpdated"
+            "c06-publisher", since, trace, "published CityStateUpdated"
         )
         if published:
             hops[7].set("PASS", f"correlationId {cid}: C06 published CityStateUpdated")
         else:
             hops[7].set("MISSING", f"C06 didn't publish {cid} within {WAIT_SECONDS}s")
 
-        evaluated = wait_for_log("c07-worker", since, cid, "evaluated")
+        evaluated = wait_for_log("c07-worker", since, trace, "evaluated")
         listing = None
-        if evaluated and TOKEN and event:
+        if evaluated and TOKEN:
             status, body = http(
-                "GET", f"/api/v1/disruptions?runId={DEMO_RUN}", auth=True
+                "GET",
+                f"/api/v1/disruptions?runId={run_id}",
+                auth=True,
+                correlation_id=cid,
             )
             listed = isinstance(body, dict) and any(
-                event.group(1) in d.get("triggerEventIds", [])
+                event_id in d.get("triggerEventIds", [])
                 for d in body.get("disruptions", [])
             )
-            listing = (status, listed, event.group(1))
+            listing = (status, listed, event_id)
         status8, notes8 = judge_hop8(
             cid, evaluated["message"] if evaluated else None, listing
         )
         hops[8].set(status8)
         hops[8].notes.extend(notes8)
     elif not hops[7].notes:
-        hops[7].set("MISSING", "demo-feed printed no correlationId")
+        hops[7].set("MISSING", "demo-feed printed no queued CityStateUpdated event ID")
 
     # Hops 9–10: C11 and C12 consume events and serve their screens' routes.
     for n, prefix, route, what in (

@@ -1,7 +1,9 @@
 """How ``scripts/hello_world.py`` (#72) judges hop 8 from C07's log and C07's API."""
 
 import importlib.util
+import json
 import sys
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -73,3 +75,64 @@ def test_a_failed_listing_fails_the_hop():
 
     assert status == "MISSING"
     assert "503" in notes[-1]
+
+
+@pytest.mark.parametrize("override_ids", [False, True])
+def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
+    override_ids, monkeypatch, capsys
+):
+    scenario = json.loads(hello_world.SCENARIO_PATH.read_text(encoding="utf-8"))
+    run_id, cid = scenario["runId"], scenario["correlationId"]
+    argv = []
+    if override_ids:
+        run_id, cid = "eb7dac64-be2f-4123-af8f-78d8f1e2ff1d", CID
+        argv = ["--run-id", run_id, "--correlation-id", cid]
+    trace = {
+        "scope": "simulation",
+        "runId": run_id,
+        "correlationId": cid,
+        "eventId": EVENT,
+    }
+
+    def compose(*args, check=True):
+        if "--query" in args:
+            assert args[-2:] == ("--correlation-id", cid)
+            return f"query Ok: correlationId: {cid}"
+        if "demo-feed" in args:
+            assert args[args.index("demo-feed") + 1 :] == (
+                "--fresh",
+                "--run-id",
+                run_id,
+                "--correlation-id",
+                cid,
+            )
+            return f"queued event:   CityStateUpdated {EVENT}\n"
+        if args[0] == "logs":
+            if args[-1] == "c06-publisher":
+                return json.dumps({**trace, "message": "published CityStateUpdated"})
+            assert args[-1] == "c07-worker"
+            stale = {**trace, "message": "evaluated: no_disruption, 0 replan requests"}
+            lines = [{**stale, field: "other"} for field in trace]
+            lines.append({**trace, "message": CREATED})
+            return "\n".join(json.dumps(line) for line in lines)
+        return ""
+
+    def urlopen(request, timeout):
+        body = {}
+        if request.selector.startswith("/api/v1/disruptions"):
+            assert request.selector == f"/api/v1/disruptions?runId={run_id}"
+            assert request.get_header("Authorization") == "Bearer test-token"
+            assert request.get_header("X-correlation-id") == cid
+            body = {"disruptions": [{"triggerEventIds": [EVENT]}]}
+        response = BytesIO(json.dumps(body).encode())
+        response.status = 200
+        return response
+
+    monkeypatch.setattr(hello_world, "compose", compose)
+    monkeypatch.setattr(hello_world.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(hello_world, "TOKEN", "test-token")
+    hello_world.main(argv)
+    output = capsys.readouterr().out
+    assert f"runId={run_id} correlationId={cid}" in output
+    assert f"C09: query Ok: correlationId: {cid}" in output
+    assert "listDisruptions shows it" in output

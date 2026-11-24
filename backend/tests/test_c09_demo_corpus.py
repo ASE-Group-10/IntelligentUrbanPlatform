@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from app.components.c09_logistics_knowledge import demo_corpus, postgres_store
 from app.components.c09_logistics_knowledge.contracts import (
     PolicyQuery,
     RetrievalStatus,
@@ -10,6 +11,7 @@ from app.components.c09_logistics_knowledge.contracts import (
 from app.components.c09_logistics_knowledge.demo_corpus import DEMO_ZONES, load
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c09_logistics_knowledge.store import InMemoryKnowledgeStore
+from app.shared import logging as shared_logging
 from app.shared.c09_c10_common import AuthContext
 from app.shared.result import Ok
 
@@ -80,3 +82,25 @@ def test_conflict_scenario_flags_the_amendment():
 def test_loading_the_corpus_twice_is_idempotent():
     service = _service()
     assert all(r.value.duplicate for r in load(service))
+
+
+def test_demo_query_cli_uses_original_trace_for_the_live_policy_corpus(
+    monkeypatch, capsys, caplog
+):
+    monkeypatch.setattr(
+        postgres_store,
+        "PostgresKnowledgeStore",
+        lambda dsn, zones: InMemoryKnowledgeStore(zones, info=None),
+    )
+    monkeypatch.setattr(shared_logging, "configure_logging", lambda component: None)
+    caplog.set_level("INFO")
+    cid = uuid4()
+    demo_corpus.main(["--query", "--correlation-id", str(cid)])
+
+    assert f"correlationId: {cid}" in capsys.readouterr().out
+    assert any(
+        getattr(record, "correlationId", None) == cid
+        and record.component == "C09"
+        and record.scope == "live"
+        for record in caplog.records
+    )
