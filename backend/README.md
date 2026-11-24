@@ -283,6 +283,32 @@ Workers log one JSON object per line with `component` and, for events,
 `correlationId` across the C06 publisher and the C07 worker shows a closure
 going through the whole chain.
 
+Set `DD_SITE=datadoghq.eu` for the team's Datadog EU site and set
+`DD_API_KEY` in the shell or the ignored root `.env`.
+To run the worker and Datadog Agent in Compose, run this from the repository root:
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://datadog-agent:4318 \
+  docker compose up -d --build c07-worker datadog-agent
+```
+
+When running the worker directly on the host, start the Agent with
+`docker compose up -d datadog-agent` and set
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` in the worker's environment.
+An unset or empty endpoint disables export.
+
+In Datadog APM, search for `service:urban-logistics-c07` and the span
+`c07.evaluate_change`.
+Filter spans by `correlationId`, `eventId`, `eventType`, `scope`, or
+`runId` for simulation events. Spans also carry the evaluation outcome and
+retry flag. Unexpected exceptions include their type, message, and stack trace.
+In Metrics Explorer, search for these metrics:
+
+- `ulop.c07.evaluate_change.events` counts evaluations, including redelivery.
+- `ulop.c07.evaluate_change.duration` records evaluation time in milliseconds.
+- `ulop.c07.replans.accepted` counts replan requests accepted by the configured
+  C05 planning adapter.
+
 Other components can consume events the same way with
 `app.shared.events.EventConsumer` (see its docstring). Add your queue and its
 event types to `app/shared/topology.py` too: publishers declare those queues at
