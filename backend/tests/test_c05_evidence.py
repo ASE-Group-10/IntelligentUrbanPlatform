@@ -157,9 +157,10 @@ def test_published_confirmation_still_requires_its_link_receipt_and_payload(
         )
     elif missing == "c04_receipt":
         conn.execute(
-            """delete from c04_delivery_management.planning_receipts
-                where run_id=%s and receipt->>'planId'=%s""",
-            (flow.plan.run_scope.run_id, str(flow.plan.plan_id)),
+            """delete from c04_delivery_management.command_receipts
+                where scope_key=%s and operation='C04.markRequestsPlanned'
+                  and response_body->>'planId'=%s""",
+            (f"simulation:{flow.plan.run_scope.run_id}", str(flow.plan.plan_id)),
         )
     elif missing == "link":
         conn.execute(

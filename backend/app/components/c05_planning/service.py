@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 
+from app.components.c04_delivery_management.planning import get_requests
 from app.components.c05_planning import confirmation
 from app.components.c05_planning.models import Plan, PlanScope, Route, SavedDelivery
 from app.components.c05_planning.policy import check_route_policy, query_route_policy
@@ -26,6 +27,7 @@ from app.components.c10_decision_records.contracts import DecisionRecord
 from app.components.c10_decision_records.service import DecisionRecords
 from app.demo.feed import Scenario
 from app.shared.auth import AuthContext as OperatorContext
+from app.shared.auth import require_role
 from app.shared.c09_c10_common import AuthContext, VehicleClass
 from app.shared.result import Failure, Ok, Result
 
@@ -53,10 +55,25 @@ class PlanningService:
         self._scenario = scenario
         self._clock = clock
 
-    def get_plan(self, run_scope: PlanScope, plan_id: UUID) -> Result[Plan]:
-        """Read the current committed version inside the authorised partition."""
+    def get_plan(
+        self,
+        run_scope: PlanScope,
+        plan_id: UUID,
+        *,
+        operator: OperatorContext | None = None,
+    ) -> Result[Plan]:
+        """Read the current snapshot, enforcing C04 ownership for operator requests."""
+        if operator is not None and isinstance(
+            require_role(operator, "operator"), Failure
+        ):
+            return Failure("Forbidden", "C05.OPERATOR_REQUIRED")
         try:
-            row = self._store.get_plan(run_scope.scope, run_scope.run_id, plan_id)
+            row = self._store.get_plan(
+                run_scope.scope,
+                run_scope.run_id,
+                plan_id,
+                acting_provider_id=operator.acting_provider_id if operator else None,
+            )
         except psycopg.Error:
             return Failure("Unavailable", "C05.PLAN_STORE_UNAVAILABLE")
         if row is None:
@@ -82,6 +99,14 @@ class PlanningService:
             key,
         )
 
+    def reject_confirmation(
+        self, context: OperatorContext, plan_id: UUID | None, failure: Failure
+    ) -> Failure:
+        """Audit an authenticated HTTP rejection using only the requested target."""
+        return confirmation.reject_confirmation(
+            self._store, self._decisions, self._clock, context, plan_id, failure
+        )
+
     def generate_plan(
         self,
         delivery: SavedDelivery,
@@ -90,6 +115,17 @@ class PlanningService:
         key: str,
     ) -> Result[Plan]:
         """Save proposal and decision atomically, replaying the first committed plan."""
+        result = self.generate_with_trace(delivery, run_scope, correlation_id, key)
+        return result if isinstance(result, Failure) else Ok(result.value[0])
+
+    def generate_with_trace(
+        self,
+        delivery: SavedDelivery,
+        run_scope: PlanScope,
+        correlation_id: UUID,
+        key: str,
+    ) -> Result[tuple[Plan, UUID]]:
+        """Return the original receipt trace and verify C04 facts before new writes."""
         if run_scope.scope != "simulation":
             return Failure("Invalid", "C05.DUBLIN_SCENARIO_REQUIRES_SIMULATION")
         if correlation_id.version != 4:
@@ -113,6 +149,12 @@ class PlanningService:
                     saved_plan, correlation_id = previous
                     plan = Plan.model_validate(saved_plan, strict=False)
                 else:
+                    # C04 holds these facts stable until proposal and decision commit.
+                    current = get_requests(conn, ctx, run_scope, [delivery.delivery_id])
+                    if isinstance(current, Failure):
+                        return current
+                    if SavedDelivery.model_validate(current.value[0]) != delivery:
+                        return Failure("Conflict", "C04.DELIVERY_CHANGED")
                     departure = max(
                         self._scenario.start_time, delivery.time_window.start
                     )
@@ -149,7 +191,7 @@ class PlanningService:
                 "runId": str(run_scope.run_id),
             },
         )
-        return Ok(plan)
+        return Ok((plan, correlation_id))
 
     def _propose(
         self,
@@ -162,9 +204,8 @@ class PlanningService:
             return Failure("Conflict", "C05.DELIVERY_NOT_PENDING")
         if VehicleClass.VAN not in delivery.constraints.vehicle_kinds:
             return Failure("Infeasible", "C05.DEMO_VAN_NOT_PERMITTED")
-        if (
-            departure + timedelta(seconds=_DEMO_DURATION_SECONDS)
-            > delivery.time_window.end
+        if delivery.time_window.end - departure < timedelta(
+            seconds=_DEMO_DURATION_SECONDS
         ):
             return Failure("Infeasible", "C05.DEMO_ROUTE_OUTSIDE_DELIVERY_WINDOW")
         knowledge = query_route_policy(self._knowledge, ctx, delivery)

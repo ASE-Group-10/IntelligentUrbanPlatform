@@ -64,6 +64,7 @@ function PlansWorkspace({
   invalidLink: boolean;
 }) {
   const [runId, setRunId] = useState(link?.runId ?? "");
+  const [confirmedVersion, setConfirmedVersion] = useState<number>();
   return (
     <div className="space-y-4">
       <label className="flex items-center gap-2 text-sm">
@@ -89,11 +90,20 @@ function PlansWorkspace({
       {link &&
         link.runId === runId &&
         (operator ? (
-          <PlanConfirmation {...scope} link={link} />
+          <PlanConfirmation {...scope} link={link} onConfirmed={setConfirmedVersion} />
         ) : (
           <p role="alert">Operator access is required to review this proposal.</p>
         ))}
-      <AssignmentList key={runId} {...scope} runId={runId} />
+      <AssignmentList
+        key={runId}
+        {...scope}
+        runId={runId}
+        confirmedPlan={
+          operator && link?.runId === runId && confirmedVersion !== undefined
+            ? { planId: link.planId, planVersion: confirmedVersion }
+            : undefined
+        }
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ResourceScope } from "@/features/auth/resource-access";
-import { segmentName } from "@/features/disruptions/disruptions";
+import { findDemoSegment } from "@/features/city-monitoring/demo-segments";
 
 import { PlanError, requestPlan, type Plan, type ProposalLink } from "./proposal";
 
@@ -11,7 +11,11 @@ export function PlanConfirmation({
   providerId,
   request,
   link,
-}: Pick<ResourceScope, "providerId" | "request"> & { link: ProposalLink }) {
+  onConfirmed,
+}: Pick<ResourceScope, "providerId" | "request"> & {
+  link: ProposalLink;
+  onConfirmed: (version: number) => void;
+}) {
   const [plan, setPlan] = useState<Plan>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,7 +26,9 @@ export function PlanConfirmation({
     const read = new AbortController();
     requestPlan(request, providerId, link, read.signal)
       .then((value) => {
-        if (!read.signal.aborted) setPlan(value);
+        if (read.signal.aborted) return;
+        setPlan(value);
+        if (value.status === "confirmed") onConfirmed(value.version);
       })
       .catch((err: unknown) => {
         if (!read.signal.aborted)
@@ -33,7 +39,7 @@ export function PlanConfirmation({
       confirmation.current?.abort();
       confirmation.current = null;
     };
-  }, [request, providerId, link, revision]);
+  }, [request, providerId, link, revision, onConfirmed]);
 
   async function confirm() {
     if (!plan || plan.status !== "awaiting_confirmation" || confirmation.current) return;
@@ -49,10 +55,13 @@ export function PlanConfirmation({
         controller.signal,
         plan.version,
       );
-      if (!controller.signal.aborted) setPlan(confirmed);
+      if (!controller.signal.aborted) {
+        setPlan(confirmed);
+        onConfirmed(confirmed.version);
+      }
     } catch (err) {
       if (controller.signal.aborted) return;
-      if (err instanceof PlanError && [401, 403, 404, 409].includes(err.status)) {
+      if (err instanceof PlanError && [400, 401, 403, 404, 409].includes(err.status)) {
         setPlan(undefined);
         setError(err.message);
       } else {
@@ -79,10 +88,12 @@ export function PlanConfirmation({
                 {plan.status === "confirmed" ? "Plan confirmed" : "Awaiting confirmation"} · Version{" "}
                 {plan.version}
               </p>
+              <p className="text-sm break-words">Plan ID {plan.planId}</p>
               <p className="text-sm break-words">Delivery {plan.requestIds.join(", ")}</p>
               {plan.routes.map((route, index) => (
                 <p key={index} className="text-sm text-muted-foreground">
-                  Route: {route.segmentKeys.map(segmentName).join(" → ")}
+                  Route:{" "}
+                  {route.segmentKeys.map((key) => findDemoSegment(key)?.name ?? key).join(" → ")}
                 </p>
               ))}
             </>

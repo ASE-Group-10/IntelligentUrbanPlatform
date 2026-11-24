@@ -171,15 +171,18 @@ path and prints one line per hop: `PASS`, `STUB` (exercised, other side is a
 labelled stub), `WIRED` (connection available, hop partly verified),
 `SKIPPED` or `MISSING`. It reads the simulation `runId` and `correlationId`
 from [the Dublin scenario](fixtures/dublin-scenario.json) and prints both before
-checking the stack. To follow an existing delivery, run
+checking the stack. With `ULOP_TOKEN` and no plan ID, the check submits one new
+Dublin delivery to C04, verifies that it generated a proposal, and prints a
+Plans link. In C01, an operator can also start from **Deliveries → Dublin
+simulation → Submit delivery → Review plan**. After confirming the proposal, run
 `scripts/hello-world.sh --run-id <run-uuid> --correlation-id <delivery-trace-uuid> --plan-id <confirmed-plan-uuid>`.
 On Windows, `python scripts/hello_world.py` accepts the same arguments. By
-default the check injects a fresh closure observation and follows that event
+default this plan-specific check injects a fresh closure observation and follows that event
 through C06 and C07 under the selected run and trace. For hop 8, first confirm
 a delivery whose window allows the detour at the time of the check. The script
 matches the closure to the revised `PlanReady` by `causationId` and verifies
 that C08 acknowledged the published event ID. Supplying `--plan-id` also
-checks the saved C04 delivery, the proposal's C10 decision and C09 evidence,
+checks the original C04 submission and handoff, the proposal's C10 decision and C09 evidence,
 and C08's receipt of the confirmation event. Add
 `--closure-event-id <closure-uuid>` to inspect the same run again without
 injecting another road closure. See the [Dublin acceptance instructions](contracts/components/c05-planning/internal.md#run-the-dublin-replan)

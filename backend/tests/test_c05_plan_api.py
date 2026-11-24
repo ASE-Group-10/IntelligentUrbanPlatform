@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.components.c02_identity_access import records
+from app.components.c05_planning import confirmation
 from app.components.c05_planning.store import PostgresPlanStore
 from app.config import Settings
 from app.main import create_app
@@ -45,7 +46,8 @@ def api(example, monkeypatch):
     # Use the actual planning service and router; PG persistence is tested separately.
     reads = []
 
-    def lookup(store, scope, selected_run, plan_id):
+    def lookup(store, scope, selected_run, plan_id, *, acting_provider_id):
+        assert acting_provider_id == provider
         reads.append((scope, selected_run, plan_id))
         if (
             scope == "simulation"
@@ -140,7 +142,7 @@ def test_malformed_plan_or_scope_uses_the_contract_error(api, plan_id, params):
 def test_unavailable_plan_store_uses_the_contract_error(api, monkeypatch):
     client, plan, operator, _, _ = api
 
-    def unavailable(*args):
+    def unavailable(*args, **kwargs):
         raise psycopg.OperationalError("private database details")
 
     monkeypatch.setattr(PostgresPlanStore, "get_plan", unavailable)
@@ -153,13 +155,30 @@ def test_unavailable_plan_store_uses_the_contract_error(api, monkeypatch):
     assert "private database details" not in response.text
 
 
-def test_confirmation_requires_operator_role_valid_version_and_idempotency_key(api):
+def test_confirmation_requires_operator_role_valid_version_and_idempotency_key(
+    api, monkeypatch
+):
     client, plan, operator, driver, _ = api
+    attempts = []
+
+    def capture_rejection(store, decisions, clock, context, plan_id, failure):
+        attempts.append((context.principal_id, failure.kind))
+        return failure
+
+    monkeypatch.setattr(confirmation, "reject_confirmation", capture_rejection)
     path = f"/api/v1/plans/{plan['planId']}/confirmation"
     body = {"expectedVersion": 1, "runScope": plan["runScope"]}
     auth = {"Authorization": f"Bearer {operator}"}
     key = {"Idempotency-Key": "confirm-click"}
     assert_error(client.post(path, json=body, headers=key), 401, "Unauthenticated")
+    assert_error(
+        client.post(
+            path, json=body, headers={**auth, **key, "X-Acting-Provider": str(uuid4())}
+        ),
+        403,
+        "Forbidden",
+    )
+    assert attempts == []
     assert_error(
         client.post(
             path, json=body, headers={**key, "Authorization": f"Bearer {driver}"}
@@ -175,3 +194,8 @@ def test_confirmation_requires_operator_role_valid_version_and_idempotency_key(a
         400,
         "Invalid",
     )
+    assert attempts == [
+        (driver, "Forbidden"),
+        (operator, "Invalid"),
+        (operator, "Invalid"),
+    ]

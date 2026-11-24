@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
@@ -154,6 +155,7 @@ def test_observed_event_must_match_the_saved_revision(monkeypatch):
         "eventTime": FIRST_TIME,
     }
     saved = {
+        "origin": "saved-delivery",
         "generation": {**confirmed, "version": 1, "deliveryId": DELIVERY},
         "confirmation": confirmed,
         "revision": {**confirmed, "version": 3, "eventId": REVISION_EVENT},
@@ -182,7 +184,18 @@ def test_observed_event_must_match_the_saved_revision(monkeypatch):
     assert "matched" in hops[8].notes[-1]
 
 
-@pytest.mark.parametrize("mode", ["default", "pinned", "replay", "wrong-closure"])
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "default",
+        "pinned",
+        "fixture",
+        "replay",
+        "wrong-closure",
+        "submitted",
+        "missing-handoff",
+    ],
+)
 @pytest.mark.parametrize("matching_receipt", [True, False])
 def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     mode, matching_receipt, monkeypatch, capsys
@@ -191,6 +204,7 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     run_id, cid = scenario["runId"], scenario["correlationId"]
     argv = []
     pinned = mode != "default"
+    submitted = mode in {"submitted", "missing-handoff"}
     if pinned:
         run_id, cid = "eb7dac64-be2f-4123-af8f-78d8f1e2ff1d", CID
         argv = ["--run-id", run_id, "--correlation-id", cid, "--plan-id", PLAN]
@@ -228,7 +242,7 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
                     "runId": run_id,
                     "correlationId": cid,
                     "planId": PLAN,
-                    "origin": "saved-delivery",
+                    "origin": "c04-submission" if submitted else "saved-delivery",
                     "closureEventId": selected_event,
                     "generation": {
                         **original,
@@ -242,6 +256,7 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
                         "ok": True,
                         "version": 2,
                         "detail": "confirmed plan",
+                        "localFixture": mode == "fixture",
                         "eventId": FIRST,
                         "eventTime": FIRST_TIME,
                     },
@@ -268,6 +283,26 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
             )
             return f"queued event:   CityStateUpdated {EVENT}\n"
         if args[0] == "logs":
+            if args[-1] == "api":
+                archived = {
+                    "component": "C04",
+                    "scope": "simulation",
+                    "runId": run_id,
+                    "correlationId": cid,
+                }
+                saved = f"submitDelivery: delivery {DELIVERY} v1 persisted"
+                handoff = (
+                    f"submitDelivery: C05 generated plan {PLAN} "
+                    f"v1 for delivery {DELIVERY}"
+                )
+                lines = [
+                    {**archived, "message": saved},
+                    {**archived, "message": handoff, "runId": OTHER_EVENT},
+                    {**archived, "message": handoff.replace(DELIVERY, OTHER_EVENT)},
+                ]
+                if mode == "submitted":
+                    lines.append({**archived, "message": handoff})
+                return "\n".join(map(json.dumps, lines))
             if args[-1] != "c08-worker":
                 assert ("--since" not in args) == replay
             if args[-1] == "c06-publisher":
@@ -325,7 +360,15 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     def urlopen(request, timeout):
         body = {}
         if request.selector == "/openapi.json":
-            body = {"paths": {"/api/v1/plans/{planId}/confirmation": {"post": {}}}}
+            body = {
+                "paths": {
+                    "/api/v1/plans/{planId}/confirmation": {"post": {}},
+                    "/api/v1/deliveries": {"post": {}},
+                }
+            }
+        assert (
+            request.method != "POST"
+        )  # Rechecking a pinned plan never submits another delivery.
         if request.selector.startswith("/api/v1/disruptions"):
             assert request.selector == f"/api/v1/disruptions?runId={run_id}"
             assert request.get_header("Authorization") == "Bearer test-token"
@@ -333,6 +376,7 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
             body = {"disruptions": [{"triggerEventIds": [EVENT]}]}
         response = BytesIO(json.dumps(body).encode())
         response.status = 200
+        response.headers = {}
         return response
 
     monkeypatch.setattr(hello_world, "compose", compose)
@@ -347,11 +391,24 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     hop4 = next(
         line for line in output.splitlines() if "C04 → C05 generatePlan" in line
     )
-    assert hop4.endswith("WIRED" if pinned else "MISSING")
+    assert hop4.endswith(
+        "PASS" if mode == "submitted" else "WIRED" if pinned else "MISSING"
+    )
     hop5 = next(line for line in output.splitlines() if "C01 confirms the plan" in line)
-    assert hop5.endswith("PASS" if pinned and matching_receipt else "WIRED")
+    assert hop5.endswith(
+        "PASS" if pinned and matching_receipt and mode != "fixture" else "WIRED"
+    )
+    assert ("The local CLI exercised C05" in output) == (
+        mode == "fixture" and matching_receipt
+    )
     if pinned:
-        assert "Entry point: saved C04 delivery" in output
+        if submitted:
+            hop3 = next(
+                line for line in output.splitlines() if "C01 → C04 submit" in line
+            )
+            assert hop3.endswith("PASS")
+        else:
+            assert "Entry point: saved C04 delivery" in output
         assert all(
             field in output
             for field in [PLAN, DELIVERY, DECISION, SNAPSHOT, FIRST, "v1", "v2"]
@@ -371,3 +428,117 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
         assert REVISED_DECISION in output and "v3" in output
     if matching_receipt:
         assert f"revised PlanReady {REVISION_EVENT}; C08 received it" in output
+
+
+def test_hop3_passes_when_delivery_saved_and_logged():
+    status, notes = hello_world.judge_hop3(
+        CID,
+        201,
+        {"deliveryId": DELIVERY},
+        {
+            "correlationId": CID,
+            "message": f"submitDelivery: delivery {DELIVERY} v1 persisted",
+        },
+    )
+
+    assert status == "PASS"
+    assert CID in notes[0]
+
+
+def test_hop3_missing_when_http_fails_or_log_absent():
+    assert hello_world.judge_hop3(CID, 503, None, None)[0] == "MISSING"
+    assert (
+        hello_world.judge_hop3(
+            CID,
+            201,
+            {"deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493"},
+            None,
+        )[0]
+        == "MISSING"
+    )
+
+
+@pytest.mark.parametrize(
+    ("response_headers", "expected"),
+    [
+        ({"X-Plan-Id": PLAN, "X-Plan-Version": "1", "X-Correlation-ID": CID}, "real"),
+        ({"X-Plan-Id": PLAN, "X-Plan-Version": "1", "X-Plan-Stub": "true"}, "STUB"),
+        (
+            {"X-Plan-Id": PLAN, "X-Plan-Version": "1", "X-Correlation-ID": OTHER_EVENT},
+            "MISSING",
+        ),
+        ({}, "MISSING"),
+    ],
+)
+def test_signed_in_checker_submits_fresh_window_and_defers_closure(
+    monkeypatch, capsys, response_headers, expected
+):
+    trace = {"scope": "simulation", "runId": OTHER_EVENT, "correlationId": CID}
+    paths = {
+        "/api/v1/deliveries": {"post": {}},
+        "/api/v1/identity/me": {"get": {}},
+        "/api/v1/plans/{planId}/confirmation": {"post": {}},
+    }
+
+    def urlopen(request, timeout):
+        body = {}
+        headers = {}
+        status = 200
+        if request.selector == "/openapi.json":
+            body = {"paths": paths}
+        elif request.selector == "/api/v1/identity/me":
+            body = {"availableProviders": [{"providerId": FIRST}]}
+        elif request.method == "POST":
+            assert request.selector == f"/api/v1/deliveries?runId={OTHER_EVENT}"
+            assert request.get_header("X-acting-provider") == FIRST
+            assert request.get_header("X-correlation-id") == CID
+            assert request.get_header("Authorization") == "Bearer signed-in"
+            payload = json.loads(request.data)
+            start = datetime.fromisoformat(payload["timeWindow"]["start"])
+            assert (
+                timedelta(minutes=29)
+                < start - datetime.now(UTC)
+                <= timedelta(minutes=30)
+            )
+            assert datetime.fromisoformat(
+                payload["timeWindow"]["end"]
+            ) - start == timedelta(hours=3)
+            body, headers, status = {"deliveryId": DELIVERY}, response_headers, 201
+        response = BytesIO(json.dumps(body).encode())
+        response.status = status
+        response.headers = headers
+        return response
+
+    def check(hops, selected, closure, revision, submitted):
+        assert selected == {**trace, "planId": PLAN}
+        assert submitted == DELIVERY and closure is None and revision is None
+        hops[4].set("PASS")
+
+    def compose(*args, **kwargs):
+        assert "demo-feed" not in args
+        if args[0] == "logs":
+            assert args[-1] == "api"
+            return json.dumps(
+                {
+                    **trace,
+                    "component": "C04",
+                    "message": f"submitDelivery: delivery {DELIVERY} v1 persisted",
+                }
+            )
+        return ""
+
+    monkeypatch.setattr(hello_world, "compose", compose)
+    monkeypatch.setattr(hello_world.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(hello_world, "TOKEN", "signed-in")
+    monkeypatch.setattr(hello_world, "check_saved_plan", check)
+    hello_world.main(["--run-id", OTHER_EVENT, "--correlation-id", CID])
+    output = capsys.readouterr().out
+    assert "C04 saved delivery " + DELIVERY in output
+    assert "Waiting for operator confirmation" in output
+    if expected == "real":
+        assert f"Confirm /plans?planId={PLAN}" in output
+    else:
+        assert f"Confirm /plans?planId={PLAN}" not in output
+        assert next(
+            line for line in output.splitlines() if "C04 → C05 generatePlan" in line
+        ).endswith(expected)

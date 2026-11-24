@@ -1,8 +1,10 @@
 """C05 plan views and the saved C04 facts used by the Dublin generator."""
 
+import re
+from datetime import datetime
 from typing import Literal
 
-from pydantic import UUID4, ConfigDict, Field
+from pydantic import UUID4, ConfigDict, Field, field_validator
 
 from app.components.c08_allocation.models import ResourceRequirement
 from app.shared.c09_c10_common import TimeWindow, VehicleClass
@@ -12,6 +14,11 @@ from app.shared.contracts import (
     SegmentKey,
     UtcDatetime,
     Version,
+)
+
+_RFC3339_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})",
+    re.ASCII,
 )
 
 
@@ -40,6 +47,15 @@ class DeliveryProgress(_C04Facts):
 class DeliveryWindow(TimeWindow):
     start: UtcDatetime
     end: UtcDatetime
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def require_timestamp(cls, value: object) -> datetime | str:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str) and _RFC3339_TIMESTAMP.fullmatch(value):
+            return value
+        raise ValueError("delivery window timestamps must be RFC 3339 date-times")
 
 
 class SavedDelivery(_C04Facts):

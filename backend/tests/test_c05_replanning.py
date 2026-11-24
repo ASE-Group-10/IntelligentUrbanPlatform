@@ -341,7 +341,7 @@ def test_discovery_and_replan_refresh_actual_delivery_and_run(
     with psycopg.connect(test_database_url, autocommit=True) as conn:
         updated = conn.execute(
             """update c04_delivery_management.deliveries
-                  set delivery = jsonb_set(
+                  set status='delivered', version=3, delivery=jsonb_set(
                       delivery || '{"status":"delivered","version":3}',
                       '{progress,status}', '"delivered"')
                 where run_id=%s and delivery_id=%s""",
@@ -355,6 +355,55 @@ def test_discovery_and_replan_refresh_actual_delivery_and_run(
         )
         versions, _, events, _ = db_counts(conn, plan.plan_id)
         assert (versions, events) == (2, 1)
+
+
+def test_discovery_defaults_to_the_run_clock_but_honours_historical_windows(
+    flow, scenario, c07_database, city
+):
+    assert flow.confirm().status_code == 200
+    plan = flow.plan
+    with flow.client.app.state.engine.begin() as conn:
+        saved = get_delivery_route(
+            conn, plan.run_scope, plan.plan_id, 2, plan.request_ids[0]
+        )
+    assert isinstance(saved, Ok)
+    departure = saved.value.planned_departure_at
+    arrival = departure + timedelta(
+        seconds=saved.value.route.estimated_duration_seconds
+    )
+    planning = make_replanning(c07_database, clock=lambda: arrival)
+    change = ChangeScope(
+        scope="simulation",
+        run_id=plan.run_scope.run_id,
+        segment_keys=[scenario.closure.segment_key],
+    )
+
+    historical = change.model_copy(update={"from_": departure, "to": arrival})
+    work = planning.find_affected_work(historical)
+    assert isinstance(work, Ok) and [item.plan_id for item in work.value.items] == [
+        plan.plan_id
+    ]
+    explicit = planning.find_affected_work(change.model_copy(update={"from_": arrival}))
+    assert isinstance(explicit, Ok) and not explicit.value.items
+    assert planning.find_affected_work(change) == explicit
+    assert planning.find_affected_work(
+        change.model_copy(update={"to": departure})
+    ) == Failure("Invalid", "C05.INVALID_CHANGE_WINDOW")
+
+    # C07 supplies only the changed segment and run when a real closure arrives.
+    closure = feed_closure(
+        city,
+        scenario,
+        lambda: arrival,
+        fresh=True,
+        run_id=change.run_id,
+        correlation_id=flow.trace,
+    )
+    assert isinstance(closure, Ok)
+    (event,) = city.state(StateScope("simulation", change.run_id)).outbox
+    outcome = make_detection(c07_database, clock=lambda: arrival).evaluate_change(event)
+    assert isinstance(outcome, Ok) and outcome.value.kind == "no_disruption"
+    assert not outcome.value.replan_requests
 
 
 def observe_road(

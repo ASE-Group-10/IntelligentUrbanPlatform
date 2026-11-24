@@ -1,0 +1,11 @@
+# Apply alongside the Azure VM's existing compose.yaml.
+services:
+  api:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
+  c06-publisher:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
+  c07-worker:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
+  c08-worker:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
+

@@ -17,15 +17,16 @@ from app.components.c05_planning.allocation import (
 )
 from app.components.c05_planning.publisher import PostgresPlanOutbox
 from app.components.c08_allocation.events import PlanReadyEvent
+from app.components.c10_decision_records.service import DecisionRecords
 from app.shared.contracts import RunScopeSelector
 from app.shared.publisher import RabbitMQPublisher, drain_outbox
-from app.shared.result import Ok
+from app.shared.result import Failure, Ok
 from tests.c05_flow import flow as flow
 
 
 def state(conn, plan):
     delivery = conn.execute(
-        "select delivery->>'status', (delivery->>'version')::int, plan_id "
+        "select status, version, plan_id "
         "from c04_delivery_management.deliveries where run_id=%s and delivery_id=%s",
         (plan.run_scope.run_id, plan.request_ids[0]),
     ).fetchone()
@@ -42,10 +43,21 @@ def state(conn, plan):
     return delivery, versions, events
 
 
+def confirmation_audits(conn, trace):
+    return conn.execute(
+        "select outcome, principal_id, entry->'targetIds' "
+        "from c10_decision_records.audit_outcomes where operation='C05.confirmPlan' "
+        "and correlation_id=%s order by seq",
+        (trace,),
+    ).fetchall()
+
+
 def test_concurrent_confirmations_link_once_and_replay_the_committed_response(
     flow, test_database_url
 ):
     gate = Barrier(2)
+    click_trace = uuid4()
+    flow.headers["X-Correlation-ID"] = str(click_trace)
 
     def click():
         gate.wait(timeout=5)
@@ -68,6 +80,19 @@ def test_concurrent_confirmations_link_once_and_replay_the_committed_response(
             "operation='C04.markRequestsPlanned' and correlation_id=%s",
             (flow.trace,),
         ).fetchone()
+        expected_actor = (str(flow.operator), [str(flow.plan.plan_id)])
+        assert confirmation_audits(conn, click_trace) == [
+            ("Ok", *expected_actor),
+            ("Conflict", *expected_actor),
+            ("Conflict", *expected_actor),
+        ]
+        assert confirmation_audits(conn, flow.trace) == []
+        assert conn.execute(
+            "select response_body->>'planId' "
+            "from c04_delivery_management.command_receipts "
+            "where scope_key=%s and operation='C04.markRequestsPlanned'",
+            (f"simulation:{flow.plan.run_scope.run_id}",),
+        ).fetchall() == [(str(flow.plan.plan_id),)]
     assert delivery == ("planned", 2, flow.plan.plan_id)
     assert versions == [(1, "awaiting_confirmation"), (2, "confirmed")]
     assert len(events) == 1 and events[0][2] is None
@@ -114,7 +139,7 @@ def test_changed_delivery_or_unauthorised_run_cannot_confirm(flow, test_database
         denied = flow.confirm(runScope={"scope": "simulation", "runId": str(uuid4())})
         assert denied.status_code == 403
         conn.execute(
-            "update c04_delivery_management.deliveries set delivery = "
+            "update c04_delivery_management.deliveries set version=2, delivery = "
             "jsonb_set(delivery, '{version}', '2') where delivery_id=%s",
             (flow.plan.request_ids[0],),
         )
@@ -130,6 +155,79 @@ def test_changed_delivery_or_unauthorised_run_cannot_confirm(flow, test_database
             "where operation='C04.markRequestsPlanned' and correlation_id=%s",
             (flow.trace,),
         ).fetchall() == [("Conflict",)]
+        assert confirmation_audits(conn, flow.trace) == [
+            ("Forbidden", str(flow.operator), [str(flow.plan.plan_id)]),
+            ("Conflict", str(flow.operator), [str(flow.plan.plan_id)]),
+        ]
+
+
+def test_invalid_and_forbidden_confirmation_audit_trusted_identity(
+    flow, test_database_url
+):
+    with psycopg.connect(test_database_url, autocommit=True) as conn:
+        response = flow.client.post(
+            "/api/v1/plans/bad-id/confirmation",
+            headers=flow.headers,
+            json={
+                "expectedVersion": 1,
+                "runScope": flow.plan.run_scope.model_dump(mode="json", by_alias=True),
+            },
+        )
+        assert response.status_code == 400
+        assert flow.confirm(expectedVersion=True).status_code == 400
+        assert flow.confirm(runScope={"scope": "live"}).status_code == 404
+        conn.execute(
+            "update c02_identity_access.provider_memberships set role='driver' "
+            "where principal_id=%s",
+            (flow.operator,),
+        )
+        assert flow.confirm().status_code == 403
+        assert confirmation_audits(conn, flow.trace) == [
+            ("Invalid", str(flow.operator), []),
+            ("Invalid", str(flow.operator), [str(flow.plan.plan_id)]),
+            ("NotFound", str(flow.operator), [str(flow.plan.plan_id)]),
+            ("Forbidden", str(flow.operator), [str(flow.plan.plan_id)]),
+        ]
+        assert state(conn, flow.plan) == (
+            ("pending", 1, None),
+            [(1, "awaiting_confirmation")],
+            [],
+        )
+
+
+def test_failed_c05_audit_rolls_back_the_entire_confirmation(
+    flow, test_database_url, monkeypatch
+):
+    record = DecisionRecords.record_outcome
+
+    def reject_success(self, conn, actor, outcome):
+        result = record(self, conn, actor, outcome)
+        if outcome.operation == "C05.confirmPlan" and outcome.outcome == "Ok":
+            return Failure("Unavailable", "C10.AUDIT_UNAVAILABLE")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(DecisionRecords, "record_outcome", reject_success)
+        assert flow.confirm().status_code == 503
+    with psycopg.connect(test_database_url) as conn:
+        assert state(conn, flow.plan) == (
+            ("pending", 1, None),
+            [(1, "awaiting_confirmation")],
+            [],
+        )
+        assert conn.execute(
+            "select count(*) from c05_planning.confirmation_receipts where plan_id=%s",
+            (flow.plan.plan_id,),
+        ).fetchone() == (0,)
+        assert conn.execute(
+            "select count(*) from c10_decision_records.audit_outcomes "
+            "where operation='C04.markRequestsPlanned' and correlation_id=%s",
+            (flow.trace,),
+        ).fetchone() == (0,)
+        assert confirmation_audits(conn, flow.trace) == [
+            ("Unavailable", str(flow.operator), [str(flow.plan.plan_id)])
+        ]
+    assert flow.confirm().status_code == 200
 
 
 @pytest.mark.skipif(

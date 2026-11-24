@@ -12,11 +12,12 @@ Each hop gets one status:
     PASS     exercised over its real connection on the selected trace
     STUB     exercised, but the component on the other side is a labelled stub
     WIRED    a connection is available, with only part of the hop verified
-    SKIPPED  needs a signed-in token (set ULOP_TOKEN)
+    SKIPPED  needs a signed-in token or a confirmed proposal
     MISSING  the required connection or evidence of the call is missing
 
-The check uses runId and correlationId from fixtures/dublin-scenario.json.
-Pass --run-id, --correlation-id and --plan-id to verify the stored proposal,
+With ULOP_TOKEN and no --plan-id, the check submits a new Dublin delivery
+and prints the proposal link. Confirm it before running the closure. Pass
+--run-id, --correlation-id and --plan-id to verify the stored proposal,
 confirmation and revision for one saved delivery along with both C08 receipts.
 Add --closure-event-id to recheck a completed trace using retained logs.
 The script exits 1 unless every hop is PASS or STUB.
@@ -36,9 +37,9 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 API = os.environ.get("ULOP_API", "http://127.0.0.1:8000").rstrip("/")
 TOKEN = os.environ.get("ULOP_TOKEN")
@@ -80,25 +81,37 @@ def compose(*args: str, check: bool = True) -> str:
 
 
 def http(
-    method: str, path: str, auth: bool = False, *, correlation_id: str | None = None
-) -> tuple[int, object]:
-    request = urllib.request.Request(f"{API}{path}", method=method)
+    method: str,
+    path: str,
+    auth: bool = False,
+    *,
+    correlation_id: str | None = None,
+    provider_id: str | None = None,
+    body: dict | None = None,
+) -> tuple[int, object, dict[str, str]]:
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(f"{API}{path}", data=data, method=method)
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
     if correlation_id:
         request.add_header("X-Correlation-ID", correlation_id)
+    if provider_id:
+        request.add_header("X-Acting-Provider", provider_id)
     if auth and TOKEN:
         request.add_header("Authorization", f"Bearer {TOKEN}")
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            return response.status, json.loads(response.read() or b"null")
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            return response.status, json.loads(response.read() or b"null"), headers
     except urllib.error.HTTPError as error:
-        return error.code, None
+        return error.code, None, {}
     except (urllib.error.URLError, TimeoutError) as error:
-        return 0, str(error)
+        return 0, str(error), {}
 
 
 def routes() -> set[tuple[str, str]]:
     """(METHOD, path) pairs the running API serves, from its /openapi.json."""
-    status, spec = http("GET", "/openapi.json")
+    status, spec, _ = http("GET", "/openapi.json")
     if status != 200 or not isinstance(spec, dict):
         return set()
     return {
@@ -169,11 +182,14 @@ def wait_for_log(
             if needle in line.get("message", "") and all(
                 line.get(key) == value for key, value in trace.items()
             ):
-                if wait_for_retry and line["message"].endswith("; will retry"):
+                if (
+                    wait_for_retry
+                    and line["message"].endswith("; will retry")
+                    and not accepted_replan(line["message"])
+                ):
                     # A redelivery can complete a request C05 could not yet take.
-                    if not accepted_replan(line["message"]):
-                        last_retry = line
-                        continue
+                    last_retry = line
+                    continue
                 return line
         if since is None or time.monotonic() >= deadline:
             break
@@ -251,10 +267,11 @@ def saved_plan_evidence(trace: dict[str, str], closure_id: str | None) -> dict:
         "correlationId": trace["correlationId"],
         "planId": trace["planId"],
         "closureEventId": closure_id,
-        "origin": "saved-delivery",
     }
-    if not isinstance(result, dict) or any(
-        k not in result or result[k] != v for k, v in expected.items()
+    if (
+        not isinstance(result, dict)
+        or any(k not in result or result[k] != v for k, v in expected.items())
+        or result.get("origin") not in {"c04-submission", "saved-delivery"}
     ):
         raise ValueError(
             "C05 evidence does not identify the requested plan, run, trace and closure"
@@ -266,7 +283,7 @@ def saved_plan_evidence(trace: dict[str, str], closure_id: str | None) -> dict:
             and isinstance(phase.get("ok"), bool)
             and isinstance(phase.get("detail"), str)
         ):
-            raise ValueError(f"C05 evidence is missing its {name} result")
+            raise TypeError(f"C05 evidence is missing its {name} result")
         if phase["ok"] and not all(
             phase.get(k) for k in ("version", "decisionId", "deliveryId")
         ):
@@ -290,6 +307,7 @@ def check_saved_plan(
     trace: dict[str, str],
     closure_id: str | None,
     published_revision: str | None,
+    submitted_delivery: str | None = None,
 ) -> None:
     try:
         deadline = time.monotonic() + WAIT_SECONDS
@@ -303,7 +321,7 @@ def check_saved_plan(
             if not pending or time.monotonic() >= deadline:
                 break
             time.sleep(1)
-    except (RuntimeError, ValueError) as error:
+    except (RuntimeError, TypeError, ValueError) as error:
         for n in (4, 5, 8):
             hops[n].notes.append(f"Could not verify committed C05 evidence: {error}")
         if hops[8].status == "PASS":
@@ -311,12 +329,50 @@ def check_saved_plan(
         return
 
     generated = saved["generation"]
+    if (
+        submitted_delivery
+        and generated["ok"]
+        and generated["deliveryId"] != submitted_delivery
+    ):
+        hops[4].set(
+            "MISSING", "The proposal does not identify the delivery just submitted."
+        )
+        return
     hops[4].set("WIRED" if generated["ok"] else "MISSING", phase_note(generated))
     if generated["ok"]:
-        hops[4].notes.append(
-            f"Entry point: saved C04 delivery {generated['deliveryId']}, "
-            f"plan {trace['planId']}. HTTP submission is unverified."
-        )
+        did = generated["deliveryId"]
+        if saved["origin"] == "c04-submission":
+            api_trace = {k: trace[k] for k in ("scope", "runId", "correlationId")}
+            api_trace["component"] = "C04"
+            submitted = wait_for_log(
+                "api", None, api_trace, f"submitDelivery: delivery {did} v1 "
+            )
+            handoff = wait_for_log(
+                "api",
+                None,
+                api_trace,
+                f"submitDelivery: C05 generated plan {trace['planId']} "
+                f"v{generated['version']} for delivery {did}",
+            )
+            if submitted:
+                hops[3].set(
+                    "PASS", f"C04 saved delivery {did} on the selected HTTP trace."
+                )
+            if submitted and handoff:
+                hops[4].set(
+                    "PASS",
+                    f"C04 submission generated plan {trace['planId']} for {did}.",
+                )
+            else:
+                hops[4].notes.append(
+                    f"C04 submission is recorded for plan {trace['planId']}. "
+                    "Its API submission and handoff logs are required for PASS."
+                )
+        else:
+            hops[4].notes.append(
+                f"Entry point: saved C04 delivery {did}, plan {trace['planId']}. "
+                "HTTP submission is unverified."
+            )
 
     confirmed = saved["confirmation"]
     hops[5].notes.append(phase_note(confirmed))
@@ -334,7 +390,12 @@ def check_saved_plan(
         )
         if receipt:
             hops[5].notes.append(f"C08 received first PlanReady {confirmed['eventId']}")
-            if hops[5].status == "WIRED":
+            if confirmed.get("localFixture"):
+                hops[5].notes.append(
+                    "The local CLI exercised C05. Confirm through the signed-in "
+                    "Plans page on a fresh proposal to verify the C01 HTTP hop."
+                )
+            elif hops[5].status == "WIRED":
                 hops[5].set("PASS")
         else:
             hops[5].notes.append(
@@ -396,6 +457,100 @@ def judge_hop8(
     return status, notes
 
 
+def judge_hop3(
+    cid: str,
+    status_code: int,
+    body: object,
+    log_line: dict | None,
+) -> tuple[str, list[str]]:
+    """Hop 3 counts when C04 saves the delivery over HTTP and logs ``cid``."""
+    if status_code not in (200, 201) or not isinstance(body, dict):
+        return "MISSING", [f"POST /api/v1/deliveries → {status_code}"]
+    delivery_id = body.get("deliveryId")
+    if not delivery_id:
+        return "MISSING", ["POST /api/v1/deliveries returned no deliveryId"]
+    if (
+        log_line is None
+        or log_line.get("correlationId") != cid
+        or log_line.get("message")
+        not in {
+            f"submitDelivery: delivery {delivery_id} v1 persisted",
+            f"submitDelivery: delivery {delivery_id} v1 replayed",
+        }
+    ):
+        return "MISSING", [f"C04 didn't log correlationId {cid} within {WAIT_SECONDS}s"]
+    return "PASS", [f"correlationId {cid}: C04 saved delivery {delivery_id}"]
+
+
+def _acting_provider_for(profile: object) -> str | None:
+    if not isinstance(profile, dict):
+        return None
+    providers = profile.get("availableProviders") or []
+    if not providers:
+        return None
+    first = providers[0]
+    return first.get("providerId") if isinstance(first, dict) else None
+
+
+def submit_dublin_delivery(
+    hops: dict[int, Hop], run: str, cid: str, provider: str
+) -> tuple[str | None, str | None]:
+    """Submit through the real C04 API; retain the response identifiers for hop 4."""
+    example = (
+        SCENARIO_PATH.parents[1]
+        / "contracts/components/c04-delivery-management/examples"
+        / "submit-delivery-request.json"
+    )
+    payload = json.loads(example.read_text(encoding="utf-8"))
+    start = datetime.now(UTC) + timedelta(minutes=30)
+    payload["timeWindow"] = {
+        "start": start.isoformat().replace("+00:00", "Z"),
+        "end": (start + timedelta(hours=3)).isoformat().replace("+00:00", "Z"),
+    }
+    payload["idempotencyKey"] = f"hello-world-{uuid4()}"
+    since = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    status, body, headers = http(
+        "POST",
+        f"/api/v1/deliveries?runId={run}",
+        auth=True,
+        provider_id=provider,
+        correlation_id=cid,
+        body=payload,
+    )
+    did = body.get("deliveryId") if isinstance(body, dict) else None
+    c04_trace = {
+        "component": "C04",
+        "scope": "simulation",
+        "runId": run,
+        "correlationId": cid,
+    }
+    log = None
+    if status in (200, 201) and did:
+        log = wait_for_log(
+            "api", since, c04_trace, f"submitDelivery: delivery {did} v1 "
+        )
+    state, notes = judge_hop3(cid, status, body, log)
+    hops[3].set(state)
+    hops[3].notes.extend(notes)
+    if state != "PASS":
+        return None, did if status in (200, 201) else None
+    if headers.get("x-plan-stub", "").lower() == "true":
+        hops[4].set("STUB", f"C04 returned a labelled planning stub for {did}.")
+        return None, did
+    try:
+        plan = uuid4_arg(headers["x-plan-id"])
+    except (KeyError, ValueError, argparse.ArgumentTypeError):
+        hops[4].set("MISSING", "C04 did not return a valid X-Plan-Id.")
+        return None, did
+    if headers.get("x-correlation-id") != cid or headers.get("x-plan-version") != "1":
+        hops[4].set(
+            "MISSING",
+            "The C04 response does not identify the original trace and proposal v1.",
+        )
+        return None, did
+    return plan, did
+
+
 def uuid4_arg(value: str) -> str:
     parsed = UUID(value)
     if parsed.version != 4:
@@ -416,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
         "--correlation-id",
         type=uuid4_arg,
         default=scenario["correlationId"],
-        help="delivery trace UUIDv4 (default: Dublin fixture)",
+        help="original delivery trace UUIDv4 (default: Dublin fixture)",
     )
     parser.add_argument(
         "--plan-id",
@@ -453,7 +608,7 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     # Hop 0: the API answers and every worker container is running.
-    status, health = http("GET", "/health")
+    status, health, _ = http("GET", "/health")
     running = running_services()
     down = [s for s in WORKERS if s not in running]
     if status == 200 and not down:
@@ -468,12 +623,13 @@ def main(argv: list[str] | None = None) -> int:
     queues = consumers()
 
     # Hop 1: C02 identity over HTTP with a bearer token.
+    profile = None
     if ("GET", "/api/v1/identity/me") not in served:
         hops[1].set("MISSING", "GET /api/v1/identity/me isn't served")
     elif not TOKEN:
         hops[1].set("SKIPPED", "route is up; set ULOP_TOKEN to call it signed in")
     else:
-        status, profile = http(
+        status, profile, _ = http(
             "GET", "/api/v1/identity/me", auth=True, correlation_id=cid
         )
         if status == 200 and isinstance(profile, dict):
@@ -489,23 +645,26 @@ def main(argv: list[str] | None = None) -> int:
     else:
         hops[2].set("WIRED", "route is up; registering needs a provider, not done here")
 
-    # Hops 3 and 5 use HTTP. Hop 4 starts inside the C04 submit handler.
-    probes = {
-        3: ("POST", "/api/v1/deliveries", "C04 submitDelivery"),
-        5: ("POST", "/api/v1/plans/{planId}/confirmation", "C05 confirmPlan"),
-    }
-    for n, (method, path, what) in probes.items():
-        if (method, path) in served:
-            hops[n].set("WIRED", f"{what} endpoint is served")
-        else:
-            hops[n].set("MISSING", f"{what} ({method} {path}) isn't served")
-    if not args.plan_id:
-        hops[4].set(
-            "MISSING",
-            "C04 submission has yet to exercise C05 generation in this check. "
-            "Run app.demo.c05 to exercise C05 from a saved delivery.",
+    plan_id, submitted_delivery = args.plan_id, None
+    if ("POST", "/api/v1/deliveries") not in served:
+        hops[3].set("MISSING", "C04 submitDelivery endpoint is not served.")
+    elif plan_id:
+        hops[3].set("WIRED", "Checking the original submission for the selected plan.")
+    elif not TOKEN:
+        hops[3].set("SKIPPED", "Set ULOP_TOKEN to submit a Dublin delivery over HTTP.")
+    elif provider := _acting_provider_for(profile):
+        plan_id, submitted_delivery = submit_dublin_delivery(
+            hops, run_id, cid, provider
         )
+    else:
+        hops[3].set("WIRED", "A signed-in acting provider is required to submit.")
+    if not plan_id and not hops[4].notes:
+        hops[4].notes.append("No C04-generated plan was selected on this trace.")
         hops[4].notes.append(c09_note(cid))
+    if ("POST", "/api/v1/plans/{planId}/confirmation") in served:
+        hops[5].set("WIRED", "C05 confirmPlan endpoint is served.")
+    else:
+        hops[5].set("MISSING", "C05 confirmPlan endpoint is not served.")
 
     # Hop 6: C08 consumes PlanReady and serves the assignment routes.
     if (
@@ -523,7 +682,23 @@ def main(argv: list[str] | None = None) -> int:
     # Hops 7–8: follow this observation even when the fixture trace is reused.
     event_id, published_id = args.closure_event_id, None
     since = None
-    if event_id:
+    if submitted_delivery:
+        if plan_id:
+            print(
+                f"Confirm /plans?planId={plan_id}&scope=simulation"
+                f"&runId={run_id}&correlationId={cid}",
+                flush=True,
+            )
+            print(
+                f"Then rerun with --run-id {run_id} --correlation-id {cid} "
+                f"--plan-id {plan_id}.",
+                flush=True,
+            )
+        for hop in (7, 8):
+            hops[hop].set(
+                "SKIPPED", "Waiting for operator confirmation before the closure."
+            )
+    elif event_id:
         print(f"Checking recorded closure {event_id}", flush=True)
     else:
         since = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -554,7 +729,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         listing = None
         if evaluated and TOKEN:
-            status, body = http(
+            status, body, _ = http(
                 "GET",
                 f"/api/v1/disruptions?runId={run_id}",
                 auth=True,
@@ -575,8 +750,8 @@ def main(argv: list[str] | None = None) -> int:
                 "causationId": event_id,
                 "eventType": "PlanReady",
             }
-            if args.plan_id:
-                revision_trace["planId"] = args.plan_id
+            if plan_id:
+                revision_trace["planId"] = plan_id
             revision = wait_for_log(
                 "c05-publisher", since, revision_trace, "published PlanReady"
             )
@@ -596,17 +771,18 @@ def main(argv: list[str] | None = None) -> int:
         hops[8].set(status8)
         hops[8].notes.extend(notes8)
 
-    if args.plan_id:
+    if plan_id:
         check_saved_plan(
             hops,
             {
                 "scope": "simulation",
                 "runId": run_id,
                 "correlationId": cid,
-                "planId": args.plan_id,
+                "planId": plan_id,
             },
             event_id,
             published_id,
+            submitted_delivery,
         )
 
     # Hops 9–10: C11 and C12 consume events and serve their screens' routes.

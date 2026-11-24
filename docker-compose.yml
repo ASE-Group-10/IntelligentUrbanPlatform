@@ -65,6 +65,18 @@ services:
       timeout: 5s
       retries: 12
 
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7.76.0
+    profiles: ["observability"]
+    environment:
+      DD_API_KEY: ${DD_API_KEY:-}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_HOSTNAME: ${DD_HOSTNAME:-ulop-local-otel}
+      DD_APM_ENABLED: "true"
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: "0.0.0.0:4318"
+    ports:
+      - "127.0.0.1:4318:4318"
+
   # One-shot migration runner: docker compose run --rm dbmate up
   dbmate:
     image: ghcr.io/amacneil/dbmate:2.36.0
@@ -119,6 +131,12 @@ services:
       timeout: 3s
       retries: 12
 
+  # C04: publishes DeliverySubmitted/Updated/ProgressChanged from the outbox.
+  c04-publisher:
+    <<: *backend
+    command: ["python", "-m", "app.components.c04_delivery_management.publisher"]
+    depends_on: *after-migrations
+
   # C05: publishes PlanReady after the plan transaction commits.
   c05-publisher:
     <<: *backend
@@ -136,6 +154,9 @@ services:
   c07-worker:
     <<: *backend
     command: ["python", "-m", "app.components.c07_disruption_detection.worker"]
+    environment:
+      <<: *backend-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on: *after-migrations
 
   # C08: consumes PlanReady and commits vehicle allocations (hop 6).
@@ -153,6 +174,22 @@ services:
     entrypoint: ["python", "-m", "app.demo.feed"]
     command: []
     depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # One-shot fixture operator for the local Dublin walkthrough.
+  demo-confirm:
+    <<: *backend
+    profiles: ["demo"]
+    restart: "no"
+    network_mode: "service:db"
+    environment:
+      C05_LOCAL_DEMO: "1"
+      DATABASE_URL: postgresql+psycopg://ulop:ulop@127.0.0.1:5432/ulop
+    entrypoint: ["python", "-m", "app.demo.c05", "--confirm"]
+    depends_on:
+      db:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
 

@@ -11,7 +11,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from pydantic import UUID4, TypeAdapter, ValidationError
 
-from app.components.c04_delivery_management.planning import DeliveryLinkReceipt
+from app.components.c04_delivery_management.contracts import DeliveryLinkReceipt
+from app.components.c04_delivery_management.planning import C05_SERVICE_PRINCIPAL_ID
 from app.components.c05_planning.models import Plan, SavedDelivery
 from app.components.c05_planning.store import scope_key
 from app.components.c06_city_monitoring.router import libpq_url
@@ -23,6 +24,7 @@ from app.components.c07_disruption_detection.contracts import (
 from app.components.c08_allocation.events import PlanReadyEvent
 from app.components.c10_decision_records.contracts import DecisionRecord
 from app.config import get_settings
+from app.demo.c05_confirmation import LOCAL_DEMO_OPERATOR_ID
 from app.demo.feed import load_scenario
 
 
@@ -123,7 +125,7 @@ def _ok(plan: Plan, detail: str, **fields) -> dict:
     }
 
 
-def _generation(cur, rows: dict, scoped: str, run_id: UUID, plan_id: UUID):
+def _generation(cur, rows: dict, scoped: str, correlation_id: UUID, plan_id: UUID):
     proposal = _plan(rows, 1)
     scenario = load_scenario()
     _require(
@@ -137,13 +139,18 @@ def _generation(cur, rows: dict, scoped: str, run_id: UUID, plan_id: UUID):
     )
     did = proposal.request_ids[0]
     cur.execute(
-        """select g.request_body, d.delivery, d.plan_id as linked_plan
+        """select g.request_body, d.delivery, d.plan_id as linked_plan,
+                  s.envelope->'payload'->'delivery' as submitted_delivery
              from c05_planning.generation_receipts g
              join c04_delivery_management.deliveries d
-               on d.run_id = %s and d.delivery_id = %s
+               on d.scope_key = g.scope_key and d.delivery_id = %s
+             left join c04_delivery_management.outbox s on s.scope_key = d.scope_key
+               and s.delivery_id = d.delivery_id and s.correlation_id = %s
+               and s.delivery_version = (g.request_body->>'version')::integer
+               and s.event_type = 'DeliverySubmitted'
             where g.scope_key = %s and g.plan_id = %s and g.version = 1
               and g.principal_id = 'service:c04'""",
-        (run_id, did, scoped, plan_id),
+        (did, correlation_id, scoped, plan_id),
     )
     link = cur.fetchone()
     _require(link, "Missing the generation receipt or its saved C04 delivery.")
@@ -188,7 +195,14 @@ def _generation(cur, rows: dict, scoped: str, run_id: UUID, plan_id: UUID):
         "Saved C04 delivery, proposal and C10 decision with C09 evidence.",
         evidenceSnapshotIds=[str(s.snapshot_id) for s in generated.evidence_snapshots],
     )
-    return result, proposal, current, link["linked_plan"]
+    origin = "saved-delivery"
+    if link["submitted_delivery"] is not None:
+        submitted = SavedDelivery.model_validate(link["submitted_delivery"])
+        _require(
+            submitted == source, "The submitted delivery differs from the C05 input."
+        )
+        origin = "c04-submission"
+    return result, proposal, current, link["linked_plan"], origin
 
 
 def _confirmation(
@@ -210,14 +224,16 @@ def _confirmation(
         "The confirmed plan or C04 link does not match the proposal.",
     )
     cur.execute(
-        """select r.receipt from c05_planning.confirmation_receipts
-             join c04_delivery_management.planning_receipts r
-               on r.run_id = %s and r.principal_id = 'service:c05'
+        """select r.response_body as receipt, c.principal_id
+             from c05_planning.confirmation_receipts c
+             join c04_delivery_management.command_receipts r
+               on r.scope_key = c.scope_key and r.principal_id = %s
+              and r.operation = 'C04.markRequestsPlanned'
               and r.idempotency_key = %s
-            where scope_key = %s and plan_id = %s
-              and expected_version = 1 and version = 2""",
+            where c.scope_key = %s and c.plan_id = %s
+              and c.expected_version = 1 and c.version = 2""",
         (
-            proposal.run_scope.run_id,
+            str(C05_SERVICE_PRINCIPAL_ID),
             f"c05:confirm:{proposal.plan_id}:v1",
             scoped,
             proposal.plan_id,
@@ -237,6 +253,9 @@ def _confirmation(
         "Operator confirmation, C04 link and first published PlanReady.",
         **_event(rows[2], confirmed, correlation_id, None),
     )
+    if row["principal_id"] == LOCAL_DEMO_OPERATOR_ID:
+        result["localFixture"] = True
+        result["detail"] = "Local CLI fixture confirmation and C04 delivery link."
     return result, confirmed
 
 
@@ -387,8 +406,8 @@ def collect_evidence(
         rows = {row["version"]: row for row in cur}
         phase = "generation"
         try:
-            report[phase], proposal, current, linked_plan = _generation(
-                cur, rows, scoped, run_id, plan_id
+            report[phase], proposal, current, linked_plan, report["origin"] = (
+                _generation(cur, rows, scoped, correlation_id, plan_id)
             )
             phase = "confirmation"
             report[phase], confirmed = _confirmation(
