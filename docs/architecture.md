@@ -2,6 +2,8 @@
 
 Version 1.0 (agreed architecture text), 5 Nov 2026. Intended design only: no deployment, benchmark, provider connection or recovery test has been performed. Scope: Dublin, synthetic demonstration data.
 
+For implementation, the current component contracts in `contracts/` take precedence wherever they differ from this architecture snapshot.
+
 ---
 
 ## 1. Core architectural principles (use as constraints in any prompt)
@@ -81,15 +83,15 @@ Key flows: C05 reads C03/C09 (and C06 snapshot); C08 reads saved plan/requiremen
 **UC04 Assign vehicle** — `assignVehicle` (C08): `getPlan` (C05), `listEligibleResources` (C03), loop over bounded candidates: `rankCandidates` → `reserveCandidate` → offer to driver/simulated vehicle → `recordOfferResponse` → `commitAssignment(assignmentRef, expectedPlanVersion, key)`.
 - AF1 no suitable vehicle → `Unassigned(reason)`, recommend rescheduling/external provider. AF2 vehicle becomes unavailable before confirmation → release uncommitted reservation, publish `OperationalDisruption`, return `Unresolved` (doesn't wait for C07). AF3 driver rejects → record, release reservation, next candidate. AF4 (optional) resource conflict → invoke UC08 `negotiateAllocation`; reuse its vehicleId/allocation ref/plan version; unresolved negotiation ends attempt. Allocation reference finalised after acceptance **without allocating capacity again**. State/decision/outbox commit atomically; dispatch only after valid commit + acceptance.
 
-**UC05 Monitor city** — `ingestObservation` (C06): authenticate, normalise units/times/segment IDs, store raw + normalised history, merge into new City State version, durable outbox → `CityStateUpdated(eventId, snapshotVersion, changedKeys)` to C07 and views. Ack after persistence.
-- AF1 auth/schema failure → reject, alert on repeated errors; AF2 stale feed (scheduled `checkFreshness`) → mark stale, labelled historical fallback, degraded confidence, stale alert; AF3 conflicting sources → keep both, precedence/quality metadata, lower confidence, flag; AF4 older observation → history only; AF5 manual report → authorised roles only, author + expiry; AF6 broker unavailable → durable outbox, backoff retry, publish latest state per changed key on recovery.
+**UC05 Monitor city** — `ingestObservation` (C06): authenticate, normalise units/times/segment IDs, store raw + normalised history, merge into new City State version, durable outbox → `CityStateUpdated(snapshotVersion, previousVersion, changes, degraded, staleSources)` to C07 and views. Ack after persistence.
+- AF1 auth/schema failure → reject, alert on repeated errors; AF2 stale feed (scheduled `checkFreshness`) → mark stale, labelled historical fallback, degraded confidence, stale alert; AF3 conflicting sources → keep both, precedence/quality metadata, lower confidence, flag; AF4 older observation → history only; AF5 manual report → authorised roles only, author + expiry; AF6 broker unavailable → durable outbox, backoff retry, publish every pending event in order on recovery so consumers see each version.
 
 **UC06 Detect disruption** — C07 consumes `CityStateUpdated`, `ResourceAvailabilityChanged`, `OperationalDisruption`; validates quality (reads C06/C03 fallback), `findAffectedWork` (C05), `classifyImpact`, `upsertDisruption`, and for new/materially changed impact issues one `requestReplan` per affected plan.
 - AF1 invalid/stale/unavailable data → bounded fallback with quality limits, else "status unknown"; AF2 no relevant disruption → `NoDisruption`; AF3 matches existing → update. Duplicate/unchanged events ignored.
 
 **UC07 Replan** — `requestReplan` (C05), one attempt: reads current plan version, requirements/progress, resources, City State, knowledge. Confirmed allocation facts are read-only snapshot inputs (constrain feasibility; not changed). Produces routes, schedules, resource requirements for unfinished deliveries only.
 - `NoChange` (no affected unfinished work); AF1 infeasible → `ReviewRequired(conflicts)`; AF2 missing/unreliable inputs → `ReviewRequired(reason)`; AF3 save failure/version conflict → preserve latest plan, `ReviewRequired`, don't publish.
-- `saveRevision(planId, expectedVersion, revision, key)`: one transaction saves revision + C10 decision (exact evidence) + `PlanReady` outbox entry. Result `PlanSaved` (broker confirmed) or `PublicationPending`; both `awaitingExecution`. Retry doesn't rerun solver. No C08 calls, reconciliation, dispatch, or waiting for receipts.
+- `saveRevision(planId, expectedVersion, revision, key)`: one transaction saves revision + C10 decision (exact evidence) + `PlanReady` outbox entry. Result `PlanSaved` (`awaitingExecution`). Retry doesn't rerun solver. No C08 calls, reconciliation, dispatch, or waiting for receipts.
 
 **UC08 Negotiate allocation** — C08 PlanReady handler calls `negotiateAllocation`: `queryKnowledge`, `requestProposals(negotiationId, needs, deadline, inputVersions)` to agents (bounded window), agents `evaluateProposalRequest` → `submitProposal`; `rankCandidates` via metric scoring; `commitNegotiation(negotiationId, selectedProposal, expectedVersions, key)`.
 - AF1 no feasible proposal → `AllocationFailed`, operator-visible exception; AF2 equivalent scores → documented emissions/fairness/workload criteria + stable tie-break; AF3 agents don't respond by deadline → log, continue with available agents. **No AF4.**
@@ -107,7 +109,7 @@ Key flows: C05 reads C03/C09 (and C06 snapshot); C08 reads saved plan/requiremen
 
 ## 5. Component APIs (logical contracts, not necessarily HTTP endpoints)
 
-**Shared types:** `AuthContext` (principal/service identity, roles, scope, correlation ID). `Result<T>` = success or `Invalid | Forbidden | NotFound | Conflict | Unavailable | Unconfirmed | Infeasible | Partial`. Plan generation returns `NoChange | ReviewRequired | PlanSaved | PublicationPending` — never allocation-confirmed. `PolicyQuery` (area, time/window, vehicle class, activity, optional context). `KnowledgeResult`, `EvidenceSnapshot` (exact content + identifiers/versions, persisted by C10). `EventEnvelope` (event ID, schema/type, producer, observed/ingested times, correlation/causation IDs, affected plan/resource IDs, entity versions, live/simulation run scope). `PlanReady` (saved plan version + resource needs). `OperationalDisruption` (failure type, affected entities, versions, decision ID, last confirmed state, unresolved work).
+**Shared types:** `AuthContext` (principal/service identity, roles, scope, correlation ID). `Result<T>` = success or `Invalid | Forbidden | NotFound | Conflict | Unavailable | Unconfirmed | Infeasible | Partial`. Plan generation returns `NoChange | ReviewRequired | PlanSaved` — never allocation-confirmed. `PolicyQuery` (area, time/window, vehicle class, activity, optional context). `KnowledgeResult`, `EvidenceSnapshot` (exact content + identifiers/versions, persisted by C10). `EventEnvelope` (event ID, schema/type, producer, observed/ingested times, correlation/causation IDs, affected plan/resource IDs, entity versions, live/simulation run scope). `PlanReady` (saved plan version + resource needs). `OperationalDisruption` (failure type, affected entities, versions, decision ID, last confirmed state, unresolved work).
 
 | Comp | APIs |
 |---|---|
