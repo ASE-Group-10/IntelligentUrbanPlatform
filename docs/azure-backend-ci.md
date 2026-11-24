@@ -112,3 +112,26 @@ run manually on `vm-ulop-rabbitmq-dev` and verified against:
 - `GET http://127.0.0.1:8000/health` → `200 OK` (`database: connected`)
 - OpenAPI routes for C02, C03, C06, C07, and C08
 - `c06-publisher`, `c07-worker` (Postgres store), and `c08-worker` running cleanly
+
+## Public HTTPS ingress (Nginx + Let's Encrypt)
+
+The VM's FastAPI container stays bound to `127.0.0.1:8000` (ports `8000`, `5672`,
+and `15672` are never opened in the Azure NSG). External HTTPS traffic enters
+through host Nginx on ports `80`/`443` for
+`ulop-dev-api.swedencentral.cloudapp.azure.com`:
+
+1. Copy `scripts/azure/nginx-ulop-api.conf` to
+   `/etc/nginx/sites-available/ulop-api.conf`, enable it in
+   `/etc/nginx/sites-enabled/ulop-api.conf`, remove
+   `/etc/nginx/sites-enabled/default`, and reload Nginx (`sudo nginx -t && sudo systemctl reload nginx`).
+   The config allowlists `/health` and `/api/*` while returning `404` for
+   `/api/v1/development*`, `/`, `/static/*`, `/docs`, `/redoc`, `/openapi.json`,
+   and unknown `Host` headers.
+2. Open inbound TCP `80` and `443` in the VM's Azure Network Security Group
+   (keep `22` restricted to operator IPs) and provision TLS with Certbot:
+   `sudo certbot --nginx -d ulop-dev-api.swedencentral.cloudapp.azure.com --redirect`.
+3. In `/home/azureuser/ulop-deploy/.env` (passed into the `api` service in
+   `compose.yaml`), set:
+   - `ALLOWED_HOSTS=localhost,127.0.0.1,ulop-dev-api.swedencentral.cloudapp.azure.com`
+   - `CORS_ORIGINS=<https://frontend-origin>` (explicit frontend origin(s), never `*`)
+   - `SUPABASE_URL=<https://project-ref.supabase.co>`

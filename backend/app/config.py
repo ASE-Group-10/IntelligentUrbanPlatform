@@ -1,16 +1,113 @@
+import json
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import AliasChoices, AnyUrl, Field, SecretStr, UrlConstraints
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import (
+    AfterValidator,
+    AliasChoices,
+    AnyUrl,
+    BeforeValidator,
+    Field,
+    SecretStr,
+    UrlConstraints,
+)
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+DEFAULT_ALLOWED_HOSTS: tuple[str, ...] = ("localhost", "127.0.0.1", "testserver")
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=Path(__file__).resolve().parents[1] / ".env", extra="ignore"
-    )
+def _parse_string_list(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return ()
+        if raw.startswith("["):
+            parsed = json.loads(raw)
+            if not isinstance(parsed, list) or not all(
+                isinstance(item, str) for item in parsed
+            ):
+                raise ValueError("Expected a JSON array of strings")
+            items = parsed
+        else:
+            items = raw.split(",")
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        if not all(isinstance(item, str) for item in value):
+            raise ValueError("Expected string entries")
+        items = list(value)
+    else:
+        raise ValueError("Expected a comma-separated string or list of strings")
 
+    return tuple(item.strip() for item in items if item.strip())
+
+
+def _validate_allowed_hosts(hosts: tuple[str, ...]) -> tuple[str, ...]:
+    if not hosts:
+        raise ValueError("ALLOWED_HOSTS must include at least one hostname")
+    for host in hosts:
+        if host == "*" or "*" in host:
+            raise ValueError("ALLOWED_HOSTS must list explicit hostnames, not '*'")
+        has_whitespace = any(c.isspace() for c in host)
+        if "://" in host or "/" in host or ":" in host or has_whitespace:
+            raise ValueError(
+                f"Invalid ALLOWED_HOSTS entry {host!r}; "
+                "supply hostnames without scheme, port, or path"
+            )
+    return hosts
+
+
+def _validate_cors_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
+    normalized: list[str] = []
+    for origin in origins:
+        if origin == "*" or "*" in origin:
+            raise ValueError("CORS_ORIGINS must list explicit http(s) origins, not '*'")
+        parts = urlsplit(origin)
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.netloc
+            or parts.path not in {"", "/"}
+            or parts.query
+            or parts.fragment
+            or parts.username
+            or parts.password
+        ):
+            raise ValueError(
+                f"Invalid CORS_ORIGINS entry {origin!r}; "
+                "supply origins such as https://app.example.com"
+            )
+        normalized.append(f"{parts.scheme}://{parts.netloc}")
+    return tuple(dict.fromkeys(normalized))
+
+
+AllowedHosts = Annotated[
+    tuple[str, ...],
+    NoDecode,
+    BeforeValidator(_parse_string_list),
+    AfterValidator(_validate_allowed_hosts),
+]
+
+CorsOrigins = Annotated[
+    tuple[str, ...],
+    NoDecode,
+    BeforeValidator(_parse_string_list),
+    AfterValidator(_validate_cors_origins),
+]
+
+
+class HttpIngressSettings(BaseSettings):
+    """Host and CORS allowlists needed when constructing FastAPI middleware."""
+
+    model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
+
+    allowed_hosts: AllowedHosts = DEFAULT_ALLOWED_HOSTS
+    cors_origins: CorsOrigins = ()
+
+
+class Settings(HttpIngressSettings):
     database_url: SecretStr
     supabase_url: (
         Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"], host_required=True)]
@@ -31,3 +128,15 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_ingress_settings(settings=None) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if settings is not None:
+        raw_hosts = getattr(settings, "allowed_hosts", DEFAULT_ALLOWED_HOSTS)
+        raw_origins = getattr(settings, "cors_origins", ())
+        return (
+            _validate_allowed_hosts(_parse_string_list(raw_hosts)),
+            _validate_cors_origins(_parse_string_list(raw_origins)),
+        )
+    ingress = HttpIngressSettings()
+    return ingress.allowed_hosts, ingress.cors_origins
