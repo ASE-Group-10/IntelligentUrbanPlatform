@@ -15,6 +15,7 @@ from uuid import UUID
 
 import psycopg
 from psycopg import IsolationLevel
+from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 
 from app.components.c06_city_monitoring.contracts import (
@@ -29,6 +30,7 @@ from app.components.c06_city_monitoring.store import (
 )
 from app.shared.contracts import ContractModel, EventEnvelope
 from app.shared.outbox import PostgresOutboxBatch
+from app.shared.result import Failure, Ok, Result
 
 
 def scope_key(state_scope: StateScope) -> str:
@@ -36,6 +38,24 @@ def scope_key(state_scope: StateScope) -> str:
     if state_scope.scope == "live":
         return "live"
     return f"simulation:{state_scope.run_id}"
+
+
+def hold_snapshot_version(
+    conn: psycopg.Connection, state_scope: StateScope, expected_version: int
+) -> Result[None]:
+    """Recheck the assessed version and hold it through the caller's transaction."""
+    if conn.autocommit and conn.info.transaction_status != TransactionStatus.INTRANS:
+        return Failure("Unavailable", "C06.SNAPSHOT_CHECK_REQUIRES_TRANSACTION")
+    # Ingestion takes FOR UPDATE on this same row before changing any segment.
+    # READ COMMITTED rechecks the version predicate after waiting for a writer.
+    row = conn.execute(
+        """select version from c06_city_monitoring.city_state
+            where scope_key = %s and version = %s for share""",
+        (scope_key(state_scope), expected_version),
+    ).fetchone()
+    if row is None:
+        return Failure("Unavailable", "C06.CITY_SNAPSHOT_CHANGED")
+    return Ok(None)
 
 
 def _json(model: ContractModel) -> Jsonb:

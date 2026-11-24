@@ -50,7 +50,7 @@ def test_committed_plan_ready_retries_with_the_same_envelope(
     saved = expected.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     with psycopg.connect(test_database_url, autocommit=True) as observer:
-        observer.execute("truncate c05_planning.outbox")
+        observer.execute("truncate c05_planning.replan_receipts, c05_planning.outbox")
         with psycopg.connect(test_database_url) as writer:
             writer.execute(
                 "insert into c05_planning.plan_versions "

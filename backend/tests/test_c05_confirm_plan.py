@@ -149,7 +149,9 @@ def test_operator_confirmation_reaches_rabbitmq_with_the_saved_event_id(
         try:
             # Isolate this publisher pass from previous tests on the test database.
             with psycopg.connect(test_database_url) as conn:
-                conn.execute("truncate c05_planning.outbox")
+                conn.execute(
+                    "truncate c05_planning.replan_receipts, c05_planning.outbox"
+                )
             store = PostgresPlanOutbox(test_database_url)
             assert flow.confirm().status_code == 200
             assert flow.confirm().status_code == 200

@@ -11,10 +11,19 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.shared.contracts import RunScope, RunScopeSelector
+from app.shared.result import Failure
 
 
 class GenerationConflictError(Exception):
     """The caller reused a generation key with different input."""
+
+
+class DecisionRejectedError(Exception):
+    """Exit the caller's transaction on a C10 failure, rolling back its writes."""
+
+    def __init__(self, failure: Failure):
+        self.failure = failure
+        super().__init__(failure.message)
 
 
 def scope_key(scope: RunScope, run_id: UUID | str | None) -> str:

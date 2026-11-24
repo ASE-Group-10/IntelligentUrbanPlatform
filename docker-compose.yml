@@ -132,7 +132,7 @@ services:
     depends_on: *after-migrations
 
   # C07: consumes CityStateUpdated, runs evaluateChange and keeps disruptions in
-  # Postgres (C05 stub for now).
+  # Postgres. C05 handles disruption requests in the worker process.
   c07-worker:
     <<: *backend
     command: ["python", "-m", "app.components.c07_disruption_detection.worker"]

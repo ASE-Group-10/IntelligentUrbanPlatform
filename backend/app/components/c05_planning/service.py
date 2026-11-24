@@ -9,72 +9,31 @@ import psycopg
 
 from app.components.c05_planning import confirmation
 from app.components.c05_planning.models import Plan, PlanScope, Route, SavedDelivery
-from app.components.c05_planning.store import GenerationConflictError, PostgresPlanStore
+from app.components.c05_planning.policy import check_route_policy, query_route_policy
+from app.components.c05_planning.store import (
+    DecisionRejectedError,
+    GenerationConflictError,
+    PostgresPlanStore,
+)
 from app.components.c08_allocation.models import (
     Capacity,
     CapacityUnit,
     ResourceKind,
     ResourceRequirement,
 )
-from app.components.c09_logistics_knowledge.contracts import (
-    Area,
-    EvidenceSnapshot,
-    PolicyQuery,
-    RetrievalStatus,
-    RuleCoverage,
-)
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.contracts import DecisionRecord
 from app.components.c10_decision_records.service import DecisionRecords
 from app.demo.feed import Scenario
 from app.shared.auth import AuthContext as OperatorContext
-from app.shared.c09_c10_common import Activity, AuthContext, VehicleClass
+from app.shared.c09_c10_common import AuthContext, VehicleClass
 from app.shared.result import Failure, Ok, Result
 
 log = logging.getLogger(__name__)
 _CALLER = "service:c04"
 _PLANNER = "service:c05"
-_DEMO_ZONES = ("dublin-D1", "dublin-D2")
 _DEMO_DURATION_SECONDS = 360
 _DEMO_LIMITATION = "Fixed Dublin demo route and van requirement; no route optimisation."
-
-
-class _DecisionRejectedError(Exception):
-    """Abort the caller-owned transaction when C10 returns a failure result."""
-
-    def __init__(self, failure: Failure):
-        self.failure = failure
-        super().__init__(failure.message)
-
-
-def _check_policy(snapshot: EvidenceSnapshot, segment_key: str) -> Failure | None:
-    if (
-        snapshot.rule_coverage is RuleCoverage.INCOMPLETE
-        or snapshot.retrieval_status
-        in (
-            RetrievalStatus.CONFLICT,
-            RetrievalStatus.LOW_CONFIDENCE,
-        )
-    ):
-        return Failure(
-            "Unavailable", "C05.DATA_UNAVAILABLE: unreliable policy evidence"
-        )
-    for passage in snapshot.items:
-        for rule in passage.constraints:
-            if (
-                set(rule.zone_ids).intersection(_DEMO_ZONES)
-                and (not rule.segment_keys or segment_key in rule.segment_keys)
-                and (
-                    not rule.vehicle_classes or VehicleClass.VAN in rule.vehicle_classes
-                )
-            ):
-                # The labelled route has no gross vehicle weight, permits or detailed
-                # stop schedule with which to prove compliance with a matching rule.
-                return Failure(
-                    "Unavailable",
-                    f"C05.DATA_UNAVAILABLE: demo cannot resolve {rule.constraint_id}",
-                )
-    return None
 
 
 class PlanningService:
@@ -163,7 +122,7 @@ class PlanningService:
                     plan, decision = proposal.value
                     recorded = self._decisions.record_decision(conn, ctx, decision)
                     if isinstance(recorded, Failure):
-                        raise _DecisionRejectedError(recorded)
+                        raise DecisionRejectedError(recorded)
                     self._store.save(
                         conn,
                         plan.model_dump(mode="json", by_alias=True),
@@ -173,7 +132,7 @@ class PlanningService:
                         key,
                         request,
                     )
-        except _DecisionRejectedError as exc:
+        except DecisionRejectedError as exc:
             return exc.failure
         except GenerationConflictError:
             return Failure("Conflict", "C05.IDEMPOTENCY_MISMATCH")
@@ -208,18 +167,12 @@ class PlanningService:
             > delivery.time_window.end
         ):
             return Failure("Infeasible", "C05.DEMO_ROUTE_OUTSIDE_DELIVERY_WINDOW")
-        query = PolicyQuery(
-            area=Area(zone_ids=list(_DEMO_ZONES)),
-            time_window=delivery.time_window,
-            vehicle_class=VehicleClass.VAN,
-            activity=Activity.DELIVERY,
-        )
-        knowledge = self._knowledge.query_knowledge(ctx, query)
+        knowledge = query_route_policy(self._knowledge, ctx, delivery)
         if isinstance(knowledge, Failure):
             return knowledge
-        snapshot = knowledge.value.evidence_snapshot
+        snapshot = knowledge.value
         segment_key = self._scenario.closure.segment_key
-        rejected = _check_policy(snapshot, segment_key)
+        rejected = check_route_policy(snapshot, segment_key)
         if rejected is not None:
             return rejected
 

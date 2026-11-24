@@ -25,6 +25,54 @@ class DeliveryLinkReceipt(ContractModel):
     versions: dict[UUID, Version]
 
 
+def _check_planning_scope(
+    ctx: AuthContext, run_scope: RunScopeSelector
+) -> Failure | None:
+    if (
+        ctx.principal_type is not PrincipalType.SERVICE
+        or "Service:C05" not in ctx.roles
+    ):
+        return Failure("Forbidden", "C04.FORBIDDEN")
+    if run_scope.scope != "simulation" or run_scope.run_id is None:
+        return Failure("Invalid", "C04.INVALID_RUN_SCOPE")
+    return None
+
+
+def get_requests(
+    conn: psycopg.Connection,
+    ctx: AuthContext,
+    run_scope: RunScopeSelector,
+    request_ids: list[UUID],
+    *,
+    linked_to_plan: UUID | None = None,
+) -> Result[list[dict]]:
+    """Read all requested simulation deliveries on the caller's transaction.
+
+    The optional plan selector returns only its current links, after checking
+    that every requested ID exists in the run. Shared locks keep the progress
+    and linkage read for a revision stable until that revision is committed.
+    """
+    rejected = _check_planning_scope(ctx, run_scope)
+    if rejected:
+        return rejected
+    if not request_ids or len(set(request_ids)) != len(request_ids):
+        return Failure("Invalid", "C04.INVALID_REQUEST")
+    rows = conn.execute(
+        """select delivery_id, delivery, plan_id from c04_delivery_management.deliveries
+            where run_id = %s and delivery_id = any(%s)
+            order by delivery_id for share""",
+        (run_scope.run_id, request_ids),
+    ).fetchall()
+    if len(rows) != len(request_ids):
+        return Failure("NotFound", "C04.DELIVERY_NOT_FOUND")
+    included = {
+        did: delivery
+        for did, delivery, plan_id in rows
+        if linked_to_plan is None or plan_id == linked_to_plan
+    }
+    return Ok([included[did] for did in request_ids if did in included])
+
+
 def seed_demo_delivery(conn: psycopg.Connection, run_id: UUID, delivery: dict) -> None:
     """Import a saved snapshot once, preserving later updates to that delivery."""
     delivery_id = UUID(str(delivery["deliveryId"]))
@@ -84,13 +132,9 @@ def mark_requests_planned(
     now: datetime,
 ) -> Result[DeliveryLinkReceipt]:
     """Link pending C04 deliveries and audit the mutation on the caller's connection."""
-    if (
-        ctx.principal_type is not PrincipalType.SERVICE
-        or "Service:C05" not in ctx.roles
-    ):
-        return Failure("Forbidden", "C04.FORBIDDEN")
-    if run_scope.scope != "simulation" or run_scope.run_id is None:
-        return Failure("Invalid", "C04.INVALID_RUN_SCOPE")
+    rejected = _check_planning_scope(ctx, run_scope)
+    if rejected:
+        return rejected
     run_id = run_scope.run_id
     if (
         not request_ids

@@ -5,23 +5,20 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import psycopg
-from psycopg.types.json import Jsonb
 
 from app.components.c04_delivery_management import planning as deliveries
-from app.components.c08_allocation.events import PlanReadyEvent
-from app.components.c08_allocation.models import PlanReadyPayload
 from app.components.c10_decision_records.service import DecisionRecords
 from app.shared.auth import AuthContext, require_role
 from app.shared.c09_c10_common import AuthContext as ServiceContext
 from app.shared.c09_c10_common import Outcome
-from app.shared.contracts import Affected
 from app.shared.result import Failure, Ok, Result
 
 from .models import Plan, PlanScope
 from .store import PostgresPlanStore, lock_plan, scope_key
+from .versions import save_ready_version
 
 log = logging.getLogger(__name__)
 
@@ -41,31 +38,6 @@ class _DeliveryRejectedError(Exception):
         self.ctx = ctx
         self.plan = plan
         super().__init__(failure.message)
-
-
-def _plan_ready(plan: Plan, correlation_id: UUID, now: datetime) -> PlanReadyEvent:
-    segments = dict.fromkeys(key for route in plan.routes for key in route.segment_keys)
-    return PlanReadyEvent(
-        event_id=uuid4(),
-        event_type="PlanReady",
-        producer="C05",
-        schema_version=1,
-        observed_at=now,
-        emitted_at=now,
-        correlation_id=correlation_id,
-        scope=plan.run_scope.scope,
-        run_id=plan.run_scope.run_id,
-        affected=Affected(
-            plan_ids=[plan.plan_id], resource_ids=[], segment_keys=list(segments)
-        ),
-        entity_versions={str(plan.plan_id): plan.version},
-        payload=PlanReadyPayload(
-            plan_id=plan.plan_id,
-            plan_version=plan.version,
-            decision_id=plan.decision_id,
-            requirements=plan.resource_needs,
-        ),
-    )
 
 
 def _commit_confirmation(
@@ -154,26 +126,7 @@ def _commit_confirmation(
     plan = proposal.model_copy(
         update={"version": expected_version + 1, "status": "confirmed"}
     )
-    event = _plan_ready(plan, correlation_id, now)
-    conn.execute(
-        """insert into c05_planning.plan_versions
-                  (proposal, correlation_id, planned_departure_at)
-           values (%s,%s,%s)""",
-        (Jsonb(plan.model_dump(mode="json", by_alias=True)), correlation_id, departure),
-    )
-    conn.execute(
-        """insert into c05_planning.outbox
-                  (event_id, scope_key, plan_id, version, event_type, envelope)
-           values (%s,%s,%s,%s,%s,%s)""",
-        (
-            event.event_id,
-            scoped,
-            plan_id,
-            plan.version,
-            event.event_type,
-            Jsonb(event.model_dump(mode="json", by_alias=True, exclude_none=True)),
-        ),
-    )
+    event_id = save_ready_version(conn, plan, departure, correlation_id, now)
     conn.execute(
         """insert into c05_planning.confirmation_receipts
                   (scope_key, principal_id, provider_id, idempotency_key, plan_id,
@@ -181,7 +134,7 @@ def _commit_confirmation(
            values (%s,%s,%s,%s,%s,%s,%s)""",
         (*caller, plan_id, expected_version, plan.version),
     )
-    return Ok(_Confirmation(plan, correlation_id, event.event_id))
+    return Ok(_Confirmation(plan, correlation_id, event_id))
 
 
 def confirm_plan(
