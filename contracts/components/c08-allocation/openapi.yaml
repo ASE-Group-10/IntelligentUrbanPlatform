@@ -156,7 +156,7 @@ components:
         resourceId: { type: string, format: uuid }
         resourceName: { type: string }
         offerId: { type: [string, 'null'], format: uuid }
-        status: { type: string, enum: [allocated, offered, accepted, rejected] }
+        status: { type: string, enum: [allocated, offered, accepted, rejected, unresolved] }
         correlationId: { type: string, format: uuid }
         canOffer: { type: boolean }
         canRespond: { type: boolean }
