@@ -14,6 +14,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.components.c02_identity_access.tokens import SupabaseVerifier
+from app.components.c04_delivery_management.router import router as deliveries_router
+from app.components.c04_delivery_management.service import DeliveryService
 from app.components.c06_city_monitoring.ingestion import CityMonitoring
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
 from app.components.c06_city_monitoring.router import libpq_url
@@ -48,6 +50,8 @@ def create_app(
     identity_verifier=None,
     city_state_store=None,
     disruption_store=None,
+    deliveries=None,
+    planning_gateway=None,
     clock=None,
 ):
     @asynccontextmanager
@@ -67,6 +71,11 @@ def create_app(
         )
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
+        )
+        app.state.deliveries = deliveries or DeliveryService(
+            app.state.engine,
+            planning_gateway=planning_gateway,
+            clock=clock,
         )
         app.state.city_monitoring = CityMonitoring(
             store=city_state_store
@@ -177,6 +186,7 @@ def create_app(
     app.include_router(allocation_router)
     app.include_router(identity_router)
     app.include_router(router)
+    app.include_router(deliveries_router)
     app.include_router(city_state_router)
     app.include_router(disruptions_router)
     return app

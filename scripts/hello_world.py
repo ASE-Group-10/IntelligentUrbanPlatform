@@ -34,6 +34,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from uuid import uuid4
 
 API = os.environ.get("ULOP_API", "http://127.0.0.1:8000").rstrip("/")
 TOKEN = os.environ.get("ULOP_TOKEN")
@@ -67,10 +68,22 @@ def compose(*args: str, check: bool = True) -> str:
     return result.stdout
 
 
-def http(method: str, path: str, auth: bool = False) -> tuple[int, object]:
-    request = urllib.request.Request(f"{API}{path}", method=method)
+def http(
+    method: str,
+    path: str,
+    auth: bool = False,
+    *,
+    body: dict | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, object]:
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(f"{API}{path}", data=data, method=method)
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
     if auth and TOKEN:
         request.add_header("Authorization", f"Bearer {TOKEN}")
+    for name, value in (headers or {}).items():
+        request.add_header(name, value)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read() or b"null")
@@ -208,6 +221,33 @@ def judge_hop8(
     return status, notes
 
 
+def judge_hop3(
+    cid: str,
+    status_code: int,
+    body: object,
+    log_line: dict | None,
+) -> tuple[str, list[str]]:
+    """Hop 3 counts when C04 saves the delivery over HTTP and logs ``cid``."""
+    if status_code not in (200, 201) or not isinstance(body, dict):
+        return "MISSING", [f"POST /api/v1/deliveries → {status_code}"]
+    delivery_id = body.get("deliveryId")
+    if not delivery_id:
+        return "MISSING", ["POST /api/v1/deliveries returned no deliveryId"]
+    if log_line is None:
+        return "MISSING", [f"C04 didn't log correlationId {cid} within {WAIT_SECONDS}s"]
+    return "PASS", [f"correlationId {cid}: C04 saved delivery {delivery_id}"]
+
+
+def _acting_provider_for(profile: object) -> str | None:
+    if not isinstance(profile, dict):
+        return None
+    providers = profile.get("availableProviders") or []
+    if not providers:
+        return None
+    first = providers[0]
+    return first.get("providerId") if isinstance(first, dict) else None
+
+
 def main() -> int:
     hops = {
         n: Hop(n, name)
@@ -244,6 +284,7 @@ def main() -> int:
     queues = consumers()
 
     # Hop 1: C02 identity over HTTP with a bearer token.
+    profile: object = None
     if ("GET", "/api/v1/identity/me") not in served:
         hops[1].set("MISSING", "GET /api/v1/identity/me isn't served")
     elif not TOKEN:
@@ -263,9 +304,67 @@ def main() -> int:
     else:
         hops[2].set("WIRED", "route is up; registering needs a provider, not done here")
 
-    # Hops 3–5: C04 and C05 over HTTP (C09/C10 are in-process inside C05).
+    # Hop 3: C01 → C04 submit a delivery over HTTP with one correlationId.
+    if ("POST", "/api/v1/deliveries") not in served:
+        hops[3].set(
+            "MISSING", "C04 submitDelivery (POST /api/v1/deliveries) isn't served"
+        )
+    elif not TOKEN:
+        hops[3].set("SKIPPED", "route is up; set ULOP_TOKEN to submit a delivery")
+    else:
+        provider_id = _acting_provider_for(profile)
+        if not provider_id:
+            hops[3].set("WIRED", "route is up; caller has no provider to submit for")
+        else:
+            hop3_since = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            hop3_cid = str(uuid4())
+            payload = {
+                "pickup": {
+                    "address": "Dublin Port",
+                    "latitude": 53.3478,
+                    "longitude": -6.2297,
+                },
+                "destination": {
+                    "address": "Trinity College Dublin",
+                    "latitude": 53.3438,
+                    "longitude": -6.2546,
+                },
+                "cargo": {
+                    "description": "Walking skeleton hello-world delivery",
+                    "weightKg": 4.5,
+                    "parcelCount": 2,
+                },
+                "timeWindow": {
+                    "start": "2026-11-20T09:00:00Z",
+                    "end": "2026-11-20T12:00:00Z",
+                },
+                "constraints": {
+                    "vehicleKinds": ["van", "cargo_bike"],
+                    "fragile": False,
+                },
+                "idempotencyKey": f"hello-world-{hop3_cid}",
+            }
+            submit_status, submit_body = http(
+                "POST",
+                f"/api/v1/deliveries?runId={DEMO_RUN}",
+                auth=True,
+                body=payload,
+                headers={
+                    "X-Acting-Provider": provider_id,
+                    "X-Correlation-ID": hop3_cid,
+                },
+            )
+            c04_log = (
+                wait_for_log("api", hop3_since, hop3_cid, "submitDelivery")
+                if submit_status in (200, 201)
+                else None
+            )
+            status3, notes3 = judge_hop3(hop3_cid, submit_status, submit_body, c04_log)
+            hops[3].set(status3)
+            hops[3].notes.extend(notes3)
+
+    # Hops 4–5: C05 over HTTP (C09/C10 are in-process inside C05).
     probes = {
-        3: ("POST", "/api/v1/deliveries", "C04 submitDelivery"),
         4: ("POST", "/api/v1/plans", "C05 generatePlan"),
         5: ("POST", "/api/v1/plans/{planId}/confirmation", "C05 confirmPlan"),
     }

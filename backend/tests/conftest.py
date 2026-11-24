@@ -22,6 +22,12 @@ Postgres-backed tests are skipped when it is not set. Its schema is rebuilt from
 database name must end in ``_test``; anything else is refused before any change.
 """
 
+C04_TABLES = (
+    "c04_delivery_management.outbox",
+    "c04_delivery_management.audit_outcomes",
+    "c04_delivery_management.command_receipts",
+    "c04_delivery_management.deliveries",
+)
 C06_TABLES = (
     "c06_city_monitoring.outbox",
     "c06_city_monitoring.observations",
@@ -83,6 +89,14 @@ def test_database_url() -> str:
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
             conn.execute(_migrate_up_sql(migration))
     return TEST_DATABASE_URL
+
+
+@pytest.fixture
+def c04_database(test_database_url: str) -> str:
+    """Empty C04 tables before each Postgres-backed test."""
+    with psycopg.connect(test_database_url, autocommit=True) as conn:
+        conn.execute(f"truncate {', '.join(C04_TABLES)}")
+    return test_database_url
 
 
 @pytest.fixture
