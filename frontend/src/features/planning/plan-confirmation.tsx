@@ -52,7 +52,7 @@ export function PlanConfirmation({
       if (!controller.signal.aborted) setPlan(confirmed);
     } catch (err) {
       if (controller.signal.aborted) return;
-      if (err instanceof PlanError && [401, 403, 404, 409].includes(err.status)) {
+      if (err instanceof PlanError && [400, 401, 403, 404, 409].includes(err.status)) {
         setPlan(undefined);
         setError(err.message);
       } else {

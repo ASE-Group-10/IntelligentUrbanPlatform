@@ -161,6 +161,27 @@ it("reloads the saved version after a conflict before allowing any further actio
   expect(await screen.findByText(/Plan confirmed/)).toBeVisible();
 });
 
+it("explains a rejected plan read without offering confirmation", async () => {
+  await openPlans(() => new Response(null, { status: 400 }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/original delivery link/i);
+  expect(screen.queryByRole("button", { name: "Confirm plan" })).not.toBeInTheDocument();
+});
+
+it("reloads the proposal after a rejected confirmation without resending the command", async () => {
+  const requests: string[] = [];
+  await openPlans((_url, init) => {
+    const method = init.method ?? "GET";
+    requests.push(method);
+    return method === "POST" ? new Response(null, { status: 400 }) : Response.json(proposal);
+  });
+  await userEvent.click(await screen.findByRole("button", { name: "Confirm plan" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/invalid.*reload the plan/i);
+  expect(screen.queryByRole("button", { name: "Confirm plan" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Reload plan" }));
+  expect(await screen.findByRole("button", { name: "Confirm plan" })).toBeEnabled();
+  expect(requests).toEqual(["GET", "POST", "GET"]);
+});
+
 it.each([
   ["driver", link, /operator access/i],
   ["operator", `/plans?planId=${proposal.planId}`, /proposal link is incomplete/i],

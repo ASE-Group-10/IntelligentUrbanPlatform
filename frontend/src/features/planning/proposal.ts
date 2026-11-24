@@ -66,6 +66,10 @@ export async function requestPlan(
   }
   if (!response.ok) {
     const messages: Record<number, string> = {
+      400:
+        expectedVersion === undefined
+          ? "The plan request is invalid. Reopen the plan from the original delivery link."
+          : "The confirmation request is invalid. Reload the plan before trying again.",
       401: "Sign in to view this plan.",
       403: "You don’t have access to this plan.",
       404: "This plan could not be found in the selected run.",
