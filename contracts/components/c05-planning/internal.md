@@ -40,7 +40,8 @@ defines the saved fields. Wiring the C04 submit handler is pending.
 | `key` | A stable, nonblank key of at most 200 characters. The demo uses `c04:generate:{deliveryId}:v{version}`. |
 
 The Dublin proposal uses the Eden Quay segment and one van with the saved cargo
-weight. Supply the version as a JSON integer and the weight as a JSON number.
+weight. Supply the version as a JSON integer, the weight as a JSON number and
+the delivery window bounds as RFC 3339 UTC strings (for example, `2026-11-20T09:00:00Z`).
 The delivery and its progress must both be pending, and its constraints
 must allow a van. Departure is the later of the scenario start and the delivery
 window start. The six-minute route must finish within that window. C05 queries
@@ -167,7 +168,7 @@ Examples [request](examples/find-affected-work-request.json) and
 | `segmentKeys` | array of string | one of | Segments whose condition changed |
 | `resourceIds` | array of UUID | one of | Resources whose availability changed or failed |
 | `planIds` | array of UUID | one of | Plans named directly (for example by `OperationalDisruption`) |
-| `from` / `to` | timestamp | no | Time window the change applies to; default now → open-ended |
+| `from` / `to` | timestamp | no | Include routes overlapping `[from, to)`. Omitting `from` uses the C05 clock at discovery. Omitting `to` leaves the window open-ended. |
 | `scope` | enum | yes | `live` or `simulation`, copied from the event that triggered the detection |
 | `runId` | UUID | when simulation | Simulation run; must be absent when `scope` is `live` |
 

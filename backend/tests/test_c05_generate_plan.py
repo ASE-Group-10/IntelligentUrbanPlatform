@@ -2,7 +2,7 @@
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from threading import Barrier
 from uuid import uuid4
 
@@ -10,7 +10,7 @@ import psycopg
 import pytest
 from pydantic import ValidationError
 
-from app.components.c05_planning.models import PlanScope, SavedDelivery
+from app.components.c05_planning.models import DeliveryWindow, PlanScope, SavedDelivery
 from app.components.c05_planning.service import PlanningService
 from app.components.c05_planning.store import PostgresPlanStore
 from app.components.c09_logistics_knowledge.contracts import RuleCoverage
@@ -82,17 +82,23 @@ def row_counts(conn):
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
-    [("version", "1"), ("version", True), ("weightKg", "4.5"), ("weightKg", True)],
+    ("section", "field", "value"),
+    [
+        (None, "version", "1"),
+        (None, "version", True),
+        ("cargo", "weightKg", "4.5"),
+        ("cargo", "weightKg", True),
+        ("timeWindow", "start", 1795165200),
+        ("timeWindow", "end", "1795176000"),
+        ("timeWindow", "start", "2026-11-20T09:00:00+0000"),
+    ],
 )
-def test_invalid_numeric_delivery_facts_cannot_create_a_proposal(
-    planner, example, test_database_url, field, value
+def test_invalid_saved_delivery_facts_cannot_create_a_proposal(
+    planner, example, test_database_url, section, field, value
 ):
     saved = example("delivery-submitted.json")
-    if field == "version":
-        saved["version"] = value
-    else:
-        saved["cargo"][field] = value
+    fields = saved if section is None else saved[section]
+    fields[field] = value
     scope = PlanScope(scope="simulation", run_id=uuid4())
     with psycopg.connect(test_database_url, autocommit=True) as observer:
         before = row_counts(observer)
@@ -103,6 +109,19 @@ def test_invalid_numeric_delivery_facts_cannot_create_a_proposal(
             "select count(*) from c04_delivery_management.deliveries where run_id=%s",
             (scope.run_id,),
         ).fetchone() == (0,)
+
+
+@pytest.mark.parametrize(
+    "start",
+    [
+        "2026-11-20T09:00:00.123+00:00",
+        "2026-11-20t09:00:00.123z",
+        datetime(2026, 11, 20, 9, 0, 0, 123000, UTC),
+    ],
+)
+def test_delivery_window_accepts_rfc3339_utc_and_typed_datetimes(start):
+    window = DeliveryWindow(start=start, end="2026-11-20T12:00:00Z")
+    assert window.start == datetime(2026, 11, 20, 9, 0, 0, 123000, UTC)
 
 
 def test_saved_demo_preserves_original_trace_and_cannot_replan_a_linked_delivery(
@@ -217,13 +236,13 @@ def test_proposal_records_exact_c09_evidence_and_original_trace(
     assert isinstance(missing, Failure) and missing.kind == "NotFound"
 
 
+@pytest.mark.parametrize("start", ["2026-11-20T09:00:00Z", "9999-12-31T23:58:00Z"])
 def test_route_must_fit_the_saved_delivery_window(
-    planner, request_args, test_database_url
+    planner, request_args, test_database_url, start
 ):
     delivery, scope, cid, key = request_args
-    window = delivery.time_window.model_copy(
-        update={"end": delivery.time_window.start + timedelta(minutes=1)}
-    )
+    departure = datetime.fromisoformat(start)
+    window = DeliveryWindow(start=departure, end=departure + timedelta(minutes=1))
     with psycopg.connect(test_database_url, autocommit=True) as observer:
         before = row_counts(observer)
         result = planner.generate_plan(

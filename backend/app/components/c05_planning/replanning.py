@@ -35,7 +35,9 @@ class Replanning:
     city: CityMonitoring
 
     def find_affected_work(self, scope: ChangeScope) -> Result[AffectedWork]:
-        return facts.find_affected_work(self.store, scope)
+        return facts.find_affected_work(
+            self.store, scope, start=scope.from_ or self.clock()
+        )
 
     def request_replan(
         self, request: ReplanRequest, correlation_id: UUID

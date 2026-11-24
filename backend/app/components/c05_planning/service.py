@@ -162,9 +162,8 @@ class PlanningService:
             return Failure("Conflict", "C05.DELIVERY_NOT_PENDING")
         if VehicleClass.VAN not in delivery.constraints.vehicle_kinds:
             return Failure("Infeasible", "C05.DEMO_VAN_NOT_PERMITTED")
-        if (
-            departure + timedelta(seconds=_DEMO_DURATION_SECONDS)
-            > delivery.time_window.end
+        if delivery.time_window.end - departure < timedelta(
+            seconds=_DEMO_DURATION_SECONDS
         ):
             return Failure("Infeasible", "C05.DEMO_ROUTE_OUTSIDE_DELIVERY_WINDOW")
         knowledge = query_route_policy(self._knowledge, ctx, delivery)

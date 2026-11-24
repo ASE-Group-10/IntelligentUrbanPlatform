@@ -53,17 +53,17 @@ def _affected_item(
     scope: ChangeScope,
     plan: Plan,
     departure: datetime,
+    start: datetime,
     correlation_id: UUID,
 ) -> Result[AffectedWorkItem | None]:
     named_plan = plan.plan_id in scope.plan_ids
     changed = set(scope.segment_keys)
+    elapsed = (start - departure).total_seconds()
 
     def touches(route: Route) -> bool:
-        if scope.from_ is not None:
-            elapsed = (scope.from_ - departure).total_seconds()
-            if elapsed >= route.estimated_duration_seconds:
-                return False
-        return named_plan or not changed.isdisjoint(route.segment_keys)
+        return elapsed < route.estimated_duration_seconds and (
+            named_plan or not changed.isdisjoint(route.segment_keys)
+        )
 
     candidates = [route for route in plan.routes if touches(route)]
     if not candidates:
@@ -95,10 +95,10 @@ def _affected_item(
 
 
 def find_affected_work(
-    store: PostgresPlanStore, scope: ChangeScope
+    store: PostgresPlanStore, scope: ChangeScope, *, start: datetime
 ) -> Result[AffectedWork]:
     """Find work on current plan versions in the event partition for C07."""
-    if scope.from_ and scope.to and scope.from_ >= scope.to:
+    if scope.to is not None and start >= scope.to:
         return Failure("Invalid", "C05.INVALID_CHANGE_WINDOW")
     if scope.resource_ids:
         # Allocation bindings belong to C08. The Dublin slice handles road changes.
@@ -121,7 +121,7 @@ def find_affected_work(
                 if scope.to is not None and departure >= scope.to:
                     continue
                 plan = Plan.model_validate(proposal, strict=False)
-                result = _affected_item(conn, scope, plan, departure, trace)
+                result = _affected_item(conn, scope, plan, departure, start, trace)
                 if isinstance(result, Failure):
                     return result
                 if result.value is not None:
