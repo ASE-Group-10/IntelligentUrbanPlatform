@@ -157,7 +157,7 @@ def get_plan(
             400, "Invalid", "Invalid combination of scope and runId."
         ) from exc
     require_run_access(request, run_id)
-    result = request.app.state.planning.get_plan(selector, plan_id)
+    result = request.app.state.planning.get_plan(selector, plan_id, operator=context)
     if isinstance(result, Failure):
         if result.kind == "NotFound":
             raise APIError(404, "NotFound", "Plan not found in the selected scope.")

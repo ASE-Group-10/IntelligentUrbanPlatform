@@ -10,6 +10,7 @@ import psycopg
 import pytest
 from pydantic import ValidationError
 
+from app.components.c04_delivery_management.planning import seed_demo_delivery
 from app.components.c05_planning.facts import find_affected_work
 from app.components.c05_planning.models import DeliveryWindow, PlanScope, SavedDelivery
 from app.components.c05_planning.service import PlanningService
@@ -33,8 +34,12 @@ def scenario():
 
 
 @pytest.fixture
-def request_args(scenario, example):
-    delivery = SavedDelivery.model_validate(example("delivery-submitted.json"))
+def request_args(scenario, example, test_database_url):
+    saved = example("delivery-submitted.json")
+    saved["deliveryId"] = str(uuid4())
+    with psycopg.connect(test_database_url) as conn:
+        seed_demo_delivery(conn, scenario.run_id, saved)
+    delivery = SavedDelivery.model_validate(saved)
     scope = PlanScope(scope="simulation", run_id=scenario.run_id)
     return delivery, scope, scenario.correlation_id, f"hop4-{uuid4()}"
 
@@ -276,15 +281,18 @@ def test_proposal_records_exact_c09_evidence_and_original_trace(
 
 @pytest.mark.parametrize("start", ["2026-11-20T09:00:00Z", "9999-12-31T23:58:00Z"])
 def test_route_must_fit_the_saved_delivery_window(
-    planner, request_args, test_database_url, start
+    planner, example, test_database_url, start
 ):
-    delivery, scope, cid, key = request_args
     departure = datetime.fromisoformat(start)
     window = DeliveryWindow(start=departure, end=departure + timedelta(minutes=1))
+    saved = example("delivery-submitted.json")
+    saved["timeWindow"] = window.model_dump(mode="json")
+    scope = PlanScope(scope="simulation", run_id=uuid4())
     with psycopg.connect(test_database_url, autocommit=True) as observer:
+        seed_demo_delivery(observer, scope.run_id, saved)
         before = row_counts(observer)
         result = planner.generate_plan(
-            delivery.model_copy(update={"time_window": window}), scope, cid, key
+            SavedDelivery.model_validate(saved), scope, uuid4(), "short-window"
         )
         assert isinstance(result, Failure) and result.kind == "Infeasible"
         assert row_counts(observer) == before

@@ -23,14 +23,13 @@ from pydantic import UUID4, TypeAdapter
 from app.components.c04_delivery_management.planning import seed_demo_delivery
 from app.components.c05_planning.models import Plan, PlanScope, SavedDelivery
 from app.components.c05_planning.service import PlanningService
-from app.components.c05_planning.store import GenerationConflictError, PostgresPlanStore
 from app.components.c06_city_monitoring.router import libpq_url
 from app.config import get_settings
 from app.demo.c05_confirmation import confirm_demo_plan
 from app.demo.feed import load_scenario
 from app.main import app
 from app.shared.logging import configure_logging
-from app.shared.result import Failure, Ok, Result
+from app.shared.result import Failure, Result
 
 
 def fresh_delivery(saved: dict, now: datetime) -> dict:
@@ -80,37 +79,7 @@ def generate_saved_demo(
         key = f"c04:generate:{delivery.delivery_id}:v{delivery.version}"
     with psycopg.connect(dsn) as conn:
         seed_demo_delivery(conn, scope.run_id, saved)
-        conn.commit()  # C04 has saved this delivery before calling C05.
-        # Keep confirmation from changing the delivery between the read and the
-        # in-process generation call. Re-importing a fixture never rewinds C04.
-        (current,) = conn.execute(
-            """select delivery from c04_delivery_management.deliveries
-                where run_id = %s and delivery_id = %s for share""",
-            (scope.run_id, delivery.delivery_id),
-        ).fetchone()
-        if SavedDelivery.model_validate(current) == delivery:
-            generated = planning.generate_plan(delivery, scope, trace_id, key)
-            if isinstance(generated, Failure):
-                return generated
-
-        # After a confirmation the original generation receipt can still be
-        # replayed, while a new key has no receipt and cannot create a stale plan.
-        store = PostgresPlanStore(dsn)
-        try:
-            prior = store.replay(
-                conn,
-                scope.scope,
-                scope.run_id,
-                "service:c04",
-                key,
-                delivery.model_dump(mode="json", by_alias=True),
-            )
-        except GenerationConflictError:
-            return Failure("Conflict", "C05.IDEMPOTENCY_MISMATCH")
-        if prior is None:
-            return Failure("Conflict", "C04.DELIVERY_CHANGED")
-        plan, original_trace = prior
-        return Ok((Plan.model_validate(plan, strict=False), original_trace))
+    return planning.generate_with_trace(delivery, scope, trace_id, key)
 
 
 async def main() -> int:

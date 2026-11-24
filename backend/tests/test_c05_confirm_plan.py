@@ -26,7 +26,7 @@ from tests.c05_flow import flow as flow
 
 def state(conn, plan):
     delivery = conn.execute(
-        "select delivery->>'status', (delivery->>'version')::int, plan_id "
+        "select status, version, plan_id "
         "from c04_delivery_management.deliveries where run_id=%s and delivery_id=%s",
         (plan.run_scope.run_id, plan.request_ids[0]),
     ).fetchone()
@@ -87,6 +87,12 @@ def test_concurrent_confirmations_link_once_and_replay_the_committed_response(
             ("Conflict", *expected_actor),
         ]
         assert confirmation_audits(conn, flow.trace) == []
+        assert conn.execute(
+            "select response_body->>'planId' "
+            "from c04_delivery_management.command_receipts "
+            "where scope_key=%s and operation='C04.markRequestsPlanned'",
+            (f"simulation:{flow.plan.run_scope.run_id}",),
+        ).fetchall() == [(str(flow.plan.plan_id),)]
     assert delivery == ("planned", 2, flow.plan.plan_id)
     assert versions == [(1, "awaiting_confirmation"), (2, "confirmed")]
     assert len(events) == 1 and events[0][2] is None
@@ -133,7 +139,7 @@ def test_changed_delivery_or_unauthorised_run_cannot_confirm(flow, test_database
         denied = flow.confirm(runScope={"scope": "simulation", "runId": str(uuid4())})
         assert denied.status_code == 403
         conn.execute(
-            "update c04_delivery_management.deliveries set delivery = "
+            "update c04_delivery_management.deliveries set version=2, delivery = "
             "jsonb_set(delivery, '{version}', '2') where delivery_id=%s",
             (flow.plan.request_ids[0],),
         )

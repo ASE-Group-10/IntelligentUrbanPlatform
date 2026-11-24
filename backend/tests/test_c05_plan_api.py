@@ -46,7 +46,8 @@ def api(example, monkeypatch):
     # Use the actual planning service and router; PG persistence is tested separately.
     reads = []
 
-    def lookup(store, scope, selected_run, plan_id):
+    def lookup(store, scope, selected_run, plan_id, *, acting_provider_id):
+        assert acting_provider_id == provider
         reads.append((scope, selected_run, plan_id))
         if (
             scope == "simulation"
@@ -141,7 +142,7 @@ def test_malformed_plan_or_scope_uses_the_contract_error(api, plan_id, params):
 def test_unavailable_plan_store_uses_the_contract_error(api, monkeypatch):
     client, plan, operator, _, _ = api
 
-    def unavailable(*args):
+    def unavailable(*args, **kwargs):
         raise psycopg.OperationalError("private database details")
 
     monkeypatch.setattr(PostgresPlanStore, "get_plan", unavailable)

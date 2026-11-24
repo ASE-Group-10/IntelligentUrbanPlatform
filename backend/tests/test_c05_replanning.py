@@ -334,7 +334,7 @@ def test_discovery_and_replan_refresh_actual_delivery_and_run(
     with psycopg.connect(test_database_url, autocommit=True) as conn:
         updated = conn.execute(
             """update c04_delivery_management.deliveries
-                  set delivery = jsonb_set(
+                  set status='delivered', version=3, delivery=jsonb_set(
                       delivery || '{"status":"delivered","version":3}',
                       '{progress,status}', '"delivered"')
                 where run_id=%s and delivery_id=%s""",

@@ -31,18 +31,84 @@ repository. Keep those runtime values in the VM's restricted `.env` file.
    read-only package credential to pull the image. Do not make the package
    public merely to simplify deployment.
 
-## Deployment still to be integrated
+## Manual VM deployment workflow (CD)
 
-Before adding a one-click VM deployment workflow, agree with the #75 pair and
-reviewers on the deployment identity and network path. The VM currently accepts
-SSH only from the operator's IP, so a GitHub-hosted runner cannot SSH into it.
-Do not broaden SSH access to the entire Internet. Choose either a restricted
-outbound polling mechanism from the VM or Azure's authenticated Run Command
-with a narrowly scoped federated GitHub identity. Document the chosen method,
-the exact Compose revision, health check, and rollback procedure before
-enabling the manual deployment button.
+Deployment to `vm-ulop-rabbitmq-dev` (resource group `rg-ulop-dev`) is
+triggered manually via the **`Deploy Azure backend`** GitHub Actions workflow
+(`.github/workflows/deploy-azure-backend.yml`). It never runs automatically on
+push to `develop`, so database migrations and runtime configuration remain gated
+by the operator.
 
-The first deployment must be run manually and checked against `/health`, the
-expected API routes, C06 publisher logs, and C07 worker logs. Database schema
-migrations remain the database owner's task and are not performed by the image
-pipeline.
+### Authentication and network path
+
+- SSH (port 22) remains restricted to the operator's IP; GitHub-hosted runners
+  never SSH into the VM.
+- GitHub Actions authenticates to Azure using OIDC federated credentials bound
+  to `ASE-Group-10/IntelligentUrbanPlatform` (`develop` branch) on the
+  user-assigned managed identity `id-ulop-github-deploy`, scoped to
+  `Virtual Machine Contributor` on `vm-ulop-rabbitmq-dev`.
+- Required repository secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+  `AZURE_SUBSCRIPTION_ID`.
+- The workflow invokes `scripts/azure/deploy-backend.sh` on the VM through
+  `az vm run-command invoke`.
+
+### VM Compose layout
+
+The VM runs from `/home/azureuser/ulop-deploy` using its host-local
+`compose.yaml` and `.env`. During a release, `scripts/azure/deploy-backend.sh`
+applies `scripts/azure/backend-image.override.yml` to pin the four backend
+services (`api`, `c06-publisher`, `c07-worker`, `c08-worker`) to
+`${BACKEND_IMAGE}`. Once verification succeeds (or after a verified rollback),
+the script also writes the active image into
+`/home/azureuser/ulop-deploy/compose.override.yml` so subsequent plain
+`docker compose up -d` commands keep running the deployed revision instead of
+reverting to `compose.yaml`'s default image.
+
+### Deployment, verification, and rollback
+
+1. Confirm that `Backend checks` succeeded for the target `develop` commit and
+   that the database owner has applied any new migrations in
+   `database/migrations/`.
+2. Open GitHub Actions → `Deploy Azure backend` → **Run workflow** on `develop`.
+   Leave `image_tag` empty to deploy the checked-out commit, or enter a specific
+   `sha-<40-char commit>` tag.
+3. `scripts/azure/deploy-backend.sh` performs:
+   - Tag format validation (`sha-<40-char hex>`, rejecting floating tags).
+   - Previous-image discovery via `docker compose -f compose.yaml ps -a -q api`
+     (falling back to `.last-deployed-image` if no container exists yet; aborts
+     before touching containers if an existing deployment's image cannot be
+     determined).
+   - Pulling the target GHCR image using the VM's read-only Docker credentials.
+   - Pre-deploy worker DB connectivity and migration check comparing
+     `database/migrations/*.sql` from the **target commit** (`image_tag`)
+     against `public.schema_migrations` (aborts before recreating containers if
+     any migration is missing).
+   - `docker compose -f compose.yaml -f backend-image.override.yml up -d` for
+     `api`, `c06-publisher`, `c07-worker`, and `c08-worker` (wrapped so partial
+     rollout failures trigger rollback instead of leaving mixed versions).
+   - Bounded-timeout health check (`--connect-timeout 2 --max-time 5`) against
+     `http://127.0.0.1:8000/health` checking `"status":"ok"` and
+     `"database":"connected"`, RabbitMQ active-consumer check on
+     `c07.city-state-updated` and `c08.plan-ready`, and verification that all
+     four services stay `running` with zero restarts.
+   - Persisting the verified image to `compose.override.yml` and
+     `.last-deployed-image`.
+4. **Rollback**:
+   - **Automatic**: If `docker compose up`, `/health`, RabbitMQ consumer
+     attachment, or container restart checks fail, the script restores all four
+     services to the previous `api` image, re-runs the full health and worker
+     verification, updates `compose.override.yml`, and reports
+     `ROLLBACK_STATUS=RECOVERED` or `ROLLBACK_STATUS=FAILED`.
+   - **Manual**: Re-run `Deploy Azure backend` with the previous verified
+     `sha-<commit>` tag from the prior `Deploy Azure backend` workflow run log
+     (`Previous api image:` / `Target image:`). `/home/azureuser/ulop-deploy/.last-deployed-image`
+     records the currently active deployed image.
+
+### First manual deployment evidence
+
+The initial GHCR rollout (`sha-d39c096211d5f9e026ac36a8f74b2c77e3003bc7`) was
+run manually on `vm-ulop-rabbitmq-dev` and verified against:
+
+- `GET http://127.0.0.1:8000/health` → `200 OK` (`database: connected`)
+- OpenAPI routes for C02, C03, C06, C07, and C08
+- `c06-publisher`, `c07-worker` (Postgres store), and `c08-worker` running cleanly

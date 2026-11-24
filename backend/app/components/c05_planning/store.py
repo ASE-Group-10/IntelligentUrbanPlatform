@@ -9,7 +9,10 @@ from uuid import UUID
 
 import psycopg
 from psycopg.types.json import Jsonb
+from sqlalchemy import Connection, create_engine
+from sqlalchemy.pool import NullPool
 
+from app.components.c04_delivery_management.planning import operator_can_access_requests
 from app.shared.contracts import RunScope, RunScopeSelector
 from app.shared.result import Failure
 
@@ -49,6 +52,18 @@ def lock_plan(conn: psycopg.Connection, scope: RunScopeSelector, plan_id: UUID) 
 class PostgresPlanStore:
     def __init__(self, conninfo: str) -> None:
         self._conninfo = conninfo
+        # C04 uses SQLAlchemy Core; C05 and C10 share its psycopg connection.
+        self._link_engine = create_engine(
+            "postgresql+psycopg://",
+            creator=lambda: psycopg.connect(conninfo, connect_timeout=5),
+            isolation_level="READ COMMITTED",
+            poolclass=NullPool,
+        )
+
+    @contextmanager
+    def confirmation_transaction(self) -> Iterator[Connection]:
+        with self._link_engine.begin() as conn:
+            yield conn
 
     @contextmanager
     def transaction(self) -> Iterator[psycopg.Connection]:
@@ -132,6 +147,8 @@ class PostgresPlanStore:
         run_id: UUID | None,
         plan_id: UUID,
         version: int | None = None,
+        *,
+        acting_provider_id: UUID | None = None,
     ) -> dict[str, Any] | None:
         """Read a committed snapshot from this scope, by version or latest first."""
         scoped = scope_key(scope, run_id)
@@ -143,4 +160,13 @@ class PostgresPlanStore:
                     order by version desc limit 1""",
                 (scoped, plan_id, version, version),
             ).fetchone()
-        return row[0] if row is not None else None
+            if row is None:
+                return None
+            if acting_provider_id is not None and not operator_can_access_requests(
+                conn,
+                RunScopeSelector(scope=scope, run_id=run_id),
+                [UUID(request_id) for request_id in row[0]["requestIds"]],
+                acting_provider_id,
+            ):
+                return None
+            return row[0]

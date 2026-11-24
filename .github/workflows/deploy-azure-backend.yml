@@ -1,0 +1,94 @@
+name: Deploy Azure backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Verified GHCR tag (sha-<40-char commit>). Leave empty to deploy the checked-out commit."
+        required: false
+        type: string
+        default: ""
+      skip_migration_check:
+        description: "Skip checking public.schema_migrations before rollout (not recommended)"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: azure-dev-backend-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy backend image to Azure dev VM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve image tag and target-commit migrations
+        id: meta
+        env:
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          SKIP_MIGRATION_CHECK: ${{ inputs.skip_migration_check }}
+        run: |
+          tag="${INPUT_IMAGE_TAG:-sha-${GITHUB_SHA}}"
+          if [[ ! "${tag}" =~ ^sha-[0-9a-f]{40}$ ]]; then
+            echo "ERROR: image_tag must match sha-<40-char lowercase hex commit>; got '${tag}'" >&2
+            exit 1
+          fi
+          target_sha="${tag#sha-}"
+          if ! git cat-file -e "${target_sha}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "${target_sha}"
+          fi
+          git cat-file -e "${target_sha}^{commit}"
+          echo "image_tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${SKIP_MIGRATION_CHECK}" == "true" ]]; then
+            echo "expected_migrations=none" >> "${GITHUB_OUTPUT}"
+          else
+            migrations="$(
+              git ls-tree --name-only "${target_sha}" database/migrations/ \
+                | awk -F/ '/\.sql$/ { sub(/_.*$/, "", $NF); print $NF }' \
+                | sort -u \
+                | paste -sd, -
+            )"
+            echo "expected_migrations=${migrations:-none}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Log in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy verified image via Azure VM Run Command
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          EXPECTED_MIGRATIONS: ${{ steps.meta.outputs.expected_migrations }}
+        run: |
+          output="$(
+            az vm run-command invoke \
+              --resource-group rg-ulop-dev \
+              --name vm-ulop-rabbitmq-dev \
+              --command-id RunShellScript \
+              --scripts @scripts/azure/deploy-backend.sh \
+              --parameters \
+                "IMAGE_TAG=${IMAGE_TAG}" \
+                "EXPECTED_MIGRATIONS=${EXPECTED_MIGRATIONS}" \
+                "DEPLOY_DIR=/home/azureuser/ulop-deploy" \
+              --query "value[0].message" \
+              -o tsv
+          )"
+          printf '%s\n' "${output}"
+          if ! printf '%s\n' "${output}" | grep -q 'DEPLOY_RESULT=SUCCESS'; then
+            echo "ERROR: Remote deployment did not report DEPLOY_RESULT=SUCCESS" >&2
+            exit 1
+          fi

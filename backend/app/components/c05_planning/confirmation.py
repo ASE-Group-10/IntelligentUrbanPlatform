@@ -8,8 +8,11 @@ from datetime import datetime
 from uuid import UUID
 
 import psycopg
+from sqlalchemy import Connection
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.components.c04_delivery_management import planning as deliveries
+from app.components.c04_delivery_management.service import DeliveryPlanningService
 from app.components.c10_decision_records.contracts import AuditOutcome
 from app.components.c10_decision_records.service import DecisionRecords
 from app.shared.auth import AuthContext, require_role
@@ -102,7 +105,7 @@ def reject_confirmation(
 
 
 def _commit_confirmation(
-    conn: psycopg.Connection,
+    link_connection: Connection,
     context: AuthContext,
     scope: PlanScope,
     plan_id: UUID,
@@ -111,6 +114,7 @@ def _commit_confirmation(
     decisions: DecisionRecords,
     clock: Callable[[], datetime],
 ) -> Result[_Confirmation]:
+    conn = link_connection.connection.driver_connection
     scoped = scope_key(scope.scope, scope.run_id)
     caller = (scoped, context.principal_id, context.acting_provider_id, key)
     # READ COMMITTED: statements after each lock see the previous caller's commit.
@@ -125,19 +129,6 @@ def _commit_confirmation(
         ]
     )
     conn.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
-    previous = conn.execute(
-        """select r.plan_id, r.expected_version, v.proposal, v.correlation_id
-             from c05_planning.confirmation_receipts r
-             join c05_planning.plan_versions v using (scope_key, plan_id, version)
-            where r.scope_key = %s and r.principal_id = %s and r.provider_id = %s
-              and r.idempotency_key = %s""",
-        caller,
-    ).fetchone()
-    if previous:
-        if previous[:2] != (plan_id, expected_version):
-            return Failure("Conflict", "C05.IDEMPOTENCY_MISMATCH")
-        saved = Plan.model_validate(previous[2], strict=False)
-        return Ok(_Confirmation(saved, previous[3], None))
     lock_plan(conn, scope, plan_id)
     row = conn.execute(
         """select proposal, correlation_id, planned_departure_at
@@ -148,6 +139,29 @@ def _commit_confirmation(
     if row is None:
         return Failure("NotFound", "C05.PLAN_NOT_FOUND")
     proposal = Plan.model_validate(row[0], strict=False)
+    previous = conn.execute(
+        """select r.plan_id, r.expected_version, v.proposal, v.correlation_id
+             from c05_planning.confirmation_receipts r
+             join c05_planning.plan_versions v using (scope_key, plan_id, version)
+            where r.scope_key = %s and r.principal_id = %s and r.provider_id = %s
+              and r.idempotency_key = %s""",
+        caller,
+    ).fetchone()
+    saved = None
+    request_ids = proposal.request_ids
+    if previous and previous[:2] == (plan_id, expected_version):
+        saved = Plan.model_validate(previous[2], strict=False)
+        # A replay returns its original version. Verify its deliveries as well
+        # when a later revision changes the current set.
+        request_ids = list(dict.fromkeys([*request_ids, *saved.request_ids]))
+    if not deliveries.operator_can_access_requests(
+        conn, scope, request_ids, context.acting_provider_id, for_confirmation=True
+    ):
+        return Failure("NotFound", "C05.PLAN_NOT_FOUND")
+    if previous:
+        if saved is None:
+            return Failure("Conflict", "C05.IDEMPOTENCY_MISMATCH")
+        return Ok(_Confirmation(saved, previous[3], None))
     if (
         proposal.version != expected_version
         or proposal.status != "awaiting_confirmation"
@@ -164,9 +178,19 @@ def _commit_confirmation(
         correlation_id=correlation_id,
     )
     try:
-        result = deliveries.mark_requests_planned(
-            conn,
-            c05,
+        actor = AuthContext(
+            principal_id=deliveries.C05_SERVICE_PRINCIPAL_ID,
+            principal_type="service",
+            service_id="C05",
+            roles=("service",),
+            provider_ids=(),
+            platform_roles=(),
+            correlation_id=correlation_id,
+        )
+        result = DeliveryPlanningService(
+            link_connection.engine, clock=lambda: now
+        ).mark_requests_planned(
+            actor,
             scope,
             proposal.request_ids,
             plan_id,
@@ -175,15 +199,19 @@ def _commit_confirmation(
                 for did in proposal.request_ids
             },
             f"c05:confirm:{plan_id}:v{expected_version}",
-            decisions=decisions,
-            now=now,
+            connection=link_connection,
         )
-    except psycopg.Error as exc:
+    except (psycopg.Error, SQLAlchemyError) as exc:
         raise _DeliveryRejectedError(
             Failure("Unavailable", "C04.DELIVERY_STORE_UNAVAILABLE"), c05, proposal
         ) from exc
     if isinstance(result, Failure):
         raise _DeliveryRejectedError(result, c05, proposal)
+    audited = deliveries.audit_link(
+        conn, decisions, c05, plan_id, proposal.request_ids, Outcome.OK, now
+    )
+    if isinstance(audited, Failure):
+        raise _DeliveryRejectedError(audited, c05, proposal)
     plan = proposal.model_copy(
         update={"version": expected_version + 1, "status": "confirmed"}
     )
@@ -220,7 +248,7 @@ def confirm_plan(
     if failure:
         return reject_confirmation(store, decisions, clock, context, plan_id, failure)
     try:
-        with store.transaction() as conn:
+        with store.confirmation_transaction() as conn:
             result = _commit_confirmation(
                 conn,
                 context,
@@ -241,7 +269,7 @@ def confirm_plan(
         return reject_confirmation(
             store, decisions, clock, context, plan_id, rejected.failure
         )
-    except psycopg.Error:
+    except (psycopg.Error, SQLAlchemyError):
         return reject_confirmation(
             store,
             decisions,

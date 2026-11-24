@@ -14,6 +14,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.components.c02_identity_access.tokens import SupabaseVerifier
+from app.components.c04_delivery_management.router import router as deliveries_router
+from app.components.c04_delivery_management.service import DeliveryService
+from app.components.c05_planning.delivery_gateway import DeliveryPlanningGateway
 from app.components.c05_planning.router import router as planning_router
 from app.components.c05_planning.service import PlanningService
 from app.components.c05_planning.store import PostgresPlanStore
@@ -54,6 +57,8 @@ def create_app(
     identity_verifier=None,
     city_state_store=None,
     disruption_store=None,
+    deliveries=None,
+    planning_gateway=None,
     clock=None,
 ):
     @asynccontextmanager
@@ -93,6 +98,12 @@ def create_app(
             app.state.knowledge,
             DecisionRecords(PostgresDecisionStore(), clock=service_clock),
             app.state.dublin_scenario,
+            clock=service_clock,
+        )
+        app.state.deliveries = deliveries or DeliveryService(
+            app.state.engine,
+            planning_gateway=planning_gateway
+            or DeliveryPlanningGateway(app.state.planning),
             clock=service_clock,
         )
         yield
@@ -188,6 +199,7 @@ def create_app(
     app.include_router(planning_router)
     app.include_router(identity_router)
     app.include_router(router)
+    app.include_router(deliveries_router)
     app.include_router(city_state_router)
     app.include_router(disruptions_router)
     return app
