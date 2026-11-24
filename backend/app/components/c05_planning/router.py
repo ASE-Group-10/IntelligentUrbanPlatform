@@ -1,13 +1,13 @@
-"""Read a saved C05 plan within the operator's authorised scope."""
+"""Operator reads and confirmation of a saved C05 proposal."""
 
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import UUID4, ValidationError
+from pydantic import UUID4, Field, ValidationError
 
 from app.infrastructure.errors import APIError, correlation_id
 from app.integrations.identity import authenticate
@@ -19,14 +19,21 @@ from app.shared.run_access import require_run_access
 from .models import Plan, PlanScope
 
 
-class PlanReadError(ContractModel):
-    code: Literal["Invalid", "Unauthenticated", "Forbidden", "NotFound", "Unavailable"]
+class ConfirmationRequest(ContractModel):
+    expected_version: Annotated[int, Field(strict=True, ge=1)]
+    run_scope: PlanScope
+
+
+class PlanError(ContractModel):
+    code: Literal[
+        "Invalid", "Unauthenticated", "Forbidden", "NotFound", "Conflict", "Unavailable"
+    ]
     message: str
     correlation_id: UUID
 
 
-class PlanReadErrorResponse(ContractModel):
-    error: PlanReadError
+class PlanErrorResponse(ContractModel):
+    error: PlanError
 
 
 _ERROR_CODES = {
@@ -34,6 +41,7 @@ _ERROR_CODES = {
     401: "Unauthenticated",
     403: "Forbidden",
     404: "NotFound",
+    409: "Conflict",
     503: "Unavailable",
 }
 
@@ -48,12 +56,15 @@ class PlanningRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError:
-                status, message = 400, "Invalid plan identifier or run scope."
+                status, message = (
+                    400,
+                    "Check the plan identifier, scope and required fields.",
+                )
             except APIError as exc:
                 status = 400 if exc.status == 422 else exc.status
                 message = exc.message
-            body = PlanReadErrorResponse(
-                error=PlanReadError(
+            body = PlanErrorResponse(
+                error=PlanError(
                     code=_ERROR_CODES[status],
                     message=message,
                     correlation_id=correlation_id(request),
@@ -81,7 +92,8 @@ router = APIRouter(
     # A default client error also suppresses FastAPI's automatic 422 schema:
     # invalid parameters on this operation use the C05 400 envelope.
     responses={
-        status: {"model": PlanReadErrorResponse} for status in (*_ERROR_CODES, "4XX")
+        status: {"model": PlanErrorResponse}
+        for status in (400, 401, 403, 404, 503, "4XX")
     },
 )
 def get_plan(
@@ -105,4 +117,42 @@ def get_plan(
         if result.kind == "NotFound":
             raise APIError(404, "NotFound", "Plan not found in the selected scope.")
         raise APIError(503, "Unavailable", "The plan store is unavailable.")
+    return result.value
+
+
+@router.post(
+    "/{planId}/confirmation",
+    response_model=Plan,
+    response_model_exclude_none=True,
+    operation_id="c05ConfirmPlan",
+    responses={
+        status: {"model": PlanErrorResponse} for status in (*_ERROR_CODES, "4XX")
+    },
+)
+def confirm_plan(
+    request: Request,
+    plan_id: Annotated[UUID4, Path(alias="planId")],
+    command: ConfirmationRequest,
+    key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
+    context: Annotated[AuthContext, Depends(authenticate)],
+) -> Plan:
+    require_run_access(request, command.run_scope.run_id)
+    result = request.app.state.planning.confirm_plan(
+        context, command.run_scope, plan_id, command.expected_version, key
+    )
+    if isinstance(result, Failure):
+        status = {
+            "Invalid": 400,
+            "Forbidden": 403,
+            "NotFound": 404,
+            "Conflict": 409,
+        }.get(result.kind, 503)
+        message = {
+            400: "Invalid confirmation request.",
+            403: "Operator access is required.",
+            404: "The plan or one of its deliveries was not found in this scope.",
+            409: "Confirmation conflicts with current state. Reload the plan.",
+            503: "Confirmation is unavailable. Retry with the same key.",
+        }[status]
+        raise APIError(status, _ERROR_CODES[status], message)
     return result.value

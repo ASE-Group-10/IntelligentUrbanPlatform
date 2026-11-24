@@ -48,6 +48,19 @@ class ContractModel(BaseModel):
     )
 
 
+class RunScopeSelector(ContractModel):
+    """Partition of an internal command or an authorised HTTP read."""
+
+    scope: RunScope
+    run_id: UUID4 | None = None
+
+    @model_validator(mode="after")
+    def check_partition(self) -> Self:
+        if (self.scope == "simulation") != (self.run_id is not None):
+            raise ValueError("only simulation scope requires a runId")
+        return self
+
+
 class Affected(ContractModel):
     """Entities an event touches; empty lists are allowed."""
 

@@ -1,29 +1,22 @@
 """C05 plan views and the saved C04 facts used by the Dublin generator."""
 
-from typing import Literal, Self
+from typing import Literal
 
-from pydantic import UUID4, ConfigDict, Field, model_validator
+from pydantic import UUID4, ConfigDict, Field
 
 from app.components.c08_allocation.models import ResourceRequirement
 from app.shared.c09_c10_common import TimeWindow, VehicleClass
 from app.shared.contracts import (
     ContractModel,
-    RunScope,
+    RunScopeSelector,
     SegmentKey,
     UtcDatetime,
     Version,
 )
 
 
-class PlanScope(ContractModel):
-    scope: RunScope
-    run_id: UUID4 | None = None
-
-    @model_validator(mode="after")
-    def check_partition(self) -> Self:
-        if (self.scope == "simulation") != (self.run_id is not None):
-            raise ValueError("only simulation scope requires a runId")
-        return self
+class PlanScope(RunScopeSelector):
+    """The run partition stored on a C05 plan."""
 
 
 class _C04Facts(ContractModel):

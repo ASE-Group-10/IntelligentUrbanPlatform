@@ -151,3 +151,27 @@ def test_unavailable_plan_store_uses_the_contract_error(api, monkeypatch):
     )
     assert_error(response, 503, "Unavailable")
     assert "private database details" not in response.text
+
+
+def test_confirmation_requires_operator_role_valid_version_and_idempotency_key(api):
+    client, plan, operator, driver, _ = api
+    path = f"/api/v1/plans/{plan['planId']}/confirmation"
+    body = {"expectedVersion": 1, "runScope": plan["runScope"]}
+    auth = {"Authorization": f"Bearer {operator}"}
+    key = {"Idempotency-Key": "confirm-click"}
+    assert_error(client.post(path, json=body, headers=key), 401, "Unauthenticated")
+    assert_error(
+        client.post(
+            path, json=body, headers={**key, "Authorization": f"Bearer {driver}"}
+        ),
+        403,
+        "Forbidden",
+    )
+    assert_error(client.post(path, json=body, headers=auth), 400, "Invalid")
+    assert_error(
+        client.post(
+            path, json={**body, "expectedVersion": True}, headers={**auth, **key}
+        ),
+        400,
+        "Invalid",
+    )

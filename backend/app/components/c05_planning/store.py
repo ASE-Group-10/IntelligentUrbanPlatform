@@ -44,8 +44,8 @@ class PostgresPlanStore:
         principal_id: str,
         key: str,
         request: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Serialize generation for this key and return its original result, if any."""
+    ) -> tuple[dict[str, Any], UUID] | None:
+        """Return the original proposal and its delivery trace under the key lock."""
         scoped = _scope_key(scope, run_id)
         # Lock before querying C09 or writing a decision. Under READ COMMITTED
         # the next statement sees the first caller's receipt after waiting.
@@ -54,7 +54,7 @@ class PostgresPlanStore:
             "select pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_name,)
         )
         row = conn.execute(
-            """select r.request_body = %s, v.proposal
+            """select r.request_body = %s, v.proposal, v.correlation_id
                  from c05_planning.generation_receipts r
                  join c05_planning.plan_versions v using (scope_key, plan_id, version)
                 where r.scope_key = %s and r.principal_id = %s
@@ -67,7 +67,7 @@ class PostgresPlanStore:
             raise GenerationConflictError(
                 "The generation key was used for another request."
             )
-        return row[1]
+        return row[1], row[2]
 
     def save(
         self,

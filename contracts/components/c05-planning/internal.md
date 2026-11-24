@@ -36,7 +36,7 @@ defines the saved fields. Wiring the C04 submit handler is pending.
 | --- | --- |
 | `delivery` | A `SavedDelivery` constructed from the committed [C04 delivery](../c04-delivery-management/examples/delivery-submitted.json). C05 reads `deliveryId`, `version`, `status`, `progress.status`, `cargo.weightKg`, `constraints.vehicleKinds` and `timeWindow`. |
 | `run_scope` | A `PlanScope` with `scope="simulation"` and the delivery's UUIDv4 `runId`. |
-| `correlation_id` | The UUID from the original delivery request, forwarded through C05 to C09 and C10. |
+| `correlation_id` | The UUIDv4 from the original delivery request, forwarded through C05 to C09 and C10 and retained for `PlanReady`. |
 | `key` | A stable, nonblank key of at most 200 characters. The demo uses `c04:generate:{deliveryId}:v{version}`. |
 
 The Dublin proposal uses the Eden Quay segment and one van with the saved cargo
@@ -61,7 +61,8 @@ operator with access to the run can read the current version with
 #### Run hop 4 from the saved delivery example
 
 From the repository root, use the local Compose stack and its migrated database.
-The last command passes the saved C04 example directly to the C05 service.
+The last command imports the saved example into C04's simulation store, commits
+the delivery, then calls the C05 service with that delivery.
 
 ```sh
 docker compose up -d --build
@@ -80,6 +81,35 @@ returns the same plan and decision IDs. The defaults for `--run-id` and
 `--correlation-id` come from the [Dublin fixture](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/blob/develop/fixtures/dublin-scenario.json).
 Pass the delivery's original values when replaying another trace. The end-to-end
 check starts at C04's submit handler and requires evidence of its call to C05.
+
+### Confirm a generated proposal (hop 5)
+
+Open the `/plans?…` link printed by the generation command in the running
+frontend. Sign in as an operator and select the acting provider. The page
+loads the proposal for that run and displays **Confirm plan** above the vehicle
+assignments. The URL carries `planId`, `scope`, `runId` and the original
+`correlationId`.
+
+The action sends `POST /api/v1/plans/{planId}/confirmation` with the saved
+version in `expectedVersion`, the same `runScope`, and a stable
+`Idempotency-Key`. C05 calls C04's `markRequestsPlanned` on the same PostgreSQL
+connection. C04 checks each delivery version and records the link and its C10
+audit. C05 saves the next confirmed version with its original decision ID, the
+confirmation receipt and the first `PlanReady` outbox entry. These writes
+commit together. A lost response can be recovered with the same key and
+request. A conflicting version requires a fresh read.
+
+The `c05-publisher` worker sends the committed envelope to the topic exchange
+with routing key `PlanReady`. It marks the row published after RabbitMQ
+confirms receipt. If that mark is lost, the worker sends the same event ID
+again. The integration test receives the message and checks it against the
+saved row and the C08 event contract. Run it from `backend/` with
+`TEST_DATABASE_URL` pointing to a dedicated test database and
+`TEST_RABBITMQ_URL` pointing to the test broker.
+
+```sh
+uv run pytest tests/test_c05_confirm_plan.py tests/test_c05_outbox_publisher.py
+```
 
 ### findAffectedWork(changeScope) → Result\<AffectedWork\>
 

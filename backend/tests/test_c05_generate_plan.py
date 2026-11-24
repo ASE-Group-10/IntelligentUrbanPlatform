@@ -18,7 +18,9 @@ from app.components.c09_logistics_knowledge.postgres_store import PostgresKnowle
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
 from app.components.c10_decision_records.service import DecisionRecords
+from app.demo.c05 import generate_saved_demo
 from app.demo.feed import load_scenario
+from app.shared.auth import AuthContext
 from app.shared.result import Failure, Ok
 
 
@@ -76,6 +78,48 @@ def row_counts(conn):
         "       (select count(*) from c05_planning.generation_receipts), "
         "       (select count(*) from c05_planning.outbox)"
     ).fetchone()
+
+
+def test_saved_demo_preserves_original_trace_and_cannot_replan_a_linked_delivery(
+    planner, example, test_database_url
+):
+    saved = example("delivery-submitted.json")
+    scope = PlanScope(scope="simulation", run_id=uuid4())
+    first_trace = uuid4()
+
+    def generate(trace, key=None):
+        return generate_saved_demo(planner, test_database_url, scope, saved, trace, key)
+
+    original = generate(first_trace)
+    assert isinstance(original, Ok)
+    plan, trace = original.value
+    assert trace == first_trace
+    assert generate(uuid4()) == original
+    # A caller can choose a different key and trace while the delivery is pending.
+    override_trace = uuid4()
+    alternate = generate(override_trace, "prior-to-confirmation")
+    assert isinstance(alternate, Ok) and alternate.value[1] == override_trace
+    assert alternate.value[0].plan_id != plan.plan_id
+
+    provider = uuid4()
+    operator = AuthContext(
+        principal_id=uuid4(),
+        principal_type="user",
+        acting_provider_id=provider,
+        roles=("operator",),
+        provider_ids=(provider,),
+        platform_roles=(),
+        correlation_id=first_trace,
+    )
+    assert isinstance(
+        planner.confirm_plan(operator, scope, plan.plan_id, 1, "confirm"), Ok
+    )
+    with psycopg.connect(test_database_url, autocommit=True) as observer:
+        before = row_counts(observer)
+        assert generate(uuid4()) == original
+        rejected = generate(uuid4(), "new-after-confirmation")
+        assert isinstance(rejected, Failure) and rejected.kind == "Conflict"
+        assert row_counts(observer) == before
 
 
 def test_proposal_records_exact_c09_evidence_and_original_trace(

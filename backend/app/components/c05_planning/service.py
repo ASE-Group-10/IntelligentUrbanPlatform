@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 
+from app.components.c05_planning import confirmation
 from app.components.c05_planning.models import Plan, PlanScope, Route, SavedDelivery
 from app.components.c05_planning.store import GenerationConflictError, PostgresPlanStore
 from app.components.c08_allocation.models import (
@@ -26,6 +27,7 @@ from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.contracts import DecisionRecord
 from app.components.c10_decision_records.service import DecisionRecords
 from app.demo.feed import Scenario
+from app.shared.auth import AuthContext as OperatorContext
 from app.shared.c09_c10_common import Activity, AuthContext, VehicleClass
 from app.shared.result import Failure, Ok, Result
 
@@ -102,6 +104,25 @@ class PlanningService:
             return Failure("NotFound", "C05.PLAN_NOT_FOUND")
         return Ok(Plan.model_validate(row, strict=False))
 
+    def confirm_plan(
+        self,
+        context: OperatorContext,
+        run_scope: PlanScope,
+        plan_id: UUID,
+        expected_version: int,
+        key: str,
+    ) -> Result[Plan]:
+        return confirmation.confirm_plan(
+            self._store,
+            self._decisions,
+            self._clock,
+            context,
+            run_scope,
+            plan_id,
+            expected_version,
+            key,
+        )
+
     def generate_plan(
         self,
         delivery: SavedDelivery,
@@ -112,6 +133,8 @@ class PlanningService:
         """Save proposal and decision atomically, replaying the first committed plan."""
         if run_scope.scope != "simulation":
             return Failure("Invalid", "C05.DUBLIN_SCENARIO_REQUIRES_SIMULATION")
+        if correlation_id.version != 4:
+            return Failure("Invalid", "C05.INVALID_DELIVERY_TRACE")
         if not key.strip() or len(key) > 200:
             return Failure("Invalid", "C05.INVALID_IDEMPOTENCY_KEY")
 
@@ -128,7 +151,8 @@ class PlanningService:
                     conn, run_scope.scope, run_scope.run_id, _CALLER, key, request
                 )
                 if previous is not None:
-                    plan = Plan.model_validate(previous, strict=False)
+                    saved_plan, correlation_id = previous
+                    plan = Plan.model_validate(saved_plan, strict=False)
                 else:
                     departure = max(
                         self._scenario.start_time, delivery.time_window.start
