@@ -31,7 +31,8 @@ For hop 4 of [#72](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issu
 C04 should call `app.state.planning.generate_plan(delivery, run_scope, correlation_id, key)`
 in-process after committing a delivery. C04 owns the authorised read of that
 delivery in its run. Its [delivery contract](../c04-delivery-management/internal.md)
-defines the saved fields. Wiring the C04 submit handler is pending.
+defines the saved fields. [C04 PR #123](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/123)
+adds the submit handler. On its own branch the handoff still uses a labelled stub.
 
 | Argument | What C04 supplies |
 | --- | --- |
@@ -64,8 +65,10 @@ operator with access to the run can read the current version with
 #### Run hop 4 from the saved delivery example
 
 From the repository root, use the local Compose stack and its migrated database.
-The last command imports the saved example into C04's simulation store, commits
-the delivery, then calls the C05 service with that delivery.
+The last command imports the saved example with its original delivery ID and
+dates into C04's simulation store. It commits the delivery, then calls C05.
+For a wall-clock closure and detour, use the [full walkthrough](#run-the-dublin-replan)
+with `--fresh`.
 
 ```sh
 docker compose up -d --build
@@ -278,38 +281,52 @@ Dublin fixture, and follows the C06 outbox through RabbitMQ and the C07
 consumer to the revised C05 event. It uses a clock on the fixture's date and
 reads both saved routes through the C08 lookup.
 
-For a wall-clock run, start the stack and load the C09 demo corpus as in
-[hop 4](#run-hop-4-from-the-saved-delivery-example). From the repository
-root in a POSIX shell, give a fresh copy of the synthetic delivery a current
-window. The following uses the shared Dublin run and a new delivery trace.
+For a wall-clock run, start the stack and create a new synthetic delivery.
+Run these commands at the repository root in a POSIX shell.
 
 ```sh
+docker compose up -d --build
+docker compose exec -T api python -m app.components.c09_logistics_knowledge.demo_corpus
 run=$(python -c 'import json; print(json.load(open("fixtures/dublin-scenario.json"))["runId"])')
 trace=$(python -c 'from uuid import uuid4; print(uuid4())')
-python - <<'PY' | docker compose exec -T api python -m app.demo.c05 --run-id "$run" --correlation-id "$trace"
-import json
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from uuid import uuid4
-
-source = Path("contracts/components/c04-delivery-management/examples/delivery-submitted.json")
-delivery = json.loads(source.read_text(encoding="utf-8"))
-departure = datetime.now(timezone.utc) + timedelta(minutes=10)
-delivery["deliveryId"] = str(uuid4())
-delivery["timeWindow"] = {"start": departure.isoformat(),
-                          "end": (departure + timedelta(hours=2)).isoformat()}
-print(json.dumps(delivery))
-PY
+proposal=$(docker compose exec -T api python -m app.demo.c05 --fresh --run-id "$run" --correlation-id "$trace" \
+  < contracts/components/c04-delivery-management/examples/delivery-submitted.json)
+plan=$(printf '%s' "$proposal" | python -c 'import json, sys; print(json.load(sys.stdin)["planId"])')
 ```
 
-Open the printed Plans link and confirm it with the operator session. Pass
-its plan UUID to distinguish it from other deliveries in the shared run.
+Each `--fresh` invocation creates a new pending delivery ID and generation
+key. Submission and progress timestamps use the current UTC time. The window
+opens 30 minutes later and keeps the example's original duration. The plan,
+its decision and its Plans link retain the supplied run and trace.
+
+Start the [frontend with sign-in configured](../../../frontend/README.md#sign-in-to-resources).
+Open the printed `/plans?…` link in that frontend and select an acting
+provider for your operator. When testing the C08 driver commitment with
+[PR #122](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/122),
+bind the vehicle and driver to the proposal **before** confirmation. Click
+**Confirm plan** and verify the same plan shows v2. For the C08 commitment
+check, have the driver accept the offer before injecting the closure.
+
+Run the following during the 30-minute lead time. The checker injects a
+fresh Eden Quay closure into the same run with the delivery's trace. C07
+can then find the unfinished route and request the v3 revision.
 
 ```sh
-printf 'Confirmed plan UUID: '
-read -r plan
 scripts/hello-world.sh --run-id "$run" --correlation-id "$trace" --plan-id "$plan"
 ```
+
+PowerShell uses the same sequence. After starting Compose and loading the
+corpus, generate the proposal with these commands.
+
+```powershell
+$run = (Get-Content -Raw fixtures/dublin-scenario.json | ConvertFrom-Json).runId
+$trace = [guid]::NewGuid().ToString()
+$proposal = Get-Content -Raw contracts/components/c04-delivery-management/examples/delivery-submitted.json |
+  docker compose exec -T api python -m app.demo.c05 --fresh --run-id $run --correlation-id $trace
+$plan = ($proposal | ConvertFrom-Json).planId
+```
+
+After confirmation, run `python scripts/hello_world.py --run-id $run --correlation-id $trace --plan-id $plan`.
 
 The report follows the plan through the following records.
 
@@ -384,7 +401,7 @@ unfinished deliveries in that plan version. C08 checks which existing
 commitments still satisfy those needs using the
 [confirmed delivery route and departure](#read-a-confirmed-delivery-route-for-allocation).
 
-For the C05 → C08 handoff in #107, the scoped lookup takes the event's
+For the [C05 → C08 handoff](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950), the scoped lookup takes the event's
 `planId`, `planVersion` and run scope, plus the unfinished `deliveryId`.
 It returns the matching route and its `plannedDepartureAt` together from
 that confirmed version. The result identifies the scope, plan and version.
@@ -461,9 +478,13 @@ confirms at v2 and takes the detour at v3.
 
 ## Open coordination points
 
-- C04 and C01 coordinate the hand-off of the saved proposal ID and version from
-  delivery submission to the Plans page. The generation path for #118 is the
-  in-process call above. The `POST /api/v1/plans` entry in the UC03 OpenAPI
-  draft describes a separate HTTP operation.
-- C08's consumer still needs to connect its allocation transaction to the
-  [C05 version lookup agreed in #114](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950).
+- [C04 PR #123](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/123)
+  returns the stub plan ID and version in response headers and displays them
+  on the delivery page. Joining this with #119 requires one compatible C04
+  delivery schema and transaction boundary, an adapter between the saved
+  delivery and real C05 result, and a Plans link carrying the original run
+  and trace on retries.
+- The [C08 version lookup agreed in #114](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950)
+  is connected in [PR #122](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/122).
+  That change depends on #119 and rechecks the version inside the allocation
+  transaction. On #119 alone, the C08 worker still uses its demo plan reader.

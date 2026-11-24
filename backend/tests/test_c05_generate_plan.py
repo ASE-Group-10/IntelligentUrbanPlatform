@@ -4,22 +4,24 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
 from pydantic import ValidationError
 
+from app.components.c05_planning.facts import find_affected_work
 from app.components.c05_planning.models import DeliveryWindow, PlanScope, SavedDelivery
 from app.components.c05_planning.service import PlanningService
 from app.components.c05_planning.store import PostgresPlanStore
+from app.components.c07_disruption_detection.contracts import ChangeScope
 from app.components.c09_logistics_knowledge.contracts import RuleCoverage
 from app.components.c09_logistics_knowledge.demo_corpus import DEMO_ZONES, load
 from app.components.c09_logistics_knowledge.postgres_store import PostgresKnowledgeStore
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
 from app.components.c10_decision_records.service import DecisionRecords
-from app.demo.c05 import generate_saved_demo
+from app.demo.c05 import fresh_delivery, generate_saved_demo
 from app.demo.feed import load_scenario
 from app.shared.auth import AuthContext
 from app.shared.result import Failure, Ok
@@ -124,10 +126,33 @@ def test_delivery_window_accepts_rfc3339_utc_and_typed_datetimes(start):
     assert window.start == datetime(2026, 11, 20, 9, 0, 0, 123000, UTC)
 
 
+def test_fresh_delivery_creates_distinct_utc_examples_across_midnight(example):
+    original = example("delivery-submitted.json")
+    now = datetime.fromisoformat("2026-11-28T00:50:00+01:00")
+    fresh = fresh_delivery(original, now)
+    second = fresh_delivery(original, now)
+    assert len({original["deliveryId"], fresh["deliveryId"], second["deliveryId"]}) == 3
+    assert UUID(fresh["deliveryId"]).version == 4
+    assert fresh["createdAt"] == fresh["updatedAt"] == fresh["progress"]["updatedAt"]
+    assert fresh["createdAt"] == "2026-11-27T23:50:00Z"
+    assert fresh["timeWindow"] == {
+        "start": "2026-11-28T00:20:00Z",
+        "end": "2026-11-28T03:20:00Z",
+    }
+    assert fresh["cargo"] == original["cargo"]
+    assert original == example("delivery-submitted.json")
+
+
+@pytest.mark.parametrize(
+    "fresh", [False, True], ids=["original-window", "fresh-window"]
+)
 def test_saved_demo_preserves_original_trace_and_cannot_replan_a_linked_delivery(
-    planner, example, test_database_url
+    planner, store, example, test_database_url, fresh
 ):
     saved = example("delivery-submitted.json")
+    demo_day = datetime(2026, 11, 27, 9, tzinfo=UTC)
+    if fresh:
+        saved = fresh_delivery(saved, demo_day)
     scope = PlanScope(scope="simulation", run_id=uuid4())
     first_trace = uuid4()
 
@@ -157,6 +182,19 @@ def test_saved_demo_preserves_original_trace_and_cannot_replan_a_linked_delivery
     )
     assert isinstance(
         planner.confirm_plan(operator, scope, plan.plan_id, 1, "confirm"), Ok
+    )
+    affected = find_affected_work(
+        store,
+        ChangeScope(
+            scope="simulation",
+            run_id=scope.run_id,
+            segment_keys=plan.routes[0].segment_keys,
+        ),
+        start=demo_day + timedelta(minutes=15),
+    )
+    assert isinstance(affected, Ok)
+    assert [item.plan_id for item in affected.value.items] == (
+        [plan.plan_id] if fresh else []
     )
     with psycopg.connect(test_database_url, autocommit=True) as observer:
         before = row_counts(observer)
