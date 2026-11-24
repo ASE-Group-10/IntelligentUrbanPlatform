@@ -368,9 +368,29 @@ and commands. Omitting it selects live state.
 3. Reload as either participant and select the same scope. The assignment shows **Driver accepted**.
    The API and worker logs include the correlation ID printed by the demo.
 
+### Carry a vehicle commitment into the Dublin detour
+
+After the initial v3 allocation, run the following with the same database and
+broker as the worker. You can issue or accept the driver's offer before this step.
+
+```sh
+uv run python -m app.demo.c08 --revision
+```
+
+The command stages C05's saved v4 fixture and publishes its revision event twice.
+Refresh **Plans → Dublin simulation**. A compatible van keeps its assignment
+reference, offer or acceptance, and one 10 kg reservation. The plan version is
+now 4. The detour covers 1.6 km and takes eight minutes. The demo uses the
+Dublin scenario start time as departure for checking C03 operating hours.
+A van that cannot cover the detour shows **Revised plan needs a new allocation**.
+Its old offer is closed and its capacity becomes available to other plans.
+
+Use `--revision --seed-only` when testing with an external publisher. The local
+saved-plan lookup stands in for C05 until the teams integrate the versioned read.
+
 To run the automated demonstration, configure a dedicated `TEST_DATABASE_URL`
 ending in `_test` and `TEST_RABBITMQ_URL`, then run
 `uv run pytest tests/test_c08_driver_acceptance.py`. The test rebuilds the
 test schemas, uses its own RabbitMQ exchange/queue, and substitutes token
-verification for interactive Supabase sign-in. Offer expiry, revised plans,
+verification for interactive Supabase sign-in. Offer expiry, replacement selection,
 multi-agent negotiation and downstream evidence/disruption events are follow-up work.
