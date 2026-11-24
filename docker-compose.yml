@@ -156,6 +156,22 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # One-shot fixture operator for the local Dublin walkthrough.
+  demo-confirm:
+    <<: *backend
+    profiles: ["demo"]
+    restart: "no"
+    network_mode: "service:db"
+    environment:
+      C05_LOCAL_DEMO: "1"
+      DATABASE_URL: postgresql+psycopg://ulop:ulop@127.0.0.1:5432/ulop
+    entrypoint: ["python", "-m", "app.demo.c05", "--confirm"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   db-data:
   rabbitmq-data:

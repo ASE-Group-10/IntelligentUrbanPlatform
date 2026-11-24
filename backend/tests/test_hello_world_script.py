@@ -182,7 +182,9 @@ def test_observed_event_must_match_the_saved_revision(monkeypatch):
     assert "matched" in hops[8].notes[-1]
 
 
-@pytest.mark.parametrize("mode", ["default", "pinned", "replay", "wrong-closure"])
+@pytest.mark.parametrize(
+    "mode", ["default", "pinned", "fixture", "replay", "wrong-closure"]
+)
 @pytest.mark.parametrize("matching_receipt", [True, False])
 def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     mode, matching_receipt, monkeypatch, capsys
@@ -242,6 +244,7 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
                         "ok": True,
                         "version": 2,
                         "detail": "confirmed plan",
+                        "localFixture": mode == "fixture",
                         "eventId": FIRST,
                         "eventTime": FIRST_TIME,
                     },
@@ -349,7 +352,12 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     )
     assert hop4.endswith("WIRED" if pinned else "MISSING")
     hop5 = next(line for line in output.splitlines() if "C01 confirms the plan" in line)
-    assert hop5.endswith("PASS" if pinned and matching_receipt else "WIRED")
+    assert hop5.endswith(
+        "PASS" if pinned and matching_receipt and mode != "fixture" else "WIRED"
+    )
+    assert ("The local CLI exercised C05" in output) == (
+        mode == "fixture" and matching_receipt
+    )
     if pinned:
         assert "Entry point: saved C04 delivery" in output
         assert all(

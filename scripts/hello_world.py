@@ -334,7 +334,12 @@ def check_saved_plan(
         )
         if receipt:
             hops[5].notes.append(f"C08 received first PlanReady {confirmed['eventId']}")
-            if hops[5].status == "WIRED":
+            if confirmed.get("localFixture"):
+                hops[5].notes.append(
+                    "The local CLI exercised C05. Confirm through the signed-in "
+                    "Plans page on a fresh proposal to verify the C01 HTTP hop."
+                )
+            elif hops[5].status == "WIRED":
                 hops[5].set("PASS")
         else:
             hops[5].notes.append(

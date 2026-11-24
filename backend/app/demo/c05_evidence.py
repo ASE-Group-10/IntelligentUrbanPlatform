@@ -23,6 +23,7 @@ from app.components.c07_disruption_detection.contracts import (
 from app.components.c08_allocation.events import PlanReadyEvent
 from app.components.c10_decision_records.contracts import DecisionRecord
 from app.config import get_settings
+from app.demo.c05_confirmation import LOCAL_DEMO_OPERATOR_ID
 from app.demo.feed import load_scenario
 
 
@@ -210,12 +211,12 @@ def _confirmation(
         "The confirmed plan or C04 link does not match the proposal.",
     )
     cur.execute(
-        """select r.receipt from c05_planning.confirmation_receipts
+        """select r.receipt, c.principal_id from c05_planning.confirmation_receipts c
              join c04_delivery_management.planning_receipts r
                on r.run_id = %s and r.principal_id = 'service:c05'
               and r.idempotency_key = %s
-            where scope_key = %s and plan_id = %s
-              and expected_version = 1 and version = 2""",
+            where c.scope_key = %s and c.plan_id = %s
+              and c.expected_version = 1 and c.version = 2""",
         (
             proposal.run_scope.run_id,
             f"c05:confirm:{proposal.plan_id}:v1",
@@ -237,6 +238,9 @@ def _confirmation(
         "Operator confirmation, C04 link and first published PlanReady.",
         **_event(rows[2], confirmed, correlation_id, None),
     )
+    if row["principal_id"] == LOCAL_DEMO_OPERATOR_ID:
+        result["localFixture"] = True
+        result["detail"] = "Local CLI fixture confirmation and C04 delivery link."
     return result, confirmed
 
 

@@ -6,6 +6,7 @@ From backend/ with the local database migrated and the C09 demo corpus loaded:
 
 Add --fresh for a new synthetic delivery with a current UTC window. The
 default run and trace come from fixtures/dublin-scenario.json.
+The local Compose demo-confirm service confirms an imported proposal by ID.
 """
 
 import argparse
@@ -24,7 +25,11 @@ from app.components.c05_planning.models import Plan, PlanScope, SavedDelivery
 from app.components.c05_planning.service import PlanningService
 from app.components.c05_planning.store import GenerationConflictError, PostgresPlanStore
 from app.components.c06_city_monitoring.router import libpq_url
+from app.config import get_settings
+from app.demo.c05_confirmation import confirm_demo_plan
+from app.demo.feed import load_scenario
 from app.main import app
+from app.shared.logging import configure_logging
 from app.shared.result import Failure, Ok, Result
 
 
@@ -123,30 +128,53 @@ async def main() -> int:
         action="store_true",
         help="create a new pending example with departure in 30 minutes",
     )
+    generation.add_argument(
+        "--confirm",
+        metavar="PLAN_ID",
+        type=TypeAdapter(UUID4).validate_python,
+        help="confirm an imported proposal using the local Compose fixture operator",
+    )
     args = parser.parse_args()
-    try:
-        saved = json.load(sys.stdin.buffer)
-        if args.fresh:
-            saved = fresh_delivery(saved, datetime.now(UTC))
-    except ValueError as exc:
-        parser.error(f"Invalid saved delivery: {exc}")
-
-    async with app.router.lifespan_context(app):
-        scenario = app.state.dublin_scenario
-        scope = PlanScope(scope="simulation", run_id=args.run_id or scenario.run_id)
-        trace_id = args.correlation_id or scenario.correlation_id
-        dsn = libpq_url(app.state.settings.database_url.get_secret_value())
+    if args.confirm is not None:
+        configure_logging("C05")
+        settings = get_settings()
+        scope = PlanScope(
+            scope="simulation", run_id=args.run_id or load_scenario().run_id
+        )
+        result = confirm_demo_plan(
+            libpq_url(settings.database_url.get_secret_value()),
+            scope,
+            settings.shared_run_ids,
+            args.confirm,
+            args.correlation_id,
+        )
+    else:
         try:
-            result = generate_saved_demo(
-                app.state.planning, dsn, scope, saved, trace_id, args.key
-            )
+            saved = json.load(sys.stdin.buffer)
+            if args.fresh:
+                saved = fresh_delivery(saved, datetime.now(UTC))
+            async with app.router.lifespan_context(app):
+                scenario = app.state.dublin_scenario
+                scope = PlanScope(
+                    scope="simulation", run_id=args.run_id or scenario.run_id
+                )
+                result = generate_saved_demo(
+                    app.state.planning,
+                    libpq_url(app.state.settings.database_url.get_secret_value()),
+                    scope,
+                    saved,
+                    args.correlation_id or scenario.correlation_id,
+                    args.key,
+                )
         except ValueError as exc:
-            parser.error(str(exc))
+            parser.error(f"Invalid saved delivery: {exc}")
     if isinstance(result, Failure):
         print(f"{result.kind}: {result.message}", file=sys.stderr)
         return 1
     plan, original_trace = result.value
     print(plan.model_dump_json(by_alias=True))
+    if args.confirm is not None:
+        print(f"Local fixture confirmation receipt: v{plan.version}", file=sys.stderr)
     query = urlencode(
         {
             "planId": plan.plan_id,

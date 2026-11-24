@@ -299,13 +299,28 @@ key. Submission and progress timestamps use the current UTC time. The window
 opens 30 minutes later and keeps the example's original duration. The plan,
 its decision and its Plans link retain the supplied run and trace.
 
-Start the [frontend with sign-in configured](../../../frontend/README.md#sign-in-to-resources).
-Open the printed `/plans?…` link in that frontend and select an acting
-provider for your operator. When testing the C08 driver commitment with
+When testing the C08 driver commitment with
 [PR #122](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/122),
-bind the vehicle and driver to the proposal **before** confirmation. Click
-**Confirm plan** and verify the same plan shows v2. For the C08 commitment
-check, have the driver accept the offer before injecting the closure.
+bind the vehicle and driver to the proposal **before** confirmation.
+Choose one way to confirm the new proposal.
+
+- **C01 browser check.** Start the [frontend with sign-in configured](../../../frontend/README.md#sign-in-to-resources).
+  Open the printed `/plans?…` link, select the operator's acting provider and
+  click **Confirm plan**. The same plan should display v2.
+- **Local Compose check without hosted sign-in.** Run the one-shot demo
+  service with the plan, run and trace from generation.
+
+  ```sh
+  docker compose run --rm demo-confirm "$plan" --run-id "$run" --correlation-id "$trace"
+  ```
+
+  The command calls C05 with a synthetic operator and prints the committed
+  v2 plan. A retry returns the original confirmation. The checker reports
+  hop 5 as `WIRED` and identifies the CLI fixture and the C08 broker receipt.
+  Use a fresh proposal and the browser path for the C01 HTTP acceptance check.
+
+For the C08 commitment check, have the driver accept the offer before
+injecting the closure.
 
 Run the following during the 30-minute lead time. The checker injects a
 fresh Eden Quay closure into the same run with the delivery's trace. C07
@@ -326,7 +341,9 @@ $proposal = Get-Content -Raw contracts/components/c04-delivery-management/exampl
 $plan = ($proposal | ConvertFrom-Json).planId
 ```
 
-After confirmation, run `python scripts/hello_world.py --run-id $run --correlation-id $trace --plan-id $plan`.
+Confirm through Plans or run
+`docker compose run --rm demo-confirm $plan --run-id $run --correlation-id $trace`.
+Then run `python scripts/hello_world.py --run-id $run --correlation-id $trace --plan-id $plan`.
 
 The report follows the plan through the following records.
 
