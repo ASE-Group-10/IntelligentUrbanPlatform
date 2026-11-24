@@ -26,7 +26,7 @@ class _C04Facts(ContractModel):
 
 
 class DeliveryCargo(_C04Facts):
-    weight_kg: float = Field(gt=0, allow_inf_nan=False)
+    weight_kg: float = Field(strict=True, gt=0, allow_inf_nan=False)
 
 
 class DeliveryConstraints(_C04Facts):
@@ -46,7 +46,7 @@ class SavedDelivery(_C04Facts):
     """Authoritative C04 snapshot obtained in the caller's authorised run."""
 
     delivery_id: UUID4
-    version: Version
+    version: Version = Field(strict=True)
     status: Literal["pending", "planned", "in_progress", "delivered", "cancelled"]
     progress: DeliveryProgress
     cargo: DeliveryCargo

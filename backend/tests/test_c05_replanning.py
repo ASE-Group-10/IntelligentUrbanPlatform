@@ -506,6 +506,96 @@ def test_reported_traffic_must_support_the_fixed_detour(
     assert isinstance(result, Ok) and result.value.status == outcome, result
 
 
+@pytest.mark.parametrize(
+    "limit,delay,expected",
+    [
+        ("window", 2, "PlanSaved"),
+        ("window", 6, "ReviewRequired"),
+        ("closure", 5, "ReviewRequired"),
+        ("detour", 6, "ReviewRequired"),
+        ("freshness", 901, "ReviewRequired"),
+    ],
+)
+def test_policy_lookup_time_counts_towards_remaining_delivery_window(
+    flow,
+    replan,
+    city,
+    scenario,
+    test_database_url,
+    monkeypatch,
+    example,
+    limit,
+    delay,
+    expected,
+):
+    end = datetime.fromisoformat(
+        example("delivery-submitted.json")["timeWindow"]["end"]
+    )
+    now = (
+        end - timedelta(minutes=8, seconds=5)
+        if limit == "window"
+        else end - timedelta(hours=1)
+    )
+    planning = make_replanning(test_database_url, clock=lambda: now)
+    fresh = feed_closure(
+        city,
+        scenario,
+        lambda: now,
+        fresh=True,
+        run_id=replan.run_id,
+        correlation_id=flow.trace,
+    )
+    assert isinstance(fresh, Ok)
+    if limit in ("closure", "detour"):
+        is_closure = limit == "closure"
+        expiry = (
+            now
+            + timedelta(seconds=5)
+            + (timedelta() if is_closure else timedelta(minutes=8))
+        )
+        observe_road(
+            city,
+            lambda: now,
+            flow,
+            scenario,
+            "Eden Quay" if is_closure else "Abbey Street Lower",
+            "closed" if is_closure else "open",
+            now,
+            validUntil=expiry.isoformat(),
+        )
+    request = ReplanRequest.build(
+        replan.plan_id,
+        replan.trigger.model_copy(
+            update={
+                "source_event_id": fresh.value.queued_event_id,
+                "city_snapshot_version": fresh.value.snapshot_version,
+            }
+        ),
+        replan.scope,
+        replan.run_id,
+    )
+    query = planning.knowledge.query_knowledge
+
+    def query_after_delay(ctx, policy):
+        nonlocal now
+        now += timedelta(seconds=delay)
+        return query(ctx, policy)
+
+    monkeypatch.setattr(planning.knowledge, "query_knowledge", query_after_delay)
+    result = planning.request_replan(request, flow.trace)
+    assert isinstance(result, Ok) and result.value.status == expected, result
+    with psycopg.connect(test_database_url) as conn:
+        if expected == "PlanSaved":
+            departure = conn.execute(
+                "select planned_departure_at from c05_planning.plan_versions "
+                "where plan_id=%s and version=3",
+                (replan.plan_id,),
+            ).fetchone()[0]
+            assert departure == now and departure + timedelta(minutes=8) <= end
+        else:
+            assert db_counts(conn, replan.plan_id) == (2, 2, 1, 1)
+
+
 def test_fresh_closure_after_delivery_deadline_requires_review(
     flow, replan, city, scenario, test_database_url
 ):

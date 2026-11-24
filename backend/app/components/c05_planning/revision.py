@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
@@ -17,6 +17,7 @@ from app.components.c06_city_monitoring.contracts import (
 )
 from app.components.c06_city_monitoring.ingestion import CityMonitoring
 from app.components.c06_city_monitoring.postgres_store import hold_snapshot_version
+from app.components.c06_city_monitoring.snapshot import DEFAULT_MAX_AGE_SECONDS
 from app.components.c06_city_monitoring.store import StateScope
 from app.components.c07_disruption_detection.contracts import (
     ReplanOutcome,
@@ -49,6 +50,22 @@ _DETOUR_SECONDS = 480
 
 
 @dataclass(frozen=True)
+class _DetourTiming:
+    closure_until: datetime | None
+    arrive_by: datetime
+    oldest_observation: datetime
+
+    def rejection(self, departure: datetime, now: datetime) -> str | None:
+        if now - self.oldest_observation > timedelta(seconds=DEFAULT_MAX_AGE_SECONDS):
+            return "The road observations no longer meet C06's freshness limit."
+        if self.closure_until is not None and departure >= self.closure_until:
+            return "The closure is unverified at the planned departure."
+        if self.arrive_by - departure < timedelta(seconds=_DETOUR_SECONDS):
+            return "The detour exceeds the road availability or delivery window."
+        return None
+
+
+@dataclass(frozen=True)
 class _Assessment:
     outcome: Literal["NoChange", "ReviewRequired", "Selected"]
     reason: str
@@ -56,6 +73,19 @@ class _Assessment:
     evidence: EvidenceSnapshot | None = None
     route: Route | None = None
     departure: datetime | None = None
+    timing: _DetourTiming | None = None
+
+    def at_decision_time(self, now: datetime) -> "_Assessment":
+        if self.timing is None:
+            return self
+        assert self.departure is not None
+        departure = max(self.departure, now)
+        reason = self.timing.rejection(departure, now)
+        if reason:
+            return _Assessment(
+                "ReviewRequired", reason, self.city_version, self.evidence
+            )
+        return replace(self, departure=departure)
 
 
 def _assess(
@@ -144,22 +174,12 @@ def _assess(
         )
     delivery = work[0]
     departure = max(departure, delivery.time_window.start)
-    if closed[0].valid_until is not None and closed[0].valid_until <= departure:
-        return Ok(
-            _Assessment(
-                "ReviewRequired",
-                "The closure is unverified at the planned departure.",
-                version,
-            )
-        )
-    arrival = departure + timedelta(seconds=_DETOUR_SECONDS)
     alternative = by_key.get(detour)
     if alternative and (
         alternative.status != "open"
         or alternative.quality != "good"
         or alternative.conflict
         or alternative.observed_at > snapshot.generated_at
-        or (alternative.valid_until is not None and alternative.valid_until < arrival)
     ):
         return Ok(
             _Assessment(
@@ -193,14 +213,16 @@ def _assess(
                 version,
             )
         )
-    if arrival > delivery.time_window.end:
-        return Ok(
-            _Assessment(
-                "ReviewRequired",
-                "The Dublin detour exceeds the delivery window.",
-                version,
-            )
-        )
+    arrive_by = delivery.time_window.end
+    if alternative and alternative.valid_until is not None:
+        arrive_by = min(arrive_by, alternative.valid_until)
+    timing = _DetourTiming(
+        closed[0].valid_until,
+        arrive_by,
+        min(s.observed_at for s in (closed[0], alternative) if s is not None),
+    )
+    if reason := timing.rejection(departure, snapshot.generated_at):
+        return Ok(_Assessment("ReviewRequired", reason, version))
     retrieved = query_route_policy(knowledge, ctx, delivery)
     if isinstance(retrieved, Failure):
         return retrieved
@@ -222,6 +244,7 @@ def _assess(
             evidence,
             route,
             departure,
+            timing,
         )
     )
 
@@ -382,6 +405,8 @@ def _apply(
         if isinstance(held, Failure):
             return held
     now = clock()
+    # C09 retrieval and waiting for C06's lock can consume the remaining window.
+    assessment = assessment.at_decision_time(now)
     decision = _record(assessment, plan, facts.value, request, now)
     recorded = decisions.record_decision(conn, ctx, decision)
     if isinstance(recorded, Failure):

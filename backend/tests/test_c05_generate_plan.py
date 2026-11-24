@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from pydantic import ValidationError
 
 from app.components.c05_planning.models import PlanScope, SavedDelivery
 from app.components.c05_planning.service import PlanningService
@@ -78,6 +79,30 @@ def row_counts(conn):
         "       (select count(*) from c05_planning.generation_receipts), "
         "       (select count(*) from c05_planning.outbox)"
     ).fetchone()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("version", "1"), ("version", True), ("weightKg", "4.5"), ("weightKg", True)],
+)
+def test_invalid_numeric_delivery_facts_cannot_create_a_proposal(
+    planner, example, test_database_url, field, value
+):
+    saved = example("delivery-submitted.json")
+    if field == "version":
+        saved["version"] = value
+    else:
+        saved["cargo"][field] = value
+    scope = PlanScope(scope="simulation", run_id=uuid4())
+    with psycopg.connect(test_database_url, autocommit=True) as observer:
+        before = row_counts(observer)
+        with pytest.raises(ValidationError):
+            generate_saved_demo(planner, test_database_url, scope, saved, uuid4())
+        assert row_counts(observer) == before
+        assert observer.execute(
+            "select count(*) from c04_delivery_management.deliveries where run_id=%s",
+            (scope.run_id,),
+        ).fetchone() == (0,)
 
 
 def test_saved_demo_preserves_original_trace_and_cannot_replan_a_linked_delivery(
