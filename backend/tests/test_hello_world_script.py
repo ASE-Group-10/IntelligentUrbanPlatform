@@ -1,4 +1,4 @@
-"""How ``scripts/hello_world.py`` (#72) judges hop 8 from C07's log and C07's API."""
+"""Evidence used by the walking-skeleton checker (#72)."""
 
 import importlib.util
 import json
@@ -17,6 +17,16 @@ spec.loader.exec_module(hello_world)
 CID = "7c4c48ca-b13e-41f3-8954-7cb1026be165"
 EVENT = "edcb8146-d350-4ffd-98e3-d3396450033f"
 CREATED = "evaluated: created, 1 replan request(s)"
+
+
+def test_missing_docker_is_reported_as_an_unavailable_hop(monkeypatch):
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(hello_world.subprocess, "run", missing)
+    assert hello_world.running_services() == set()
+    with pytest.raises(RuntimeError, match="docker is unavailable"):
+        hello_world.compose("run", "demo-feed")
 
 
 def test_a_created_disruption_with_a_replan_request_counts_as_stub():
@@ -119,6 +129,8 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
 
     def urlopen(request, timeout):
         body = {}
+        if request.selector == "/openapi.json":
+            body = {"paths": {"/api/v1/plans": {"post": {}}}}
         if request.selector.startswith("/api/v1/disruptions"):
             assert request.selector == f"/api/v1/disruptions?runId={run_id}"
             assert request.get_header("Authorization") == "Bearer test-token"
@@ -135,4 +147,8 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     output = capsys.readouterr().out
     assert f"runId={run_id} correlationId={cid}" in output
     assert f"C09: query Ok: correlationId: {cid}" in output
+    hop4 = next(
+        line for line in output.splitlines() if "C04 → C05 generatePlan" in line
+    )
+    assert hop4.endswith("MISSING")
     assert "listDisruptions shows it" in output

@@ -13,7 +13,7 @@ Each hop gets one status:
     STUB     exercised, but the component on the other side is a labelled stub
     WIRED    its route or queue consumer is up, but nothing in this run reached it
     SKIPPED  needs a signed-in token (set ULOP_TOKEN)
-    MISSING  its route or consumer doesn't exist yet
+    MISSING  the required connection or evidence of the call is missing
 
 The check uses runId and correlationId from fixtures/dublin-scenario.json.
 Pass --run-id and --correlation-id to follow an existing delivery instead.
@@ -64,9 +64,14 @@ class Hop:
 
 
 def compose(*args: str, check: bool = True) -> str:
-    result = subprocess.run(
-        ["docker", "compose", *args], capture_output=True, text=True, check=False
-    )
+    try:
+        result = subprocess.run(
+            ["docker", "compose", *args], capture_output=True, text=True, check=False
+        )
+    except FileNotFoundError as error:
+        if check:
+            raise RuntimeError("docker is unavailable on this host") from error
+        return ""
     if check and result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"docker compose {args} failed")
     return result.stdout
@@ -163,8 +168,7 @@ def has_consumer(queues: dict[str, int], prefix: str) -> bool:
 
 
 def c09_note(correlation_id: str) -> str:
-    """Load the C09 demo corpus and run C05's query in-process (#85). Only a
-    note: hop 4's status stays C05's, the caller that doesn't exist yet."""
+    """Run the standalone C09 demo query (#85) as a diagnostic for hop 4."""
     try:
         out = compose(
             "exec",
@@ -207,7 +211,7 @@ def judge_hop8(
         return "MISSING", [f"C07 {message} for {cid}: no replan request reached C05"]
     status, notes = (
         "STUB",
-        [f"C07 {message} for {cid}; C05 replan is the labelled stub until #59"],
+        [f"C07 {message} for {cid}; C05 replan uses the stub pending hop 8 of #118"],
     )
     if listing is not None:
         http_status, listed, event_id = listing
@@ -300,10 +304,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         hops[2].set("WIRED", "route is up; registering needs a provider, not done here")
 
-    # Hops 3–5: C04 and C05 over HTTP (C09/C10 are in-process inside C05).
+    # Hops 3 and 5 use HTTP. Hop 4 starts inside the C04 submit handler.
     probes = {
         3: ("POST", "/api/v1/deliveries", "C04 submitDelivery"),
-        4: ("POST", "/api/v1/plans", "C05 generatePlan"),
         5: ("POST", "/api/v1/plans/{planId}/confirmation", "C05 confirmPlan"),
     }
     for n, (method, path, what) in probes.items():
@@ -311,6 +314,11 @@ def main(argv: list[str] | None = None) -> int:
             hops[n].set("WIRED", f"{what} is served; this script doesn't call it yet")
         else:
             hops[n].set("MISSING", f"{what} ({method} {path}) isn't served")
+    hops[4].set(
+        "MISSING",
+        "C04 submission has yet to exercise C05 generation in this check. "
+        "Run app.demo.c05 to exercise C05 from a saved delivery.",
+    )
     hops[4].notes.append(c09_note(cid))
 
     # Hop 6: C08 consumes PlanReady and serves the assignment routes.
@@ -345,7 +353,9 @@ def main(argv: list[str] | None = None) -> int:
     except RuntimeError as error:
         feed = ""
         hops[7].set("MISSING", f"demo-feed failed: {error}")
-    event = re.search(r"^queued event:\s+CityStateUpdated ([0-9a-f-]{36})$", feed, re.M)
+    event = re.search(
+        r"^queued event:\s+CityStateUpdated ([0-9a-f-]{36})$", feed, re.MULTILINE
+    )
     if event:
         event_id = event.group(1)
         trace = {

@@ -1,8 +1,8 @@
 # C05 Planning and Replanning
 
-Contract draft for UC03 and UC07, issue #32. Pair Ye + Zecheng.
-Reviewers Bruno or Alejandro for C07 compatibility. Proposed HTTP and event
-fields require review with C01, C08 and C10 before implementation.
+UC03 and UC07 contracts (#32), with the Dublin walking-skeleton implementation
+tracked in [#118](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/118).
+Pair Ye + Zecheng. Reviewers Bruno or Alejandro for C07 compatibility.
 
 C05 owns proposals, confirmed plans and revisions. C08 owns actual allocation
 and operational commitments. Planning reads those facts when checking feasibility.
@@ -23,6 +23,63 @@ interface. The agreements with C07 that shaped them are in
 [Agreed with C07](#agreed-with-c07-59-20-nov-2026).
 
 ## Provided interfaces
+
+### generatePlan(delivery, runScope, correlationId, key) → Result\<Plan\>
+
+For hop 4 of [#72](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/72),
+C04 should call `app.state.planning.generate_plan(delivery, run_scope, correlation_id, key)`
+in-process after committing a delivery. C04 owns the authorised read of that
+delivery in its run. Its [delivery contract](../c04-delivery-management/internal.md)
+defines the saved fields. Wiring the C04 submit handler is pending.
+
+| Argument | What C04 supplies |
+| --- | --- |
+| `delivery` | A `SavedDelivery` constructed from the committed [C04 delivery](../c04-delivery-management/examples/delivery-submitted.json). C05 reads `deliveryId`, `version`, `status`, `progress.status`, `cargo.weightKg`, `constraints.vehicleKinds` and `timeWindow`. |
+| `run_scope` | A `PlanScope` with `scope="simulation"` and the delivery's UUIDv4 `runId`. |
+| `correlation_id` | The UUID from the original delivery request, forwarded through C05 to C09 and C10. |
+| `key` | A stable, nonblank key of at most 200 characters. The demo uses `c04:generate:{deliveryId}:v{version}`. |
+
+The Dublin proposal uses the Eden Quay segment and one van with the saved cargo
+weight. The delivery and its progress must both be pending, and its constraints
+must allow a van. Departure is the later of the scenario start and the delivery
+window start. The six-minute route must finish within that window. C05 queries
+C09 for van delivery in Dublin D1/D2 during the saved window and passes the
+returned evidence snapshot unchanged to C10. C09 reads the shared live policy
+corpus and logs the same correlation ID. C10 records the simulation run and
+the corpus version used for this decision. C10's `PlanGenerated` decision,
+the C05 proposal and the generation receipt share one PostgreSQL transaction.
+A write failure rolls all three back. The first `PlanReady` outbox entry belongs
+to confirmation in hop 5.
+
+`Ok(Plan)` returns the committed `planId`, `version=1`,
+`status="awaiting_confirmation"` and `decisionId`. Retrying the same projected
+delivery with the same caller, run and key returns that original version.
+Different projected facts under the same key give `Conflict`. A signed-in
+operator with access to the run can read the current version with
+`GET /api/v1/plans/{planId}?scope=simulation&runId={runId}`.
+
+#### Run hop 4 from the saved delivery example
+
+From the repository root, use the local Compose stack and its migrated database.
+The last command passes the saved C04 example directly to the C05 service.
+
+```sh
+docker compose up -d --build
+docker compose exec -T api python -m app.components.c09_logistics_knowledge.demo_corpus
+docker compose exec -T api python -m app.demo.c05 < contracts/components/c04-delivery-management/examples/delivery-submitted.json
+```
+
+In PowerShell, use the following form for the last command.
+
+```powershell
+Get-Content -Raw contracts/components/c04-delivery-management/examples/delivery-submitted.json | docker compose exec -T api python -m app.demo.c05
+```
+
+The CLI prints the committed plan as JSON. Repeating it with the same inputs
+returns the same plan and decision IDs. The defaults for `--run-id` and
+`--correlation-id` come from the [Dublin fixture](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/blob/develop/fixtures/dublin-scenario.json).
+Pass the delivery's original values when replaying another trace. The end-to-end
+check starts at C04's submit handler and requires evidence of its call to C05.
 
 ### findAffectedWork(changeScope) → Result\<AffectedWork\>
 
@@ -110,11 +167,11 @@ revision for that plan and run, even if a retry carries a newer `basedOnPlanVers
 | --- | --- | --- |
 | C02 | `authorize(context, action, scope)` | Authorise generation, confirmation and reads within the permitted scope |
 | C03 | `listEligibleResources(scope)` | Read resource capabilities, observed availability and quality |
-| C04 | `getRequests(context, requestIds)` | Read requirements, versions and progress |
-| C04 | `markRequestsPlanned(requestIds, planId)` | Link deliveries when confirming a plan |
+| C04 | `getRequests(context, runScope, requestIds)` | Read requirements, versions and progress in the authorised run |
+| C04 | `markRequestsPlanned(context, runScope, requestIds, planId, expectedVersions, key)` | Link deliveries when confirming a plan |
 | C06 | `getCitySnapshot(scope, freshnessPolicy)` | Read versioned and quality-labelled city conditions; definition in [C06](../c06-city-monitoring/internal.md) |
 | C09 | `queryKnowledge(context, policyQuery)` | Obtain applicable policy evidence and provenance |
-| C10 | `recordDecision(decisionRecord)` | Preserve actual input versions, alternatives, reasons and exact evidence used |
+| C10 | `recordDecision(conn, ctx, record)` | Save actual input versions, alternatives, reasons and exact evidence on the C05 transaction's connection |
 
 C02/C03/C04/C09/C10 provider definitions remain authoritative as their contracts
 are published. Required operations listed here do not define their fields.
@@ -140,9 +197,11 @@ For UC07, `trigger.citySnapshotVersion` records the City State that triggered
 the request when C07 provides it. C05 reads current conditions in the same run
 and records the version it actually uses for the decision.
 
-C08 uses `planId`, `planVersion` and the event's run scope to look up C05's
-current plan. It rechecks that the event version is still current before
-committing resources. The `requirements` list describes all resource needs for
+C08 uses `planId`, `planVersion`, `deliveryId` and the event's run scope to
+look up the route and `plannedDepartureAt` together from that saved plan
+version. The timestamp includes `Z` or a UTC offset. C08 separately rechecks
+that the event version is still current before committing resources. The
+`requirements` list describes all resource needs for
 unfinished deliveries in that plan version. C08 checks which existing
 commitments still satisfy those needs against the revised route and timing.
 
@@ -208,9 +267,10 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
 
 ## Open coordination points
 
-- The HTTP paths, proposal representation, priorities and resource-needs schema
-  are proposals for C01/C03/C04/C08 review. Only the two C07 interfaces above
-  have existing typed models. New HTTP/event schemas have no runtime yet.
+- C04 and C01 coordinate the hand-off of the saved proposal ID and version from
+  delivery submission to the Plans page. The generation path for #118 is the
+  in-process call above. The `POST /api/v1/plans` entry in the UC03 OpenAPI
+  draft describes a separate HTTP operation.
 - Exchange/routing and the canonical shared event envelope are tracked in #28.
   The event draft refers to the existing C06 envelope to avoid another copy.
 - C05 receives replanning through an internal call from C07. No direct subscription
