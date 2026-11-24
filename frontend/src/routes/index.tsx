@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity } from "lucide-react";
-import { useState } from "react";
+import { z } from "zod";
 
 import { CityMap } from "@/components/map/city-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,12 +11,23 @@ import {
 } from "@/features/city-monitoring/city-conditions";
 import { SEGMENT_HIT_LAYER } from "@/features/city-monitoring/use-city-snapshot";
 
+/** `?segment=seg:<osm_way_id>` selects a road, so other screens can link to it. */
+const searchSchema = z.object({
+  segment: z
+    .string()
+    .regex(/^seg:[1-9][0-9]*$/)
+    .optional()
+    .catch(undefined),
+});
+
 export const Route = createFileRoute("/")({
   component: CityMapScreen,
+  validateSearch: searchSchema,
 });
 
 function CityMapScreen() {
-  const [selectedKey, setSelectedKey] = useState<string>();
+  const { segment: selectedKey } = Route.useSearch();
+  const navigate = Route.useNavigate();
   // C06 needs a signed-in user; the token comes from the shell session (#96).
   const { accessToken } = useAuth();
 
@@ -27,7 +38,10 @@ function CityMapScreen() {
         interactiveLayerIds={[SEGMENT_HIT_LAYER]}
         onClick={(event) => {
           const key = event.features?.[0]?.properties?.segmentKey;
-          setSelectedKey(typeof key === "string" ? key : undefined);
+          void navigate({
+            search: { segment: typeof key === "string" ? key : undefined },
+            replace: true,
+          });
         }}
       >
         <CityConditionsLayer accessToken={accessToken} />

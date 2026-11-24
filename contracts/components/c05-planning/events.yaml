@@ -3,10 +3,9 @@ info:
   title: C05 Planning Events
   version: 0.1.0
   description: >-
-    Proposed PlanReady contract for C08/C10 review under #32. Initial confirmation and
-    committed revisions enqueue this event atomically. Routing and shared envelope
-    location await #28. C07 invokes requestReplan internally, so no direct C05
-    CityStateUpdated subscription is defined.
+    C05 enqueues PlanReady in the transaction that confirms or revises a plan.
+    After commit the publisher sends the saved envelope to RabbitMQ. C07 calls
+    C05 requestReplan after consuming CityStateUpdated.
   contact:
     name: Ye + Zecheng
 defaultContentType: application/json
@@ -14,13 +13,13 @@ servers:
   rabbitmq:
     host: localhost
     protocol: amqp
-    description: Proposed local broker.
+    description: Local Compose broker.
 channels:
   planReady:
     address: ulop.events
     description: >-
-      Proposed topic exchange ulop.events, routing key PlanReady. C08 consumes the saved
-      version.
+      The durable topic exchange uses the PlanReady routing key. The c08.plan-ready
+      queue receives the event. The AMQP message_id is the envelope eventId.
     messages:
       planReady:
         $ref: '#/components/messages/PlanReady'

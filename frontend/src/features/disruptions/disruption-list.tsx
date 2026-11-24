@@ -1,11 +1,13 @@
-import { TriangleAlert } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { MapPin, TriangleAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/features/auth/auth-context";
 import { SignInForm } from "@/features/auth/resource-access";
+import { findDemoSegment } from "@/features/city-monitoring/demo-segments";
 
-import { segmentName, type AffectedPlan, type Disruption } from "./disruptions";
+import type { AffectedPlan, Disruption } from "./disruptions";
 import { useDisruptions } from "./use-disruptions";
 
 const time = new Intl.DateTimeFormat("en-IE", {
@@ -101,9 +103,14 @@ function SignedInList({ runId, runLabel }: { runId: string; runLabel: string }) 
 
 function DisruptionCard({ disruption }: { disruption: Disruption }) {
   const severity = SEVERITY[disruption.severity];
-  const where = disruption.segmentKeys.map(segmentName).join(", ") || "No road segment";
+  const roads = disruption.segmentKeys.map((key) => ({
+    key,
+    segment: findDemoSegment(key),
+  }));
+  const where =
+    roads.map(({ key, segment }) => segment?.name ?? key).join(", ") || "No road segment";
   // keys are only worth repeating when the title shows street names
-  const named = disruption.segmentKeys.some((key) => segmentName(key) !== key);
+  const named = roads.some(({ segment, key }) => segment && segment.name !== key);
   const detected = time.format(new Date(disruption.createdAt));
   const updated = time.format(new Date(disruption.updatedAt));
 
@@ -126,6 +133,27 @@ function DisruptionCard({ disruption }: { disruption: Disruption }) {
             {updated !== detected && ` · updated ${updated}`}
             {named && ` · ${disruption.segmentKeys.join(", ")}`}
           </p>
+          {disruption.segmentKeys.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              {roads.map(({ key, segment }) =>
+                segment ? (
+                  <Link
+                    key={key}
+                    to="/"
+                    search={{ segment: key }}
+                    className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                  >
+                    <MapPin className="size-3.5" aria-hidden="true" />
+                    Show {segment.name} on the map
+                  </Link>
+                ) : (
+                  <span key={key} className="text-muted-foreground">
+                    {key} · Map unavailable
+                  </span>
+                ),
+              )}
+            </div>
+          )}
           {disruption.quality !== "good" && (
             <p className="text-xs text-status-slow">
               Detected from {disruption.quality} data, so this may be uncertain.

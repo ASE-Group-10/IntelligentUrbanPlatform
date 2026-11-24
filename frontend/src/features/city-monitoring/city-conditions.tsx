@@ -4,7 +4,7 @@ import { ConditionLegend } from "@/components/map/condition-legend";
 import { useTheme } from "@/lib/theme";
 
 import type { SegmentStatus } from "./city-snapshot";
-import { conditionOf, DEMO_SEGMENTS, toFeatures } from "./demo-segments";
+import { conditionOf, DEMO_SEGMENTS, findDemoSegment, toFeatures } from "./demo-segments";
 import { SEGMENT_HIT_LAYER, useCityConditions } from "./use-city-snapshot";
 
 /** Hex versions of the --status-* tokens in index.css; MapLibre can't read CSS variables. */
@@ -90,7 +90,7 @@ export function CityConditionsPanel({
   selectedKey?: string;
 }) {
   const { snapshot, errorKind, lastKnown, isPending } = useCityConditions(accessToken);
-  const selected = DEMO_SEGMENTS.find((segment) => segment.segmentKey === selectedKey);
+  const selected = findDemoSegment(selectedKey);
   const condition = snapshot && selected && conditionOf(selected.segmentKey, snapshot.segments);
 
   return (

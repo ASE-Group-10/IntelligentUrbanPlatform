@@ -33,10 +33,11 @@ class Outcome(StrEnum):
 
 # shared with C03/C04/C06 — pending confirmation (doc §2 item 14)
 class VehicleClass(StrEnum):
-    CARGO_BIKE = "CargoBike"
-    VAN = "Van"
-    LGV = "LGV"
-    HGV = "HGV"
+    """Team-agreed vehicle types, shared with C04 (#68)."""
+
+    VAN = "van"
+    TRUCK = "truck"
+    CARGO_BIKE = "cargo_bike"
 
 
 class Activity(StrEnum):

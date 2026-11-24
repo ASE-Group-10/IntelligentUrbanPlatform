@@ -2,7 +2,7 @@
 
 Each line is a JSON object with ``time``, ``level``, ``component`` and
 ``message``, plus any trace fields passed through ``extra``: ``correlationId``,
-``eventId``, ``eventType``, ``scope`` and ``runId``. Following one
+``eventId``, ``eventType``, ``causationId``, ``scope`` and ``runId``. Following one
 ``correlationId`` across components is how the walking skeleton is checked.
 """
 
@@ -10,7 +10,15 @@ import json
 import logging
 from datetime import UTC, datetime
 
-TRACE_FIELDS = ("correlationId", "eventId", "eventType", "scope", "runId")
+TRACE_FIELDS = (
+    "correlationId",
+    "eventId",
+    "eventType",
+    "causationId",
+    "scope",
+    "runId",
+    "planId",
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -22,7 +30,8 @@ class JsonFormatter(logging.Formatter):
         line = {
             "time": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
-            "component": self._component,
+            # one process (the API) hosts several components; a line may name its own
+            "component": getattr(record, "component", self._component),
             "logger": record.name,
             "message": record.getMessage(),
         }
@@ -51,6 +60,10 @@ def trace(envelope) -> dict[str, str | None]:
         "correlationId": str(envelope.correlation_id),
         "eventId": str(envelope.event_id),
         "eventType": envelope.event_type,
+        "causationId": str(envelope.causation_id) if envelope.causation_id else None,
         "scope": envelope.scope,
         "runId": str(envelope.run_id) if envelope.run_id else None,
+        "planId": str(envelope.affected.plan_ids[0])
+        if len(envelope.affected.plan_ids) == 1
+        else None,
     }

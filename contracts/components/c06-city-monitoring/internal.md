@@ -76,6 +76,16 @@ Behaviour (implemented in `backend/app/components/c06_city_monitoring/snapshot.p
 than the current version), `Unavailable` (no City State yet, or store down),
 `Forbidden`.
 
+### Confirm a snapshot version before saving a replan
+
+C05 calls `hold_snapshot_version(conn, state_scope, expected_version)` on its
+open PostgreSQL transaction after evaluating the route and before recording
+the decision. Under `READ COMMITTED`, C06 compares the saved version in the
+requested run and holds a shared lock on that run's City State row through
+commit. Ingestion locks the same row when it updates the state. If the version
+has already changed, the call returns `Unavailable` and C07 can redeliver the
+event for a fresh assessment.
+
 ### ingestObservation(sourceContext, observation) → Result\<IngestionReceipt\>
 
 Callers: the traffic, weather and event source adapters, and manual reports.

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { SessionError, type SessionRequest } from "@/features/auth/identity";
 
-import scenario from "../../../../fixtures/dublin-scenario.json";
+export { DEMO_RUN_ID } from "@/features/city-monitoring/demo-segments";
 
 /** C07 `listDisruptions` (contracts/components/c07-disruption-detection/openapi.yaml). */
 const affectedPlanSchema = z.object({
@@ -48,21 +48,6 @@ export class DisruptionsError extends Error {
   constructor(readonly kind: DisruptionsErrorKind) {
     super(`Disruptions request failed: ${kind}`);
   }
-}
-
-const demo = z
-  .object({
-    runId: z.uuid(),
-    segments: z.array(z.object({ segmentKey: z.string(), name: z.string() })),
-  })
-  .parse(scenario);
-
-/** Simulation run the demo closure is fed into. */
-export const DEMO_RUN_ID = demo.runId;
-
-/** Street name from the demo scenario, or the raw key for any other segment. */
-export function segmentName(segmentKey: string): string {
-  return demo.segments.find((segment) => segment.segmentKey === segmentKey)?.name ?? segmentKey;
 }
 
 export async function fetchDisruptions({

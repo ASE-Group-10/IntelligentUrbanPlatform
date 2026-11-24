@@ -218,13 +218,19 @@ docker compose up -d rabbitmq
 TEST_RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F uv run pytest
 ```
 
-## C06 outbox publisher
+## C05 and C06 outbox publishers
 
-Sends queued `CityStateUpdated` events from the C06 outbox to the `ulop.events`
-topic exchange (routing key = event type), at least once. Run it as a worker
-next to the database and broker:
+C05 publishes committed `PlanReady` events and C06 publishes `CityStateUpdated`
+events to the `ulop.events` topic exchange. Each worker declares the durable
+subscriber queues, routes by event type, and marks its own outbox row after
+RabbitMQ confirms delivery. Compose starts both workers. To run them directly,
+start each command in a separate terminal with the local database and broker.
 
 ```sh
+DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop \
+RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
+uv run python -m app.components.c05_planning.publisher
+
 DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop \
 RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F \
 uv run python -m app.components.c06_city_monitoring.publisher
@@ -261,9 +267,10 @@ worker. Runs follow the `SHARED_RUN_IDS` rule above.
 
 Consumes `CityStateUpdated` from `ulop.events` (queue `c07.city-state-updated`)
 and runs `evaluateChange`. Disruptions and processed event IDs are kept in
-Postgres (`c07_disruption_detection`), so they survive a restart. Until C05
-exists it uses the labelled stub in `planning_stub.py`, which knows one demo plan
-on `seg:4471023`.
+Postgres (`c07_disruption_detection`), so they survive a restart. The worker
+calls C05 in-process on the same run. C05 reads the current confirmed plan,
+its linked C04 deliveries and C06 conditions. An eligible Eden Quay delivery
+can be revised onto Abbey Street Lower.
 
 ```sh
 DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop?sslmode=disable \
@@ -300,7 +307,7 @@ In Metrics Explorer, search for these metrics:
 - `ulop.c07.evaluate_change.events` counts evaluations, including redelivery.
 - `ulop.c07.evaluate_change.duration` records evaluation time in milliseconds.
 - `ulop.c07.replans.accepted` counts replan requests accepted by the configured
-  C05 implementation. The current worker uses the demo C05 stub.
+  C05 planning adapter.
 
 Other components can consume events the same way with
 `app.shared.events.EventConsumer` (see its docstring). Add your queue and its
@@ -313,7 +320,7 @@ The thin-slice event chain (#72 hops 7–8), using the shared scenario in
 `fixtures/dublin-scenario.json`. From the repository root:
 
 ```sh
-docker compose up -d --build          # db, rabbitmq, migrations, API, C06 publisher, C07 + C08 workers
+docker compose up -d --build          # db, rabbitmq, migrations, API, C05/C06 publishers, C07/C08 workers
 docker compose run --rm demo-feed     # inject the closure
 docker compose logs -f c06-publisher c07-worker
 ```
@@ -324,6 +331,12 @@ the queued event ID. The C06 publisher and C07 worker log the same
 add `--fresh` (`docker compose run --rm demo-feed --fresh`) to inject a new
 closure with new IDs at the current time. Use `--build` again after code
 changes, since the containers run the image, not your working tree.
+
+For a revision, confirm a delivery on Eden Quay first. Pass its `--run-id` and
+`--correlation-id` to the fresh feed while the delivery window still permits
+the detour. A run with no matching unfinished delivery produces no disruption.
+The [C05 contract](../contracts/components/c05-planning/internal.md#run-the-dublin-replan)
+includes the repeatable, fixed-time PostgreSQL and RabbitMQ check.
 
 To run the workers from your checkout instead (for debugging), start only
 `docker compose up -d db rabbitmq migrate`, run the workers you need in
@@ -381,9 +394,29 @@ and commands. Omitting it selects live state.
 3. Reload as either participant and select the same scope. The assignment shows **Driver accepted**.
    The API and worker logs include the correlation ID printed by the demo.
 
+### Carry a vehicle commitment into the Dublin detour
+
+After the initial v3 allocation, run the following with the same database and
+broker as the worker. You can issue or accept the driver's offer before this step.
+
+```sh
+uv run python -m app.demo.c08 --revision
+```
+
+The command stages C05's saved v4 fixture and publishes its revision event twice.
+Refresh **Plans → Dublin simulation**. A compatible van keeps its assignment
+reference, offer or acceptance, and one 10 kg reservation. The plan version is
+now 4. The detour covers 1.6 km and takes eight minutes. The demo uses the
+Dublin scenario start time as departure for checking C03 operating hours.
+A van that cannot cover the detour shows **Revised plan needs a new allocation**.
+Its old offer is closed and its capacity becomes available to other plans.
+
+Use `--revision --seed-only` when testing with an external publisher. The local
+saved-plan lookup stands in for C05 until the teams integrate the versioned read.
+
 To run the automated demonstration, configure a dedicated `TEST_DATABASE_URL`
 ending in `_test` and `TEST_RABBITMQ_URL`, then run
 `uv run pytest tests/test_c08_driver_acceptance.py`. The test rebuilds the
 test schemas, uses its own RabbitMQ exchange/queue, and substitutes token
-verification for interactive Supabase sign-in. Offer expiry, revised plans,
+verification for interactive Supabase sign-in. Offer expiry, replacement selection,
 multi-agent negotiation and downstream evidence/disruption events are follow-up work.
