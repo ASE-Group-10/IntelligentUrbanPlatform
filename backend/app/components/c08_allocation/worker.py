@@ -38,6 +38,7 @@ def make_consumer(store, url, exchange=DEFAULT_EXCHANGE, queue=QUEUE):
                 "insufficient capacity",
                 "unresolved",
                 "event differs from saved plan",
+                "invalid saved delivery route",
                 "incompatible route",
             }
             else logging.INFO
