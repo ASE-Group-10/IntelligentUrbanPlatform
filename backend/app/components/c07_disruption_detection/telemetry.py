@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from time import perf_counter
 
+from opentelemetry.sdk.metrics.export import MetricReader
+from opentelemetry.sdk.trace import SpanProcessor
 from opentelemetry.trace import SpanKind, StatusCode
 
 from app.components.c07_disruption_detection.detection import DetectionOutcome
@@ -12,8 +14,19 @@ from app.shared.telemetry import OtlpTelemetry
 
 
 class C07Telemetry(OtlpTelemetry):
-    def __init__(self, endpoint: str):
-        super().__init__(endpoint, "urban-logistics-c07")
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        span_processor: SpanProcessor | None = None,
+        metric_reader: MetricReader | None = None,
+    ):
+        super().__init__(
+            endpoint,
+            "urban-logistics-c07",
+            span_processor=span_processor,
+            metric_reader=metric_reader,
+        )
         self._tracer = self.traces.get_tracer(__name__)
         meter = self.metrics.get_meter(__name__)
         self._evaluations = meter.create_counter("ulop.c07.evaluate_change.events")
@@ -39,10 +52,15 @@ class C07Telemetry(OtlpTelemetry):
                 "messaging.operation.type": "process",
                 "messaging.message.id": str(envelope.event_id),
                 "correlationId": str(envelope.correlation_id),
+                "eventId": str(envelope.event_id),
+                "eventType": envelope.event_type,
+                "scope": envelope.scope,
             },
-            record_exception=False,
+            record_exception=True,
             set_status_on_exception=False,
         ) as span:
+            if envelope.run_id is not None:
+                span.set_attribute("runId", str(envelope.run_id))
             try:
                 result = evaluate_change(envelope)
                 if isinstance(result, Ok):

@@ -142,6 +142,9 @@ services:
   c07-worker:
     <<: *backend
     command: ["python", "-m", "app.components.c07_disruption_detection.worker"]
+    environment:
+      <<: *backend-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on: *after-migrations
 
   # C08: consumes PlanReady and commits vehicle allocations (hop 6).
