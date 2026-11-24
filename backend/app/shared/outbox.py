@@ -9,6 +9,8 @@ from psycopg import sql
 
 from app.shared.contracts import EventEnvelope
 
+_ALL_ROWS = sql.SQL("true")
+
 
 class OutboxUnavailableError(Exception):
     """The outbox could not be claimed or its publication marks committed."""
@@ -27,14 +29,21 @@ class OutboxStore(Protocol):
 class PostgresOutboxBatch:
     """Hold the oldest available rows on the caller's transaction until confirmation."""
 
-    def __init__(self, conn: psycopg.Connection, schema: str, limit: int) -> None:
+    def __init__(
+        self,
+        conn: psycopg.Connection,
+        schema: str,
+        limit: int,
+        *,
+        eligible: sql.SQL = _ALL_ROWS,
+    ) -> None:
         self._conn = conn
         self._table = sql.Identifier(schema, "outbox")
         rows = conn.execute(
             sql.SQL(
-                "select envelope from {} where published_at is null "
+                "select envelope from {} as pending where published_at is null and {} "
                 "order by seq limit %s for update skip locked"
-            ).format(self._table),
+            ).format(self._table, eligible),
             (limit,),
         ).fetchall()
         self.events = [EventEnvelope.model_validate(envelope) for (envelope,) in rows]

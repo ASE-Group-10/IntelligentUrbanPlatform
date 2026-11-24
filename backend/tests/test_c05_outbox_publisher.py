@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pika
@@ -9,11 +10,53 @@ import psycopg
 import pytest
 from psycopg.types.json import Jsonb
 
+from app.components.c05_planning.models import Plan
 from app.components.c05_planning.publisher import PostgresPlanOutbox
+from app.components.c05_planning.versions import save_ready_version
 from app.components.c08_allocation.events import PlanReadyEvent
 from app.shared.outbox import PostgresOutboxBatch
 from app.shared.publisher import RabbitMQPublisher, drain_outbox
 from app.shared.result import Failure
+
+
+def test_later_version_waits_for_commit_of_earlier_publication(
+    test_database_url, example
+):
+    store = PostgresPlanOutbox(test_database_url)
+    plan = Plan.model_validate(example("confirmed-plan.json"), strict=False).model_copy(
+        update={"plan_id": uuid4()}
+    )
+    now, trace = datetime.now(UTC), uuid4()
+    with psycopg.connect(test_database_url) as writer:
+        writer.execute("truncate c05_planning.replan_receipts, c05_planning.outbox")
+        first = save_ready_version(writer, plan, now, trace, now)
+    with store.outbox_batch(1) as initial:
+        assert [e.event_id for e in initial.events] == [first]
+        with psycopg.connect(test_database_url) as writer:
+            revision = plan.model_copy(update={"version": plan.version + 1})
+            second = save_ready_version(
+                writer, revision, now, trace, now, causation_id=uuid4()
+            )
+            other_plan = plan.model_copy(update={"plan_id": uuid4()})
+            other = save_ready_version(writer, other_plan, now, uuid4(), now)
+            other_scope = plan.run_scope.model_copy(update={"run_id": uuid4()})
+            other_run = plan.model_copy(
+                update={"run_scope": other_scope, "version": revision.version}
+            )
+            separate = save_ready_version(writer, other_run, now, uuid4(), now)
+
+        # An overlapping dispatcher can handle other plans and the same ID in
+        # another run, but cannot send the revision ahead of the first event.
+        with store.outbox_batch(10) as parallel:
+            assert [e.event_id for e in parallel.events] == [other, separate]
+            for event in parallel.events:
+                parallel.mark_published(event.event_id)
+        initial.mark_published(first)
+        with store.outbox_batch(10) as before_commit:
+            assert before_commit.events == []
+    with store.outbox_batch(10) as after_commit:
+        assert [e.event_id for e in after_commit.events] == [second]
+        after_commit.mark_published(second)
 
 
 def test_committed_plan_ready_retries_with_the_same_envelope(
