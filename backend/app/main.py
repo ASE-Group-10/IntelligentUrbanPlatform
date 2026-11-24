@@ -18,7 +18,16 @@ from app.components.c06_city_monitoring.ingestion import CityMonitoring
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
 from app.components.c06_city_monitoring.router import libpq_url
 from app.components.c06_city_monitoring.router import router as city_state_router
+from app.components.c07_disruption_detection.postgres_store import (
+    PostgresDisruptionStore,
+)
+from app.components.c07_disruption_detection.router import router as disruptions_router
 from app.components.c08_allocation.router import router as allocation_router
+from app.components.c09_logistics_knowledge.demo_corpus import DEMO_ZONES
+from app.components.c09_logistics_knowledge.postgres_store import (
+    PostgresKnowledgeStore,
+)
+from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_settings
@@ -26,6 +35,7 @@ from app.infrastructure.database import make_engine
 from app.infrastructure.errors import APIError, api_error_handler
 from app.integrations.identity import router as identity_router
 from app.integrations.mocks import LOCATIONS
+from app.shared.logging import configure_logging
 
 STATIC = Path(__file__).parent / "static"
 logger = logging.getLogger("urban.resources")
@@ -37,10 +47,12 @@ def create_app(
     *,
     identity_verifier=None,
     city_state_store=None,
+    disruption_store=None,
     clock=None,
 ):
     @asynccontextmanager
     async def lifespan(app):
+        configure_logging("API")
         app.state.settings = settings or get_settings()
         if not app.state.settings.mock_dependencies:
             raise RuntimeError(
@@ -60,6 +72,17 @@ def create_app(
             store=city_state_store
             or PostgresCityStateStore(
                 libpq_url(app.state.settings.database_url.get_secret_value())
+            ),
+            clock=clock or (lambda: datetime.now(UTC)),
+        )
+        app.state.disruption_store = disruption_store or PostgresDisruptionStore(
+            libpq_url(app.state.settings.database_url.get_secret_value())
+        )
+        # C09 runs in-process; C05 calls app.state.knowledge.query_knowledge
+        app.state.knowledge = LogisticsKnowledge(
+            PostgresKnowledgeStore(
+                libpq_url(app.state.settings.database_url.get_secret_value()),
+                DEMO_ZONES,
             ),
             clock=clock or (lambda: datetime.now(UTC)),
         )
@@ -155,6 +178,7 @@ def create_app(
     app.include_router(identity_router)
     app.include_router(router)
     app.include_router(city_state_router)
+    app.include_router(disruptions_router)
     return app
 
 

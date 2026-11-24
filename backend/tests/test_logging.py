@@ -23,18 +23,16 @@ def test_log_line_carries_component_and_trace_fields(example):
     assert line["runId"] == str(envelope.run_id)
 
 
-def test_a_line_can_name_its_own_component():
-    record = logging.LogRecord("c10", logging.INFO, __file__, 1, "stored", None, None)
-    record.component = "C10"
-
-    line = json.loads(JsonFormatter("C05").format(record))
-
-    assert line["component"] == "C10"
-
-
 def test_fields_that_are_not_set_are_left_out():
     record = logging.LogRecord("c06", logging.INFO, __file__, 1, "started", None, None)
 
     line = json.loads(JsonFormatter("C06").format(record))
 
     assert "correlationId" not in line
+
+
+def test_a_line_may_name_its_own_component():
+    record = logging.LogRecord("c09", logging.INFO, __file__, 1, "query", None, None)
+    record.component = "C09"
+
+    assert json.loads(JsonFormatter("API").format(record))["component"] == "C09"

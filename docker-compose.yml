@@ -1,9 +1,40 @@
-# Local integration services. See database/README.md for commands.
+# Local integration services. See database/README.md and backend/README.md.
+# `docker compose up -d` starts the databases, applies local migrations and runs
+# the API and every worker. `docker compose run --rm demo-feed` injects the demo
+# closure.
 name: ulop
+
+# Shared settings for every service built from backend/Dockerfile.
+x-backend-env: &backend-env
+  # psycopg connection string (C06 publisher, C07 worker, demo feed).
+  DATABASE_URL: postgres://ulop:ulop@db:5432/ulop?sslmode=disable
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-ulop}:${RABBITMQ_PASSWORD:-ulop}@rabbitmq:5672/%2F
+  RABBITMQ_EXCHANGE: ulop.events
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: ulop-backend:dev
+  restart: unless-stopped
+  environment: *backend-env
+
+# Services that read DATABASE_URL through SQLAlchemy (API, C08) need its form.
+x-sqlalchemy-env: &sqlalchemy-env
+  <<: *backend-env
+  DATABASE_URL: postgresql+psycopg://ulop:ulop@db:5432/ulop
+
+x-after-migrations: &after-migrations
+  db:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+  migrate:
+    condition: service_completed_successfully
 
 services:
   db:
-    image: postgres:17.7 # official, multi-arch; add PostGIS when a component needs it
+    image: pgvector/pgvector:0.8.1-pg17 # Postgres 17 + pgvector (C09 embeddings); add PostGIS when a component needs it
     environment:
       POSTGRES_USER: ulop
       POSTGRES_PASSWORD: ulop # local-only; never reuse for a shared database
@@ -48,6 +79,76 @@ services:
       DBMATE_WAIT: "true"
     volumes:
       - ./database/migrations:/db/migrations
+
+  # Applies pending migrations to the LOCAL database on `docker compose up`.
+  # It never reads MIGRATION_DATABASE_URL, so it cannot touch Supabase.
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2.36.0
+    command: ["up"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://ulop:ulop@db:5432/ulop?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    volumes:
+      - ./database/migrations:/db/migrations:ro
+
+  # HTTP API for C01 (C02, C03, C06, C07, C08 routers) on http://127.0.0.1:8000.
+  # Supabase sign-in needs SUPABASE_URL, read from backend/.env when it exists;
+  # the local DATABASE_URL below always wins over the one in that file.
+  api:
+    <<: *backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file:
+      - path: backend/.env
+        required: false
+    environment: *sqlalchemy-env
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on: *after-migrations
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # C06: publishes CityStateUpdated from the outbox to RabbitMQ.
+  c06-publisher:
+    <<: *backend
+    command: ["python", "-m", "app.components.c06_city_monitoring.publisher"]
+    depends_on: *after-migrations
+
+  # C07: consumes CityStateUpdated, runs evaluateChange and keeps disruptions in
+  # Postgres (C05 stub for now).
+  c07-worker:
+    <<: *backend
+    command: ["python", "-m", "app.components.c07_disruption_detection.worker"]
+    depends_on: *after-migrations
+
+  # C08: consumes PlanReady and commits vehicle allocations (hop 6).
+  c08-worker:
+    <<: *backend
+    command: ["python", "-m", "app.components.c08_allocation.worker"]
+    environment: *sqlalchemy-env
+    depends_on: *after-migrations
+
+  # Demo trigger, run on demand: docker compose run --rm demo-feed [--fresh]
+  demo-feed:
+    <<: *backend
+    profiles: ["demo"]
+    restart: "no"
+    entrypoint: ["python", "-m", "app.demo.feed"]
+    command: []
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   db-data:

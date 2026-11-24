@@ -255,11 +255,11 @@ components:
       - end
       type: object
     C09C10VehicleClass:
+      description: Team-agreed vehicle types, shared with C04 (#68).
       enum:
-      - CargoBike
-      - Van
-      - LGV
-      - HGV
+      - van
+      - truck
+      - cargo_bike
       type: string
     C09Constraint:
       additionalProperties: false
@@ -649,7 +649,7 @@ components:
       type: string
   examples:
     C09QueryKnowledgeRequest:
-      summary: HGV delivery into Dublin 2
+      summary: Truck delivery into Dublin 2
       value:
         area:
           zoneIds:
@@ -657,7 +657,7 @@ components:
         timeWindow:
           start: '2026-11-20T07:30:00Z'
           end: '2026-11-20T09:00:00Z'
-        vehicleClass: HGV
+        vehicleClass: truck
         activity: Delivery
         freeText: city-centre delivery to a Grafton Street retailer
         maxPassages: 5
@@ -681,7 +681,7 @@ components:
             - dublin-D1
             - dublin-D2
             vehicleClasses:
-            - HGV
+            - truck
             activities: []
           score: 0.87
           constraints:
@@ -692,7 +692,7 @@ components:
             - dublin-D2
             segmentKeys: []
             vehicleClasses:
-            - HGV
+            - truck
             timeOfDay:
               from: 07:00
               to: '19:00'
@@ -746,7 +746,7 @@ components:
             timeWindow:
               start: '2026-11-20T07:30:00Z'
               end: '2026-11-20T09:00:00Z'
-            vehicleClass: HGV
+            vehicleClass: truck
             activity: Delivery
             freeText: city-centre delivery to a Grafton Street retailer
             maxPassages: 5
@@ -766,7 +766,7 @@ components:
               - dublin-D1
               - dublin-D2
               vehicleClasses:
-              - HGV
+              - truck
               activities: []
             score: 0.87
             constraints:
@@ -777,7 +777,7 @@ components:
               - dublin-D2
               segmentKeys: []
               vehicleClasses:
-              - HGV
+              - truck
               timeOfDay:
                 from: 07:00
                 to: '19:00'
@@ -875,7 +875,7 @@ components:
             timeWindow:
               start: '2026-11-20T07:30:00Z'
               end: '2026-11-20T09:00:00Z'
-            vehicleClass: HGV
+            vehicleClass: truck
             activity: Delivery
             freeText: city-centre delivery to a Grafton Street retailer
             maxPassages: 5
@@ -939,7 +939,7 @@ components:
             - dublin-D1
             - dublin-D2
             vehicleClasses:
-            - HGV
+            - truck
             activities: []
           score: 0.87
           constraints:
@@ -950,7 +950,7 @@ components:
             - dublin-D2
             segmentKeys: []
             vehicleClasses:
-            - HGV
+            - truck
             timeOfDay:
               from: 07:00
               to: '19:00'
@@ -971,7 +971,7 @@ components:
             - dublin-D1
             - dublin-D2
             vehicleClasses:
-            - HGV
+            - truck
             activities: []
           score: 0.83
           constraints:
@@ -982,7 +982,7 @@ components:
             - dublin-D2
             segmentKeys: []
             vehicleClasses:
-            - HGV
+            - truck
             timeOfDay:
               from: 07:00
               to: '10:30'
@@ -994,7 +994,7 @@ components:
           passageIds:
           - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
           - c84f0a12-6b7e-4d19-8a3c-2f5e6d7c8b04
-          reason: Both apply to HGV in dublin-D2 on 2026-11-20 but the ban windows differ
+          reason: Both apply to truck in dublin-D2 on 2026-11-20 but the ban windows differ
             (07:00-19:00 vs 07:00-10:30).
         limitations:
         - Conflicting sources; curator has been notified.
@@ -1012,7 +1012,7 @@ components:
             timeWindow:
               start: '2026-11-20T07:30:00Z'
               end: '2026-11-20T09:00:00Z'
-            vehicleClass: HGV
+            vehicleClass: truck
             activity: Delivery
             freeText: city-centre delivery to a Grafton Street retailer
             maxPassages: 5
@@ -1032,7 +1032,7 @@ components:
               - dublin-D1
               - dublin-D2
               vehicleClasses:
-              - HGV
+              - truck
               activities: []
             score: 0.87
             constraints:
@@ -1043,7 +1043,7 @@ components:
               - dublin-D2
               segmentKeys: []
               vehicleClasses:
-              - HGV
+              - truck
               timeOfDay:
                 from: 07:00
                 to: '19:00'
@@ -1064,7 +1064,7 @@ components:
               - dublin-D1
               - dublin-D2
               vehicleClasses:
-              - HGV
+              - truck
               activities: []
             score: 0.83
             constraints:
@@ -1075,7 +1075,7 @@ components:
               - dublin-D2
               segmentKeys: []
               vehicleClasses:
-              - HGV
+              - truck
               timeOfDay:
                 from: 07:00
                 to: '10:30'
@@ -1087,7 +1087,7 @@ components:
             passageIds:
             - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
             - c84f0a12-6b7e-4d19-8a3c-2f5e6d7c8b04
-            reason: Both apply to HGV in dublin-D2 on 2026-11-20 but the ban windows differ
+            reason: Both apply to truck in dublin-D2 on 2026-11-20 but the ban windows differ
               (07:00-19:00 vs 07:00-10:30).
           limitations:
           - Conflicting sources; curator has been notified.
@@ -1115,7 +1115,7 @@ components:
             - dublin-D1
             - dublin-D2
             vehicleClasses:
-            - HGV
+            - truck
             activities: []
           validFrom: '2026-01-01T00:00:00Z'
           validTo: null
@@ -1128,7 +1128,7 @@ components:
               - dublin-D2
               segmentKeys: []
               vehicleClasses:
-              - HGV
+              - truck
               timeOfDay:
                 from: 07:00
                 to: '19:00'

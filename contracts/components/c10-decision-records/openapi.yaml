@@ -982,7 +982,7 @@ components:
             - dublin-D1
             - dublin-D2
             vehicleClasses:
-            - HGV
+            - truck
             activities: []
           score: 0.87
           constraints:
@@ -993,7 +993,7 @@ components:
             - dublin-D2
             segmentKeys: []
             vehicleClasses:
-            - HGV
+            - truck
             timeOfDay:
               from: 07:00
               to: '19:00'
@@ -1091,7 +1091,7 @@ components:
             timeWindow:
               start: '2026-11-20T07:30:00Z'
               end: '2026-11-20T09:00:00Z'
-            vehicleClass: HGV
+            vehicleClass: truck
             activity: Delivery
             freeText: city-centre delivery to a Grafton Street retailer
             maxPassages: 5
@@ -1111,7 +1111,7 @@ components:
               - dublin-D1
               - dublin-D2
               vehicleClasses:
-              - HGV
+              - truck
               activities: []
             score: 0.87
             constraints:
@@ -1122,7 +1122,7 @@ components:
               - dublin-D2
               segmentKeys: []
               vehicleClasses:
-              - HGV
+              - truck
               timeOfDay:
                 from: 07:00
                 to: '19:00'

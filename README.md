@@ -155,6 +155,24 @@ docker compose run --rm dbmate up
 
 See [database/README.md](database/README.md) for migration conventions.
 
+### Event chain demo
+
+`docker compose up -d --build` also builds the backend image, applies the
+migrations and starts the API on <http://127.0.0.1:8000> (the frontend dev
+server proxies `/api` to it), the C06 outbox publisher and the C07 and C08
+workers. Sign-in needs `SUPABASE_URL` in `backend/.env`. Then
+`docker compose run --rm demo-feed` sends the scenario's road closure through
+C06 → RabbitMQ → C07. See [backend/README.md](backend/README.md#demo-road-closure-through-c06-and-c07).
+
+### Walking-skeleton check (#72)
+
+With the stack up, `scripts/hello-world.sh` checks every hop of the hello-world
+path and prints one line per hop: `PASS`, `STUB` (exercised, other side is a
+labelled stub), `WIRED` (route or consumer up, not reached in this run),
+`SKIPPED` or `MISSING`. It injects the demo closure and follows its
+`correlationId` through C06 and C07. Set `ULOP_TOKEN` to a Supabase access token
+to also run the signed-in hops. It exits 1 until every hop passes.
+
 ### Frontend
 
 ```sh

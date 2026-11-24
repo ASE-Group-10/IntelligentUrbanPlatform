@@ -245,8 +245,17 @@ out, and values older than `maxAgeSeconds` (default 900) come back `degraded`,
 so use `app.demo.feed --fresh` for a closure that shows as current.
 
 Nothing records who owns a simulation run yet, so a `runId` is only readable
-when it is listed in `C06_SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
-the demo run). Any other run returns `403 Forbidden`.
+when it is listed in `SHARED_RUN_IDS` (a JSON list of UUIDs; the default is
+the demo run). Any other run returns `403 Forbidden`. The old name
+`C06_SHARED_RUN_IDS` is still read when `SHARED_RUN_IDS` is not set.
+
+## C07 Disruptions API
+
+`GET /api/v1/disruptions?runId=<uuid>` returns the disruptions C07 recorded for a
+simulation run, most recently updated first; leave out `runId` for live ones
+(`listDisruptions` in `contracts/components/c07-disruption-detection/openapi.yaml`).
+It needs a C02 bearer token and reads the same Postgres tables as the C07
+worker. Runs follow the `SHARED_RUN_IDS` rule above.
 
 ## C07 worker
 
@@ -275,18 +284,32 @@ startup, so your queue keeps events published before your worker starts.
 ## Demo: road closure through C06 and C07
 
 The thin-slice event chain (#72 hops 7–8), using the shared scenario in
-`fixtures/dublin-scenario.json`. With `docker compose up -d db rabbitmq` running
-and the migrations applied, start the two workers in separate terminals (see
-above), then inject the closure:
+`fixtures/dublin-scenario.json`. From the repository root:
+
+```sh
+docker compose up -d --build          # db, rabbitmq, migrations, API, C06 publisher, C07 + C08 workers
+docker compose run --rm demo-feed     # inject the closure
+docker compose logs -f c06-publisher c07-worker
+```
+
+`demo-feed` prints the run, the `correlationId`, the new City State version and
+the queued event ID. The C06 publisher and C07 worker log the same
+`correlationId` as the event goes through. Running it again changes nothing;
+add `--fresh` (`docker compose run --rm demo-feed --fresh`) to inject a new
+closure with new IDs at the current time. Use `--build` again after code
+changes, since the containers run the image, not your working tree.
+
+To run the workers from your checkout instead (for debugging), start only
+`docker compose up -d db rabbitmq migrate`, run the workers you need in
+separate terminals (see above), then:
 
 ```sh
 DATABASE_URL=postgres://ulop:ulop@localhost:5432/ulop uv run python -m app.demo.feed
 ```
 
-It prints the run, the `correlationId`, the new City State version and the
-queued event ID. The C06 publisher and C07 worker log the same `correlationId`
-as the event goes through. Running it again changes nothing; add `--fresh` to
-inject a new closure with new IDs at the current time.
+Don't run local workers or a local API next to the Compose ones: two workers
+on one queue each see only some of the events, and the Compose API already
+holds port 8000 (set `API_PORT` to move it).
 
 ## C08 allocation and driver acceptance (hop 6)
 
