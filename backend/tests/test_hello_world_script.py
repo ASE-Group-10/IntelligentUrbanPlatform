@@ -18,6 +18,13 @@ CID = "7c4c48ca-b13e-41f3-8954-7cb1026be165"
 EVENT = "edcb8146-d350-4ffd-98e3-d3396450033f"
 REVISION_EVENT = "69e38367-8c9f-4b99-8cf8-f1a7b8d1cca1"
 PLAN = "2d673b19-3034-41ee-b64f-6211c28ef230"
+FIRST = "3e22475e-66fb-4fdd-9194-2d7465ceddf7"
+FIRST_TIME = "2026-11-20T08:00:00+00:00"
+DELIVERY = "781f728c-73d8-4df8-997e-4f2e7087a502"
+DECISION = "b973d23b-da9c-40da-8c6e-bc58dc00890a"
+REVISED_DECISION = "e029954f-9f17-43a7-9372-96b7cb881ee6"
+SNAPSHOT = "144647d6-aca1-4767-b7c3-26e95eec6c48"
+OTHER_EVENT = "dc5741bc-6885-4466-b3a7-d8be3a023cbb"
 CREATED = "evaluated: created, 1 replan request(s)"
 
 
@@ -107,17 +114,83 @@ def test_a_failed_listing_fails_the_hop():
     assert "503" in notes[-1]
 
 
-@pytest.mark.parametrize("override_ids", [False, True])
+def test_a_replay_needs_a_plan(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Invalid replay invoked Compose")
+
+    monkeypatch.setattr(hello_world, "compose", unexpected)
+    with pytest.raises(SystemExit) as stopped:
+        hello_world.main(["--closure-event-id", EVENT])
+    assert stopped.value.code == 2
+
+
+@pytest.mark.parametrize("response", ["not JSON", json.dumps({"planId": PLAN})])
+def test_broker_logs_alone_cannot_certify_a_pinned_revision(response, monkeypatch):
+    hops = {n: hello_world.Hop(n, "test") for n in (4, 5, 8)}
+    hops[5].set("WIRED")
+    hops[8].set("PASS")
+    request = {
+        "scope": "simulation",
+        "runId": OTHER_EVENT,
+        "correlationId": CID,
+        "planId": PLAN,
+    }
+    monkeypatch.setattr(hello_world, "compose", lambda *args: response)
+    hello_world.check_saved_plan(hops, request, EVENT, REVISION_EVENT)
+    assert [hop.status for hop in hops.values()] == ["MISSING", "WIRED", "WIRED"]
+    assert "Could not verify committed C05 evidence" in hops[8].notes[-1]
+
+
+def test_observed_event_must_match_the_saved_revision(monkeypatch):
+    hops = {n: hello_world.Hop(n, "test") for n in (4, 5, 8)}
+    hops[5].set("WIRED")
+    hops[8].set("PASS")
+    confirmed = {
+        "ok": True,
+        "detail": "confirmation",
+        "version": 2,
+        "decisionId": DECISION,
+        "eventId": FIRST,
+        "eventTime": FIRST_TIME,
+    }
+    saved = {
+        "generation": {**confirmed, "version": 1, "deliveryId": DELIVERY},
+        "confirmation": confirmed,
+        "revision": {**confirmed, "version": 3, "eventId": REVISION_EVENT},
+    }
+    pending = {
+        "ok": False,
+        "detail": "awaiting publication",
+        "pendingPublication": True,
+    }
+    snapshots = iter([{**saved, "confirmation": pending}, saved])
+    monkeypatch.setattr(
+        hello_world, "saved_plan_evidence", lambda *args: next(snapshots)
+    )
+    monkeypatch.setattr(hello_world.time, "sleep", lambda _: None)
+    monkeypatch.setattr(hello_world, "wait_for_log", lambda *args: {"eventId": FIRST})
+    hello_world.check_saved_plan(hops, {"planId": PLAN}, EVENT, OTHER_EVENT)
+    assert hops[5].status == "PASS"
+    assert hops[8].status == "WIRED"
+    assert "matched" in hops[8].notes[-1]
+
+
+@pytest.mark.parametrize("mode", ["default", "pinned", "replay", "wrong-closure"])
 @pytest.mark.parametrize("matching_receipt", [True, False])
 def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
-    override_ids, matching_receipt, monkeypatch, capsys
+    mode, matching_receipt, monkeypatch, capsys
 ):
     scenario = json.loads(hello_world.SCENARIO_PATH.read_text(encoding="utf-8"))
     run_id, cid = scenario["runId"], scenario["correlationId"]
     argv = []
-    if override_ids:
+    pinned = mode != "default"
+    if pinned:
         run_id, cid = "eb7dac64-be2f-4123-af8f-78d8f1e2ff1d", CID
         argv = ["--run-id", run_id, "--correlation-id", cid, "--plan-id", PLAN]
+    replay = mode in {"replay", "wrong-closure"}
+    selected_event = OTHER_EVENT if mode == "wrong-closure" else EVENT
+    if replay:
+        argv.extend(["--closure-event-id", selected_event])
     trace = {
         "scope": "simulation",
         "runId": run_id,
@@ -127,9 +200,58 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
 
     def compose(*args, check=True):
         if "--query" in args:
+            assert not pinned  # The standalone C09 probe cannot prove generation.
             assert args[-2:] == ("--correlation-id", cid)
             return f"query Ok: correlationId: {cid}"
+        if "app.demo.c05_evidence" in args:
+            assert pinned
+            assert args[-8:] == (
+                "--run-id",
+                run_id,
+                "--correlation-id",
+                cid,
+                "--plan-id",
+                PLAN,
+                "--closure-event-id",
+                selected_event,
+            )
+            original = {"decisionId": DECISION, "deliveryId": DELIVERY}
+            return json.dumps(
+                {
+                    "runId": run_id,
+                    "correlationId": cid,
+                    "planId": PLAN,
+                    "origin": "saved-delivery",
+                    "closureEventId": selected_event,
+                    "generation": {
+                        **original,
+                        "ok": True,
+                        "version": 1,
+                        "detail": "saved proposal and C10 evidence",
+                        "evidenceSnapshotIds": [SNAPSHOT],
+                    },
+                    "confirmation": {
+                        **original,
+                        "ok": True,
+                        "version": 2,
+                        "detail": "confirmed plan",
+                        "eventId": FIRST,
+                        "eventTime": FIRST_TIME,
+                    },
+                    "revision": {"ok": False, "detail": "different closure"}
+                    if mode == "wrong-closure"
+                    else {
+                        "ok": True,
+                        "version": 3,
+                        "deliveryId": DELIVERY,
+                        "decisionId": REVISED_DECISION,
+                        "detail": "committed revision",
+                        "eventId": REVISION_EVENT,
+                    },
+                }
+            )
         if "demo-feed" in args:
+            assert not replay
             assert args[args.index("demo-feed") + 1 :] == (
                 "--fresh",
                 "--run-id",
@@ -139,6 +261,8 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
             )
             return f"queued event:   CityStateUpdated {EVENT}\n"
         if args[0] == "logs":
+            if args[-1] != "c08-worker":
+                assert ("--since" not in args) == replay
             if args[-1] == "c06-publisher":
                 return json.dumps({**trace, "message": "published CityStateUpdated"})
             if args[-1] in {"c05-publisher", "c08-worker"}:
@@ -157,9 +281,26 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
                 # Another confirmation/revision can share the delivery trace.
                 unrelated = {**revision, "eventId": CID, "causationId": None}
                 others = [unrelated]
-                if override_ids:
+                if pinned:
                     # A single closure may revise two different plans in this run.
                     others.append({**revision, "eventId": EVENT, "planId": CID})
+                    if args[-1] == "c08-worker":
+                        # The first event predates the current checker invocation.
+                        if FIRST_TIME in args:
+                            others.append({**revision, "eventId": FIRST})
+                            others.extend(
+                                {
+                                    **revision,
+                                    "eventId": FIRST,
+                                    "causationId": None,
+                                    field: CID,
+                                }
+                                for field in ("runId", "planId")
+                            )
+                            if matching_receipt:
+                                others.append(
+                                    {**revision, "eventId": FIRST, "causationId": None}
+                                )
                 return "\n".join(map(json.dumps, [*others, revision]))
             assert args[-1] == "c07-worker"
             stale = {**trace, "message": "evaluated: no_disruption, 0 replan requests"}
@@ -177,7 +318,7 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     def urlopen(request, timeout):
         body = {}
         if request.selector == "/openapi.json":
-            body = {"paths": {"/api/v1/plans": {"post": {}}}}
+            body = {"paths": {"/api/v1/plans/{planId}/confirmation": {"post": {}}}}
         if request.selector.startswith("/api/v1/disruptions"):
             assert request.selector == f"/api/v1/disruptions?runId={run_id}"
             assert request.get_header("Authorization") == "Bearer test-token"
@@ -195,13 +336,31 @@ def test_checker_follows_one_dublin_trace_through_feed_logs_and_listing(
     hello_world.main(argv)
     output = capsys.readouterr().out
     assert f"runId={run_id} correlationId={cid}" in output
-    assert f"C09: query Ok: correlationId: {cid}" in output
+    assert (f"C09: query Ok: correlationId: {cid}" in output) == (not pinned)
     hop4 = next(
         line for line in output.splitlines() if "C04 → C05 generatePlan" in line
     )
-    assert hop4.endswith("MISSING")
-    assert "listDisruptions shows it" in output
+    assert hop4.endswith("WIRED" if pinned else "MISSING")
+    hop5 = next(line for line in output.splitlines() if "C01 confirms the plan" in line)
+    assert hop5.endswith("PASS" if pinned and matching_receipt else "WIRED")
+    if pinned:
+        assert "Entry point: saved C04 delivery" in output
+        assert all(
+            field in output
+            for field in [PLAN, DELIVERY, DECISION, SNAPSHOT, FIRST, "v1", "v2"]
+        )
+    assert (f"C08 received first PlanReady {FIRST}" in output) == (
+        pinned and matching_receipt
+    )
+    assert ("listDisruptions shows it" in output) == (mode != "wrong-closure")
     hop8 = next(line for line in output.splitlines() if "C07 → C05 replan" in line)
+    if mode == "wrong-closure":
+        assert hop8.endswith("MISSING")
+        assert "Checking recorded closure " + OTHER_EVENT in output
+        return
     assert hop8.endswith("PASS" if matching_receipt else "WIRED")
+    assert EVENT in output
+    if pinned:
+        assert REVISED_DECISION in output and "v3" in output
     if matching_receipt:
         assert f"revised PlanReady {REVISION_EVENT}; C08 received it" in output

@@ -296,6 +296,30 @@ read -r plan
 scripts/hello-world.sh --run-id "$run" --correlation-id "$trace" --plan-id "$plan"
 ```
 
+The report follows the plan through the following records.
+
+| Hop | Evidence for this delivery |
+| --- | --- |
+| 4 | The saved C04 delivery and generation receipt identify the proposal. The C10 decision for that proposal contains the C09 evidence recorded at generation. Starting from the saved example leaves hop 4 at `WIRED` until the C04 submission itself can be verified. |
+| 5 | The operator confirmation receipt, linked C04 delivery, confirmed version and published outbox envelope identify the first `PlanReady`. The checker looks back in the C08 worker logs for acknowledgement of that exact event. |
+| 8 | The C06 closure, C07 request, revision of the same plan, C10 replan decision and second outbox envelope identify the detour. C05 publisher and C08 worker logs must match the revised event and its triggering closure in the same run and trace. |
+
+To review the same delivery again, pass the C06 closure event ID from the
+first run. This mode reads the saved records and retained worker logs. A
+missing subscriber log leaves receipt unverified, even if PostgreSQL has a
+publication timestamp.
+
+```sh
+printf 'C06 closure event UUID: '
+read -r closure
+scripts/hello-world.sh --run-id "$run" --correlation-id "$trace" --plan-id "$plan" --closure-event-id "$closure"
+```
+
+The report distinguishes broker receipt from an accepted vehicle assignment.
+Checking the driver's commitment requires C08's allocation and offer records.
+The overall command exits with status 1 while any of the team's hops still
+has incomplete evidence.
+
 ## Required interfaces
 
 | Provider | Operation | Use by C05 |
