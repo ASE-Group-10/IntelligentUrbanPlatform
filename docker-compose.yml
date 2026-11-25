@@ -193,6 +193,23 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # One-shot fixture van and driver for C08 (hop 6). Run before demo-confirm:
+  # docker compose run --rm demo-bind "$plan" --run-id "$run"
+  demo-bind:
+    <<: *backend
+    profiles: ["demo"]
+    restart: "no"
+    network_mode: "service:db"
+    environment:
+      C08_LOCAL_DEMO: "1"
+      DATABASE_URL: postgresql+psycopg://ulop:ulop@127.0.0.1:5432/ulop
+    entrypoint: ["python", "-m", "app.demo.c08_binding"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   db-data:
   rabbitmq-data:

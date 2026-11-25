@@ -542,3 +542,34 @@ def test_signed_in_checker_submits_fresh_window_and_defers_closure(
         assert next(
             line for line in output.splitlines() if "C04 → C05 generatePlan" in line
         ).endswith(expected)
+
+
+@pytest.mark.parametrize(
+    ("evidence", "expected", "words"),
+    [
+        ((True, "3", "accepted"), "PASS", "driver accepted"),
+        ((True, "3", "allocated"), "WIRED", "v3 (allocated)"),
+        ((True, "2", "offered"), "WIRED", "accept the driver offer"),
+        ((True, "3", "unresolved"), "WIRED", "is unresolved"),
+        ((True, "", ""), "WIRED", "no allocation"),
+        ((False, "", ""), "WIRED", "Run demo-bind"),
+    ],
+)
+def test_hop6_passes_only_once_the_driver_accepts(evidence, expected, words):
+    status, note = hello_world.judge_hop6(*evidence)
+    assert status == expected
+    assert words in note
+
+
+def test_allocation_evidence_reads_one_psql_row(monkeypatch):
+    calls = []
+
+    def compose(*args, **kwargs):
+        calls.append(args)
+        return "t|3|allocated\n"
+
+    monkeypatch.setattr(hello_world, "compose", compose)
+    plan = "6f777c7d-55ba-46fd-8a7c-60cdd766372b"
+    assert hello_world.allocation_evidence(CID, plan) == (True, "3", "allocated")
+    assert calls[0][:3] == ("exec", "-T", "db")
+    assert plan in calls[0][-1] and CID in calls[0][-1]

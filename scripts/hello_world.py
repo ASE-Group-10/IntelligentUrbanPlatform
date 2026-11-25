@@ -291,6 +291,52 @@ def saved_plan_evidence(trace: dict[str, str], closure_id: str | None) -> dict:
     return result
 
 
+def allocation_evidence(run_id: str, plan_id: str) -> tuple[bool, str, str]:
+    """Read C08's binding and latest commitment for this plan (IDs are UUIDs)."""
+    where = f"run_id = '{run_id}' AND plan_id = '{plan_id}'"
+    out = compose(
+        "exec",
+        "-T",
+        "db",
+        "psql",
+        "-U",
+        "ulop",
+        "-d",
+        "ulop",
+        "-AtF",
+        "|",
+        "-c",
+        f"SELECT EXISTS (SELECT FROM c08_allocation.demo_plans WHERE {where}), "
+        "coalesce(a.plan_version::text, ''), coalesce(a.status, '') "
+        "FROM (SELECT 1) one LEFT JOIN LATERAL (SELECT plan_version, status "
+        f"FROM c08_allocation.allocations WHERE {where} "
+        "ORDER BY plan_version DESC LIMIT 1) a ON true",
+    ).strip()
+    bound, version, status = out.split("|")
+    return bound == "t", version, status
+
+
+def judge_hop6(bound: bool, version: str, status: str) -> tuple[str, str]:
+    """PASS needs the driver's acceptance; a CLI allocation alone stays WIRED."""
+    if status == "accepted":
+        return "PASS", f"C08 committed the van at v{version} and the driver accepted"
+    if status in {"allocated", "offered"}:
+        return (
+            "WIRED",
+            f"C08 allocated the bound van at v{version} ({status}). "
+            "Send and accept the driver offer in Plans to finish this hop.",
+        )
+    if status:
+        return "WIRED", f"C08 commitment at v{version} is {status}"
+    if bound:
+        return "WIRED", "C08 has a vehicle binding but no allocation for this plan"
+    return (
+        "WIRED",
+        "C08 has no vehicle binding for this plan, so it acks PlanReady as "
+        '"outside configured demo". Run demo-bind before confirming.',
+    )
+
+
 def phase_note(phase: dict) -> str:
     if not phase["ok"]:
         return phase["detail"]
@@ -673,8 +719,8 @@ def main(argv: list[str] | None = None) -> int:
     ):
         hops[6].set(
             "WIRED",
-            "c08.plan-ready has a consumer and the assignment API is up; "
-            "this check does not confirm a plan or verify its allocation",
+            "c08.plan-ready has a consumer and the assignment API is up"
+            + ("" if plan_id else "; pass --plan-id to check its allocation"),
         )
     else:
         hops[6].set("MISSING", "no c08.plan-ready consumer or assignment API")
@@ -784,6 +830,13 @@ def main(argv: list[str] | None = None) -> int:
             published_id,
             submitted_delivery,
         )
+        # After hops 7–8, so C08 has had both PlanReady events.
+        if hops[6].status == "WIRED":
+            try:
+                status6, note6 = judge_hop6(*allocation_evidence(run_id, plan_id))
+            except (RuntimeError, ValueError) as error:
+                status6, note6 = "WIRED", f"C08 allocation unreadable: {error}"
+            hops[6].set(status6, note6)
 
     # Hops 9–10: C11 and C12 consume events and serve their screens' routes.
     for n, prefix, route, what in (

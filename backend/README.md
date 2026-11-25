@@ -414,6 +414,10 @@ Use `--revision --seed-only` when testing the v4 fixture with an external publis
 
 ### Use a generated C05 plan
 
+For the local Compose walkthrough without signed-in users,
+`docker compose run --rm demo-bind "$PLAN_ID" --run-id "$RUN_ID"` binds a
+fixture van and driver instead. That driver can't sign in to accept the offer.
+
 After C05 generates the Dublin proposal, bind its vehicle and driver from
 `backend/` before selecting **Confirm plan**. Use the plan and run IDs from
 C05's proposal link and the provider, resource and driver IDs from hop 6.
