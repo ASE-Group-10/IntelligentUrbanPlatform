@@ -1,7 +1,7 @@
 """C10 service API (UC10): record decisions and outcomes, read decisions back.
 
 Every call runs on the caller's connection and never commits (internal.md).
-explainDecision and the HTTP routes are added separately.
+explainDecision is added separately; ``router.py`` serves the reads over HTTP.
 
 Every call writes one JSON log line (``app.shared.logging``) with
 ``component=C10`` and the caller's ``correlationId``; recordDecision adds the
