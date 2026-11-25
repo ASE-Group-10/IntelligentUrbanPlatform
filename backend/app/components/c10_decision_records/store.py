@@ -12,14 +12,19 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from app.components.c10_decision_records.contracts import AuditOutcome, DecisionRecord
+from app.components.c10_decision_records.contracts import (
+    AuditOutcome,
+    DecisionRecord,
+    SubjectType,
+)
 
 type Connection = Any
 """The caller's open connection/transaction (a psycopg connection in production)."""
 
 
 class StoreUnavailableError(Exception):
-    """Decision storage cannot be reached; callers report Unavailable."""
+    """Decision storage cannot be reached, or a stored record cannot be read;
+    callers report Unavailable."""
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,13 @@ class DecisionStore(Protocol):
     ) -> StoredDecision | None:
         """The decision with this ID, including writes not yet committed on
         ``conn``."""
+        ...
+
+    def find_by_subject(
+        self, conn: Connection, subject_type: SubjectType, subject_id: UUID
+    ) -> list[StoredDecision]:
+        """Every decision about this subject, all versions and runs, in the
+        order they were recorded."""
         ...
 
     def insert_decision(self, conn: Connection, decision: StoredDecision) -> bool:
@@ -139,6 +151,16 @@ class InMemoryDecisionStore:
         self, conn: InMemoryTransaction, decision_id: UUID
     ) -> StoredDecision | None:
         return self._visible(conn).get(decision_id)
+
+    def find_by_subject(
+        self, conn: InMemoryTransaction, subject_type: SubjectType, subject_id: UUID
+    ) -> list[StoredDecision]:
+        return [
+            stored
+            for stored in self._visible(conn).values()
+            if stored.record.subject.type is subject_type
+            and stored.record.subject.id == subject_id
+        ]
 
     def insert_decision(
         self, conn: InMemoryTransaction, decision: StoredDecision

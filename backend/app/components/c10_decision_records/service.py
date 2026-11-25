@@ -1,7 +1,7 @@
-"""C10 service API, in-process half: recordDecision and recordOutcome (UC10).
+"""C10 service API (UC10): record decisions and outcomes, read decisions back.
 
-Both run on the caller's connection and never commit (internal.md). The read
-side (getDecision, explainDecision, getDecisionEvidence) is added separately.
+Every call runs on the caller's connection and never commits (internal.md).
+explainDecision and the HTTP routes are added separately.
 
 Every call writes one JSON log line (``app.shared.logging``) with
 ``component=C10`` and the caller's ``correlationId``; recordDecision adds the
@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -21,8 +22,14 @@ from pydantic import ValidationError
 from app.components.c10_decision_records.contracts import (
     AuditId,
     AuditOutcome,
+    DecisionEvidence,
+    DecisionIdSelector,
     DecisionRecord,
+    DecisionRecordView,
+    EvidenceStatus,
+    EvidenceStatusEntry,
     RecordDecisionResponse,
+    SubjectSelector,
 )
 from app.components.c10_decision_records.store import (
     Connection,
@@ -31,7 +38,12 @@ from app.components.c10_decision_records.store import (
     StoredOutcome,
     StoreUnavailableError,
 )
-from app.shared.c09_c10_common import AuthContext, PrincipalType, RunScope
+from app.shared.c09_c10_common import (
+    AuthContext,
+    PrincipalType,
+    RunMode,
+    RunScope,
+)
 from app.shared.result import Failure, Ok, Result
 
 log = logging.getLogger(__name__)
@@ -41,7 +53,21 @@ EVIDENCE_CONTENT_MISSING = "C10.EVIDENCE_CONTENT_MISSING"
 MISSING_FIELD = "C10.MISSING_FIELD"
 PRODUCER_MISMATCH = "C10.PRODUCER_MISMATCH"
 IDEMPOTENCY_MISMATCH = "C10.IDEMPOTENCY_MISMATCH"
+DECISION_NOT_FOUND = "C10.DECISION_NOT_FOUND"
+DECISION_AMBIGUOUS = "C10.DECISION_AMBIGUOUS"
 UNAVAILABLE = "C10.UNAVAILABLE"  # not yet named in the contract; see #60
+FORBIDDEN = "C10.FORBIDDEN"  # likewise
+EVIDENCE_NOT_FOUND = "C10.EVIDENCE_NOT_FOUND"  # likewise
+
+READ_ROLES = {"LogisticsOperator", "Analyst", "Service:C12"}
+
+
+@dataclass(frozen=True)
+class AmbiguousDecision(Failure):
+    """``C10.DECISION_AMBIGUOUS`` with the decisions the caller can choose from."""
+
+    candidates: tuple[tuple[UUID, int | None], ...] = ()
+    """``(decisionId, subjectVersion)``, in the order they were recorded."""
 
 
 def parse_decision_record(data: dict[str, Any]) -> Result[DecisionRecord]:
@@ -95,8 +121,100 @@ def _trace(ctx: AuthContext, run_scope: RunScope | None = None) -> dict[str, str
     return fields
 
 
+def _may_read(ctx: AuthContext) -> bool:
+    """Records carry no provider or zone yet, so a caller limited to some of them
+    cannot be shown to own a decision and is refused (open question in #60)."""
+    limited = ctx.scope is not None and (
+        ctx.scope.provider_ids is not None or ctx.scope.zone_ids is not None
+    )
+    return not limited and not READ_ROLES.isdisjoint(ctx.roles)
+
+
+def _recorded_in(record: DecisionRecord, run_id: UUID | None) -> bool:
+    """Without ``run_id`` only live decisions match, so leaving it out cannot be
+    used to read a simulation run."""
+    if run_id is None:
+        return record.run_scope.mode is RunMode.LIVE
+    return (
+        record.run_scope.mode is RunMode.SIMULATION
+        and record.run_scope.run_id == run_id
+    )
+
+
+def _view(stored: StoredDecision) -> DecisionRecordView:
+    record = stored.record
+    saved = {p.passage_id for s in record.evidence_snapshots for p in s.items}
+    cited = dict.fromkeys(  # unique, in the order they are first cited
+        ref
+        for source in [*record.reasons, *record.considered_alternatives]
+        for ref in source.evidence_ref_ids
+    )
+    return DecisionRecordView(
+        **record.model_dump(),
+        recorded_at=stored.recorded_at,
+        evidence_status=[
+            EvidenceStatusEntry(
+                ref_id=ref,
+                status=(
+                    EvidenceStatus.STORED if ref in saved else EvidenceStatus.MISSING
+                ),
+            )
+            for ref in cited
+        ],
+    )
+
+
+def _evidence(record: DecisionRecord, reference_id: str) -> Result[DecisionEvidence]:
+    for snapshot in record.evidence_snapshots:
+        for passage in snapshot.items:
+            if str(passage.passage_id) == reference_id.lower():
+                return Ok(
+                    DecisionEvidence(
+                        decision_id=record.decision_id,
+                        reference_id=str(passage.passage_id),
+                        kind="Evidence",
+                        status=EvidenceStatus.STORED,
+                        evidence=passage,
+                        alternative=None,
+                    )
+                )
+    for alternative in record.considered_alternatives:
+        if alternative.option_id == reference_id:
+            return Ok(
+                DecisionEvidence(
+                    decision_id=record.decision_id,
+                    reference_id=reference_id,
+                    kind="Alternative",
+                    status=EvidenceStatus.STORED,
+                    evidence=None,
+                    alternative=alternative,
+                )
+            )
+    return Failure(
+        "NotFound", f"{EVIDENCE_NOT_FOUND}: not part of this decision's record"
+    )
+
+
+def _forbidden() -> Failure:
+    return Failure("Forbidden", f"{FORBIDDEN}: the caller may not read decisions")
+
+
+def _not_found() -> Failure:
+    return Failure("NotFound", f"{DECISION_NOT_FOUND}: no such decision")
+
+
+def _log_read[T](operation: str, ctx: AuthContext, result: Result[T]) -> Result[T]:
+    if isinstance(result, Ok):
+        log.info("%s Ok", operation, extra=_trace(ctx))
+    else:
+        log.warning(
+            "%s %s: %s", operation, result.kind, result.message, extra=_trace(ctx)
+        )
+    return result
+
+
 class DecisionRecords:
-    """C10 service API (UC10), in-process write operations."""
+    """C10 service API (UC10), in process."""
 
     def __init__(
         self,
@@ -226,3 +344,79 @@ class DecisionRecords:
             extra=_trace(ctx),
         )
         return Ok(AuditId(audit_id=audit_id))
+
+    # ---- getDecision / findDecision / getDecisionEvidence (openapi.yaml) ----
+    def get_decision(
+        self, conn: Connection, ctx: AuthContext, selector: DecisionIdSelector
+    ) -> Result[DecisionRecordView]:
+        """The record as stored. Another run's decision is NotFound."""
+        found = self._find(conn, ctx, selector)
+        result = Ok(_view(found.value)) if isinstance(found, Ok) else found
+        return _log_read("getDecision", ctx, result)
+
+    def find_decision(
+        self, conn: Connection, ctx: AuthContext, selector: SubjectSelector
+    ) -> Result[DecisionRecordView]:
+        """The only decision about a subject; several are a Conflict."""
+        found = self._find_for_subject(conn, ctx, selector)
+        result = Ok(_view(found.value)) if isinstance(found, Ok) else found
+        return _log_read("findDecision", ctx, result)
+
+    def get_decision_evidence(
+        self,
+        conn: Connection,
+        ctx: AuthContext,
+        selector: DecisionIdSelector,
+        reference_id: str,
+    ) -> Result[DecisionEvidence]:
+        """One passage or alternative as saved at decision time. Never calls C09."""
+        found = self._find(conn, ctx, selector)
+        result = (
+            _evidence(found.value.record, reference_id)
+            if isinstance(found, Ok)
+            else found
+        )
+        return _log_read("getDecisionEvidence", ctx, result)
+
+    def _find(
+        self, conn: Connection, ctx: AuthContext, selector: DecisionIdSelector
+    ) -> Result[StoredDecision]:
+        if not _may_read(ctx):
+            return _forbidden()
+        try:
+            stored = self._store.find_by_decision_id(conn, selector.decision_id)
+        except StoreUnavailableError as exc:
+            return Failure("Unavailable", f"{UNAVAILABLE}: {exc}")
+        if stored is None or not _recorded_in(stored.record, selector.run_id):
+            return _not_found()
+        return Ok(stored)
+
+    def _find_for_subject(
+        self, conn: Connection, ctx: AuthContext, selector: SubjectSelector
+    ) -> Result[StoredDecision]:
+        if not _may_read(ctx):
+            return _forbidden()
+        try:
+            stored = self._store.find_by_subject(
+                conn, selector.subject_type, selector.subject_id
+            )
+        except StoreUnavailableError as exc:
+            return Failure("Unavailable", f"{UNAVAILABLE}: {exc}")
+        matches = [
+            s
+            for s in stored
+            if _recorded_in(s.record, selector.run_id)
+            and selector.subject_version in (None, s.record.subject.version)
+        ]
+        if not matches:
+            return _not_found()
+        if len(matches) > 1:
+            return AmbiguousDecision(
+                "Conflict",
+                f"{DECISION_AMBIGUOUS}: more than one decision matches this "
+                "subject; specify subjectVersion or decisionId",
+                tuple(
+                    (s.record.decision_id, s.record.subject.version) for s in matches
+                ),
+            )
+        return Ok(matches[0])

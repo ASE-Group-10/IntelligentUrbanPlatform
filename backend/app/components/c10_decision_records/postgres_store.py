@@ -14,8 +14,9 @@ from uuid import UUID
 
 import psycopg
 from psycopg.types.json import Jsonb
+from pydantic import ValidationError
 
-from app.components.c10_decision_records.contracts import DecisionRecord
+from app.components.c10_decision_records.contracts import DecisionRecord, SubjectType
 from app.components.c10_decision_records.store import (
     StoredDecision,
     StoredOutcome,
@@ -29,9 +30,12 @@ _SELECT_DECISION = (
 
 def _stored(row: tuple) -> StoredDecision:
     record, request_hash, recorded_at = row
-    return StoredDecision(
-        DecisionRecord.model_validate(record), request_hash, recorded_at
-    )
+    try:
+        parsed = DecisionRecord.model_validate(record)
+    except ValidationError as error:
+        # for example a record written under an older contract version
+        raise StoreUnavailableError("a stored decision cannot be read") from error
+    return StoredDecision(parsed, request_hash, recorded_at)
 
 
 class PostgresDecisionStore:
@@ -52,6 +56,19 @@ class PostgresDecisionStore:
             conn, f"{_SELECT_DECISION} where decision_id = %s", (decision_id,)
         )
         return _stored(row) if row else None
+
+    def find_by_subject(
+        self, conn: psycopg.Connection, subject_type: SubjectType, subject_id: UUID
+    ) -> list[StoredDecision]:
+        try:
+            rows = conn.execute(
+                f"{_SELECT_DECISION}"
+                " where subject_type = %s and subject_id = %s order by seq",
+                (subject_type.value, subject_id),
+            ).fetchall()
+        except psycopg.OperationalError as error:
+            raise StoreUnavailableError(f"decision store failed: {error}") from error
+        return [_stored(row) for row in rows]
 
     def insert_decision(
         self, conn: psycopg.Connection, decision: StoredDecision
