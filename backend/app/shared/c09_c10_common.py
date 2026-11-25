@@ -81,12 +81,18 @@ class RunScope(Model):
         return self
 
 
-class ErrorBody(Model):
-    outcome: Outcome
+class ErrorDetail(Model):
+    """C02's team-wide error body, so C01 needs one handler (C02 internal.md).
+    ``details`` is an extra key, as ``APIError(**extra)`` allows."""
+
     code: str = Field(pattern=r"^C\d{2}\.[A-Z_]+$")
     message: str
+    correlation_id: UUID = Field(alias="correlation_id")
     details: dict[str, Any] | None = None
-    correlation_id: UUID
+
+
+class ErrorResponse(Model):
+    error: ErrorDetail
 
 
 class TimeWindow(Model):

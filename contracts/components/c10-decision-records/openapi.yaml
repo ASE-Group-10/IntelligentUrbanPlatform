@@ -22,7 +22,7 @@ tags:
 - name: C10 Decision Records and Explanation
   description: C10 decision records, evidence and explanations
 paths:
-  /api/c10/decisions/{decisionId}:
+  /api/v1/decisions/{decisionId}:
     get:
       operationId: getDecision
       summary: Get a decision record
@@ -61,7 +61,7 @@ paths:
           $ref: '#/components/responses/C10NotFound'
         '503':
           $ref: '#/components/responses/C10Unavailable'
-  /api/c10/decisions:
+  /api/v1/decisions:
     get:
       operationId: findDecision
       summary: Find the decision for a subject
@@ -117,7 +117,7 @@ paths:
           $ref: '#/components/responses/C10Conflict'
         '503':
           $ref: '#/components/responses/C10Unavailable'
-  /api/c10/explanations:
+  /api/v1/explanations:
     post:
       operationId: explainDecision
       summary: Explain a saved decision
@@ -161,7 +161,7 @@ paths:
           $ref: '#/components/responses/C10Conflict'
         '503':
           $ref: '#/components/responses/C10Unavailable'
-  /api/c10/decisions/{decisionId}/evidence/{referenceId}:
+  /api/v1/decisions/{decisionId}/evidence/{referenceId}:
     get:
       operationId: getDecisionEvidence
       summary: Get one stored evidence passage or alternative
@@ -1004,16 +1004,16 @@ components:
     C10ErrorDecisionAmbiguous:
       summary: Subject matches several decisions
       value:
-        outcome: Conflict
-        code: C10.DECISION_AMBIGUOUS
-        message: More than one decision matches this subject; specify subjectVersion or decisionId.
-        details:
-          candidates:
-          - decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
-            subjectVersion: 1
-          - decisionId: b1a2c3d4-e5f6-4789-8abc-def012345678
-            subjectVersion: 2
-        correlationId: 4c0ffee0-1234-4abc-9def-001122334455
+        error:
+          code: C10.DECISION_AMBIGUOUS
+          message: More than one decision matches this subject; specify subjectVersion or decisionId.
+          correlation_id: 4c0ffee0-1234-4abc-9def-001122334455
+          details:
+            candidates:
+            - decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+              subjectVersion: 1
+            - decisionId: b1a2c3d4-e5f6-4789-8abc-def012345678
+              subjectVersion: 2
     C10GetDecisionResponse:
       summary: Stored plan decision with evidence status
       value:

@@ -11,7 +11,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.components.c09_logistics_knowledge import contracts as c09
 from app.components.c10_decision_records import contracts as c10
-from app.shared.c09_c10_common import ErrorBody
+from app.shared.c09_c10_common import ErrorResponse
 
 CONTRACTS = Path(__file__).resolve().parents[2] / "contracts" / "components"
 FILES = [
@@ -38,7 +38,7 @@ MODELS = {
     "C09QueryKnowledgeOkResponse": c09.KnowledgeResult,
     "C09QueryKnowledgeLowConfidenceResponse": c09.KnowledgeResult,
     "C09QueryKnowledgeConflictResponse": c09.KnowledgeResult,
-    "C09ErrorUnavailable": ErrorBody,
+    "C09ErrorUnavailable": ErrorResponse,
     "C09PublishKnowledgeRequest": c09.PublishKnowledgeRequest,
     "C09PublishKnowledgeResponse": c09.KnowledgePublication,
     "C10RecordOutcomeRequest": c10.AuditOutcome,
@@ -52,7 +52,7 @@ MODELS = {
     "C10ExplainDecisionOkResponse": c10.Explanation,
     "C10ExplainDecisionPartialResponse": c10.Explanation,
     "C10GetDecisionEvidenceResponse": c10.DecisionEvidence,
-    "C10ErrorDecisionAmbiguous": ErrorBody,
+    "C10ErrorDecisionAmbiguous": ErrorResponse,
 }
 
 

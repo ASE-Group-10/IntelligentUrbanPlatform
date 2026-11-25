@@ -40,8 +40,9 @@ from app.shared.result import Failure, Ok, Result
 
 logger = logging.getLogger(__name__)
 
-QUERY_ROLES = {"Service:C05", "Service:C08", "LogisticsOperator"}
-CURATOR_ROLE = "KnowledgeCurator"
+# User roles are C02's provider roles; "admin" is C02's platform override.
+QUERY_ROLES = {"Service:C05", "Service:C08", "operator", "admin"}
+CURATOR_ROLES = {"curator", "admin"}
 LOW_CONFIDENCE_THRESHOLD = 0.60
 CONFLICT_LIMITATION = "Conflicting sources; curator has been notified."
 
@@ -69,7 +70,7 @@ class LogisticsKnowledge:
     ) -> Result[KnowledgePublication]:
         """Split a curated Markdown document into sections, embed them and
         activate it as a new document version and corpus version."""
-        if CURATOR_ROLE not in ctx.roles:
+        if not CURATOR_ROLES & set(ctx.roles):
             return Failure("Forbidden", "C09.NOT_CURATOR")
         request_hash = hashlib.sha256(
             request.model_dump_json(by_alias=True).encode()

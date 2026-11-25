@@ -13,7 +13,7 @@ info:
     This file holds the HTTP operations used by the browser (C01). The in-process
     `queryKnowledge` call from C05/C08 is described in `internal.md`.
 
-    HTTP calls carry a Supabase JWT (`Authorization: Bearer`) and an optional `X-Correlation-Id` header; C10 derives the AuthContext from them.
+    HTTP calls carry a Supabase JWT (`Authorization: Bearer`) and an optional `X-Correlation-Id` header; C09 derives the AuthContext from them through C02.
   contact:
     name: C09 Logistics Knowledge
 servers:
@@ -23,7 +23,7 @@ tags:
 - name: C09 Logistics Knowledge
   description: C09 policy corpus and knowledge retrieval
 paths:
-  /api/c09/knowledge/query:
+  /api/v1/knowledge/query:
     post:
       operationId: queryKnowledge
       summary: Query applicable policy evidence
@@ -34,7 +34,7 @@ paths:
 
         **Rule scope.** A constraint applies to route legs and stops inside its `zoneIds`; when `segmentKeys` is non-empty, only on those C06 segments (`seg:<osm_way_id>`). C05 matches them against the segments of the route and stops, so a detour off those segments is not bound by the rule.
 
-        Callers time out after 5 s and treat that as Unavailable. Roles: Service:C05, Service:C08, LogisticsOperator.
+        Callers time out after 5 s and treat that as Unavailable. Roles: Service:C05, Service:C08, and the C02 provider role `operator` (or platform `admin`).
       tags:
       - C09 Logistics Knowledge
       security:
@@ -68,11 +68,11 @@ paths:
           $ref: '#/components/responses/C09Forbidden'
         '503':
           $ref: '#/components/responses/C09Unavailable'
-  /api/c09/documents:
+  /api/v1/knowledge/documents:
     post:
       operationId: publishKnowledge
       summary: Publish a curated policy document
-      description: 'KnowledgeCurator only. Each Markdown heading with text becomes one passage
+      description: 'C02 provider role `curator` (or platform `admin`) only. Each Markdown heading with text becomes one passage
         (`sectionId`). Publishing an existing `documentId` creates a new document version
         and corpus version and supersedes the old one. The same idempotencyKey with the same
         body returns the original result with `duplicate: true` (200); with a different body
@@ -186,29 +186,37 @@ components:
       - Loading
       type: string
     C09C10ErrorBody:
+      description: |-
+        The team-wide error body from C02 (`{"error": {"code", "message", "correlation_id"}}`),
+        so C01 needs one error handler. The HTTP status gives the failure kind; `code`
+        is the specific C09/C10 reason. `details` is an optional extra key.
       additionalProperties: false
       properties:
-        outcome:
-          $ref: '#/components/schemas/C09C10Outcome'
-        code:
-          pattern: ^C\d{2}\.[A-Z_]+$
-          type: string
-        message:
-          type: string
-        details:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          default: null
-        correlationId:
-          format: uuid
-          type: string
+        error:
+          additionalProperties: false
+          properties:
+            code:
+              pattern: ^C\d{2}\.[A-Z_]+$
+              type: string
+            message:
+              type: string
+            correlation_id:
+              description: Same field name as C02 and C03.
+              format: uuid
+              type: string
+            details:
+              anyOf:
+              - additionalProperties: true
+                type: object
+              - type: 'null'
+              default: null
+          required:
+          - code
+          - message
+          - correlation_id
+          type: object
       required:
-      - outcome
-      - code
-      - message
-      - correlationId
+      - error
       type: object
     C09C10Outcome:
       enum:
@@ -1149,9 +1157,9 @@ components:
     C09ErrorUnavailable:
       summary: Vector index unreachable
       value:
-        outcome: Unavailable
-        code: C09.INDEX_UNAVAILABLE
-        message: Vector index is not reachable; retry later.
-        details:
-          retryAfterSec: 30
-        correlationId: 4c0ffee0-1234-4abc-9def-001122334455
+        error:
+          code: C09.INDEX_UNAVAILABLE
+          message: Vector index is not reachable; retry later.
+          correlation_id: 4c0ffee0-1234-4abc-9def-001122334455
+          details:
+            retryAfterSec: 30
