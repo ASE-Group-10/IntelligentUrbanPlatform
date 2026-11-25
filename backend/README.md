@@ -1,5 +1,8 @@
 # UC01 resource backend
 
+C11/C12 runtime, workers, local demo and restricted replay setup:
+[integration guide](../docs/c11-c12-integration.md).
+
 FastAPI application with SQLAlchemy/psycopg persistence in PostgreSQL.
 This increment implements UC01 only. UC02 and other component APIs remain future work.
 

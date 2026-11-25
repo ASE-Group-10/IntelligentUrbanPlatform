@@ -117,10 +117,16 @@ services:
     env_file:
       - path: backend/.env
         required: false
-    environment: *sqlalchemy-env
+    environment:
+      <<: *sqlalchemy-env
+      # LOCAL disposable credentials only; never use this login on Supabase.
+      REPLAY_DATABASE_URL: postgresql+psycopg://c12_playback:c12_local_only@db:5432/ulop
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
-    depends_on: *after-migrations
+    depends_on:
+      <<: *after-migrations
+      c12-local-setup:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -163,6 +169,33 @@ services:
   c08-worker:
     <<: *backend
     command: ["python", "-m", "app.components.c08_allocation.worker"]
+    environment: *sqlalchemy-env
+    depends_on: *after-migrations
+
+  # Local-only, idempotent role provisioning. It ignores all configurable DB URLs
+  # and connects to loopback inside the db container's network namespace.
+  c12-local-setup:
+    <<: *backend
+    restart: "no"
+    network_mode: "service:db"
+    environment:
+      C12_LOCAL_COMPOSE: "1"
+    command: ["python", "-m", "app.components.c12_simulation_replay.local_setup"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  c11-worker:
+    <<: *backend
+    command: ["python", "-m", "app.components.c11_kpi_analytics.worker"]
+    environment: *sqlalchemy-env
+    depends_on: *after-migrations
+
+  c12-worker:
+    <<: *backend
+    command: ["python", "-m", "app.components.c12_simulation_replay.worker"]
     environment: *sqlalchemy-env
     depends_on: *after-migrations
 

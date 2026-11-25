@@ -1,0 +1,23 @@
+# Isolated test issuer only; normal docker-compose.yml keeps real C02 settings.
+# Generates only temporary test keys. Never point this at a shared environment.
+services:
+  slice-identity:
+    image: ulop-backend:dev
+    restart: "no"
+    command: ["python", "/srv/scripts/compose_identity.py", "serve", "--folder", "/srv/slice-auth"]
+    environment:
+      ULOP_TEST_IDENTITY: "1"
+    volumes:
+      - ./scripts:/srv/scripts:ro
+      - ./.tmp/slice-auth:/srv/slice-auth:ro
+
+  api:
+    environment:
+      SUPABASE_URL: https://slice-identity:8443
+      SSL_CERT_FILE: /srv/slice-ca.pem
+    volumes:
+      - ./.tmp/slice-auth/cert.pem:/srv/slice-ca.pem:ro
+      - ./contracts:/srv/contracts:ro
+    depends_on:
+      slice-identity:
+        condition: service_started

@@ -37,6 +37,8 @@ from app.components.c09_logistics_knowledge.postgres_store import (
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
 from app.components.c10_decision_records.service import DecisionRecords
+from app.components.c11_kpi_analytics.router import router as analytics_router
+from app.components.c12_simulation_replay.router import router as replay_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
 from app.config import get_ingress_settings, get_settings
@@ -81,6 +83,10 @@ def create_app(
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
         )
+        replay_url = getattr(app.state.settings, "replay_database_url", None)
+        app.state.replay_engine = (
+            make_engine(replay_url.get_secret_value()) if replay_url else None
+        )
         app.state.city_monitoring = CityMonitoring(
             store=city_state_store or PostgresCityStateStore(conninfo),
             clock=service_clock,
@@ -108,6 +114,8 @@ def create_app(
             clock=service_clock,
         )
         yield
+        if app.state.replay_engine is not None:
+            app.state.replay_engine.dispose()
         if engine is None:
             app.state.engine.dispose()
 
@@ -223,6 +231,8 @@ def create_app(
     app.include_router(router)
     app.include_router(deliveries_router)
     app.include_router(city_state_router)
+    app.include_router(analytics_router)
+    app.include_router(replay_router)
     app.include_router(disruptions_router)
     return app
 
