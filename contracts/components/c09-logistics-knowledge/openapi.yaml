@@ -13,7 +13,7 @@ info:
     This file holds the HTTP operations used by the browser (C01). The in-process
     `queryKnowledge` call from C05/C08 is described in `internal.md`.
 
-    HTTP calls carry a Supabase JWT (`Authorization: Bearer`) and an optional `X-Correlation-Id` header; C09 derives the AuthContext from them through C02.
+    HTTP calls carry a Supabase JWT (`Authorization: Bearer`), an optional `X-Correlation-Id` header and, for platform admins and users with several providers, `X-Acting-Provider` (C02); C09 derives the AuthContext from them through C02. `401` means not signed in, `422` means a malformed request or a missing/malformed `X-Acting-Provider`.
   contact:
     name: C09 Logistics Knowledge
 servers:
@@ -39,6 +39,8 @@ paths:
       - C09 Logistics Knowledge
       security:
       - C09BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
       requestBody:
         required: true
         content:
@@ -64,8 +66,12 @@ paths:
                   $ref: '#/components/examples/C09QueryKnowledgeConflictResponse'
         '400':
           $ref: '#/components/responses/C09Invalid'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
         '403':
           $ref: '#/components/responses/C09Forbidden'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
         '503':
           $ref: '#/components/responses/C09Unavailable'
   /api/v1/knowledge/documents:
@@ -82,6 +88,8 @@ paths:
       - C09 Logistics Knowledge
       security:
       - C09BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
       requestBody:
         required: true
         content:
@@ -109,10 +117,14 @@ paths:
                 $ref: '#/components/schemas/C09KnowledgePublication'
         '400':
           $ref: '#/components/responses/C09Invalid'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
         '403':
           $ref: '#/components/responses/C09Forbidden'
         '409':
           $ref: '#/components/responses/C09Conflict'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
         '503':
           $ref: '#/components/responses/C09Unavailable'
 components:
@@ -146,6 +158,26 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/C09C10ErrorBody'
+    C09C10Unauthenticated:
+      description: Token missing, invalid or expired (C02 `UNAUTHENTICATED`). Sign in again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+          examples:
+            unauthenticated:
+              $ref: '#/components/examples/C09C10ErrorUnauthenticated'
+    C09C10ValidationFailed:
+      description: |-
+        `VALIDATION_FAILED`: the body, path or query does not match the schema
+        (`fields` lists each problem), or `X-Acting-Provider` is required or malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+          examples:
+            invalidField:
+              $ref: '#/components/examples/C09C10ErrorValidationFailed'
   schemas:
     C09Applicability:
       additionalProperties: false
@@ -189,14 +221,16 @@ components:
       description: |-
         The team-wide error body from C02 (`{"error": {"code", "message", "correlation_id"}}`),
         so C01 needs one error handler. The HTTP status gives the failure kind; `code`
-        is the specific C09/C10 reason. `details` is an optional extra key.
+        is a C02 code (`UNAUTHENTICATED`, `FORBIDDEN`, `VALIDATION_FAILED`,
+        `IDENTITY_UNAVAILABLE`) or a specific C09/C10 reason (`C09.INDEX_UNAVAILABLE`).
+        `details` and `fields` are optional extra keys.
       additionalProperties: false
       properties:
         error:
           additionalProperties: false
           properties:
             code:
-              pattern: ^C\d{2}\.[A-Z_]+$
+              pattern: ^(C\d{2}\.)?[A-Z][A-Z_]*$
               type: string
             message:
               type: string
@@ -210,6 +244,23 @@ components:
                 type: object
               - type: 'null'
               default: null
+            fields:
+              description: On `422 VALIDATION_FAILED`, one entry per invalid field.
+              items:
+                additionalProperties: false
+                properties:
+                  path:
+                    type: string
+                  message:
+                    type: string
+                  code:
+                    type: string
+                required:
+                - path
+                - message
+                - code
+                type: object
+              type: array
           required:
           - code
           - message
@@ -1154,6 +1205,24 @@ components:
         chunkCount: 12
         activatedAt: '2026-11-18T14:02:11Z'
         duplicate: false
+    C09C10ErrorUnauthenticated:
+      summary: No valid token (C02 code)
+      value:
+        error:
+          code: UNAUTHENTICATED
+          message: Sign in to continue.
+          correlation_id: 6f1d2c3b-4a5e-4f60-8b7a-9c0d1e2f3a4b
+    C09C10ErrorValidationFailed:
+      summary: Request body fails schema validation (C02 code with fields)
+      value:
+        error:
+          code: VALIDATION_FAILED
+          message: Correct the highlighted fields.
+          correlation_id: 6f1d2c3b-4a5e-4f60-8b7a-9c0d1e2f3a4b
+          fields:
+          - path: body.timeWindow
+            message: 'Value error, timeWindow.end must be after start'
+            code: value_error
     C09ErrorUnavailable:
       summary: Vector index unreachable
       value:

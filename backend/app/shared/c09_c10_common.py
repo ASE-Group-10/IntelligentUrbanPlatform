@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -81,14 +81,30 @@ class RunScope(Model):
         return self
 
 
+class FieldError(Model):
+    """One entry of ``fields`` on a ``422 VALIDATION_FAILED`` (app/main.py)."""
+
+    path: str
+    message: str
+    code: str
+
+
 class ErrorDetail(Model):
     """C02's team-wide error body, so C01 needs one handler (C02 internal.md).
-    ``details`` is an extra key, as ``APIError(**extra)`` allows."""
+    ``code`` is a C02 code (``UNAUTHENTICATED``, ``FORBIDDEN``,
+    ``VALIDATION_FAILED``...) or a C09/C10 reason (``C09.INDEX_UNAVAILABLE``).
+    ``details`` and ``fields`` are extra keys, as ``APIError(**extra)`` allows."""
 
-    code: str = Field(pattern=r"^C\d{2}\.[A-Z_]+$")
+    code: str = Field(pattern=r"^(C\d{2}\.)?[A-Z][A-Z_]*$")
     message: str
     correlation_id: UUID = Field(alias="correlation_id")
     details: dict[str, Any] | None = None
+    fields: list[FieldError] | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_extras(self, handler):
+        # C02 omits keys it does not send; never serialise them as null.
+        return {k: v for k, v in handler(self).items() if v is not None}
 
 
 class ErrorResponse(Model):

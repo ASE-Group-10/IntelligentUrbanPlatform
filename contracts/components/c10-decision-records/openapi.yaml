@@ -12,7 +12,7 @@ info:
 
     Explanations use only evidence saved at decision time; they never query today's C09 corpus. Shared C09C10 types are defined in the C09 contract.
 
-    HTTP calls carry a Supabase JWT (`Authorization: Bearer`) and an optional `X-Correlation-Id` header; C10 derives the AuthContext from them.
+    HTTP calls carry a Supabase JWT (`Authorization: Bearer`), an optional `X-Correlation-Id` header and, for platform admins and users with several providers, `X-Acting-Provider` (C02); C10 derives the AuthContext from them through C02. `401` means not signed in, `422` means a malformed request or a missing/malformed `X-Acting-Provider`.
   contact:
     name: C10 Decision Records and Explanation
 servers:
@@ -31,6 +31,7 @@ paths:
       security:
       - C10BearerAuth: []
       parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
       - name: decisionId
         in: path
         required: true
@@ -55,10 +56,14 @@ paths:
               examples:
                 stored:
                   $ref: '#/components/examples/C10GetDecisionResponse'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
         '403':
           $ref: '#/components/responses/C10Forbidden'
         '404':
           $ref: '#/components/responses/C10NotFound'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
         '503':
           $ref: '#/components/responses/C10Unavailable'
   /api/v1/decisions:
@@ -72,6 +77,7 @@ paths:
       security:
       - C10BearerAuth: []
       parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
       - name: subjectType
         in: query
         required: true
@@ -109,12 +115,16 @@ paths:
               examples:
                 stored:
                   $ref: '#/components/examples/C10GetDecisionResponse'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
         '403':
           $ref: '#/components/responses/C10Forbidden'
         '404':
           $ref: '#/components/responses/C10NotFound'
         '409':
           $ref: '#/components/responses/C10Conflict'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
         '503':
           $ref: '#/components/responses/C10Unavailable'
   /api/v1/explanations:
@@ -128,6 +138,8 @@ paths:
       - C10 Decision Records and Explanation
       security:
       - C10BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
       requestBody:
         required: true
         content:
@@ -153,12 +165,16 @@ paths:
                   $ref: '#/components/examples/C10ExplainDecisionPartialResponse'
         '400':
           $ref: '#/components/responses/C10Invalid'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
         '403':
           $ref: '#/components/responses/C10Forbidden'
         '404':
           $ref: '#/components/responses/C10NotFound'
         '409':
           $ref: '#/components/responses/C10Conflict'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
         '503':
           $ref: '#/components/responses/C10Unavailable'
   /api/v1/decisions/{decisionId}/evidence/{referenceId}:
@@ -170,6 +186,7 @@ paths:
       security:
       - C10BearerAuth: []
       parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
       - name: decisionId
         in: path
         required: true
@@ -199,10 +216,14 @@ paths:
               examples:
                 passage:
                   $ref: '#/components/examples/C10GetDecisionEvidenceResponse'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
         '403':
           $ref: '#/components/responses/C10Forbidden'
         '404':
           $ref: '#/components/responses/C10NotFound'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
         '503':
           $ref: '#/components/responses/C10Unavailable'
 components:
