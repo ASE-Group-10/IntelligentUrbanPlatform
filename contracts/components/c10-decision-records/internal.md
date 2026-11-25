@@ -21,7 +21,7 @@ Built by the caller from the authenticated request; IDs alone never grant access
 | --- | --- | --- | --- |
 | `principalId` | string | yes | User ID or `service:<name>` |
 | `principalType` | enum | yes | `User` / `Service` |
-| `roles` | array of string | yes | e.g. `Service:C05`, `LogisticsOperator`, `Analyst` |
+| `roles` | array of string | yes | C02 names: user provider roles (`manager`, `operator`, `driver`, `analyst`, `curator`) plus platform `admin`; a service is `Service:<serviceId>`, e.g. `Service:C05` |
 | `scope` | object | no | `{providerIds?, zoneIds?}`; absent means no provider/zone limit |
 | `correlationId` | UUID | yes | Carried through one user operation |
 

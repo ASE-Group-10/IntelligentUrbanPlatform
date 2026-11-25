@@ -29,7 +29,7 @@ DEMO_ZONES = {"dublin-D1", "dublin-D2", "dublin-D8"}
 DEMO_CURATOR = AuthContext(
     principal_id="demo-curator",
     principal_type="User",
-    roles=["KnowledgeCurator"],
+    roles=["curator"],
     correlation_id=uuid4(),
 )
 

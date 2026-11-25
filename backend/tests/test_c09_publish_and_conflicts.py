@@ -31,7 +31,7 @@ def _ctx(*roles: str) -> AuthContext:
     )
 
 
-CURATOR = _ctx("KnowledgeCurator")
+CURATOR = _ctx("curator")
 PLANNER = _ctx("Service:C05")
 
 
