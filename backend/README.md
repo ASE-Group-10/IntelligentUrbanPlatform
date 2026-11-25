@@ -218,6 +218,44 @@ docker compose up -d rabbitmq
 TEST_RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F uv run pytest
 ```
 
+## C10 evidence in Supabase Storage
+
+C10 can store an `EvidenceSnapshot` as an immutable JSON object in a private
+Supabase Storage bucket and read it back (#130). Objects use the C10 prefix
+`c10/evidence/<decisionId>/<snapshotId>.json`. Uploads never overwrite. For the
+thin slice only the transport is wired: `recordDecision` still keeps evidence in
+Postgres.
+
+One-time setup in the shared Supabase project:
+
+1. **Storage → New bucket**: name `c10-evidence`, **private** (not public).
+2. **Project Settings → API keys**: copy a secret key (`sb_secret_...`) or the
+   legacy `service_role` key.
+
+Put both values in `backend/.env` only. The key bypasses Supabase's row-level
+security, so never commit it, paste it into chat or send it to the browser. In Azure,
+store it as a deployment secret.
+
+```sh
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_KEY=<secret key>
+C10_EVIDENCE_BUCKET=c10-evidence   # optional; this is the default
+```
+
+Run the connectivity check from `backend/`:
+
+```sh
+uv run python -m app.demo.c10_storage
+```
+
+It uploads the contract example's snapshot (synthetic data, fresh `snapshotId`) and
+reads it back. `OK: wrote and read back c10-evidence/c10/evidence/...` with exit code
+0 means success. `FAIL: ...` with exit code 1 gives the reason: missing settings,
+HTTP status from Storage (for example 404 for a missing bucket, 403 for a wrong
+key), or different content read back. Unit tests
+(`tests/test_c10_evidence_storage.py`) use a fake HTTP layer and never contact
+Supabase.
+
 ## C05 and C06 outbox publishers
 
 C05 publishes committed `PlanReady` events and C06 publishes `CityStateUpdated`
