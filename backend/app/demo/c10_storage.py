@@ -34,7 +34,11 @@ def synthetic_snapshot() -> dict:
 
 def main() -> int:
     settings = get_settings()
-    storage = from_settings(settings)
+    try:
+        storage = from_settings(settings)
+    except ValueError as exc:
+        print(f"FAIL: {exc}")
+        return 1
     if storage is None:
         print("FAIL: set SUPABASE_URL and SUPABASE_SERVICE_KEY (see backend/README.md)")
         return 1

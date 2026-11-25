@@ -123,7 +123,7 @@ class Settings(HttpIngressSettings):
         Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"], host_required=True)]
         | None
     ) = None
-    # Server-only Supabase key (service_role JWT or sb_secret_...) for C10 evidence
+    # Server-only legacy service_role key (a JWT) for C10 evidence
     # objects in Supabase Storage (#130). Unset means the storage path is off.
     supabase_service_key: SecretStr | None = None
     c10_evidence_bucket: str = "c10-evidence"

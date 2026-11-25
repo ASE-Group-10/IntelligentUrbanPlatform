@@ -38,10 +38,15 @@ class SupabaseEvidenceStorage:
         bucket: str,
         opener: Opener = urllib.request.urlopen,
     ) -> None:
+        # Storage needs a JWT in `authorization`: without it 400 "must have required
+        # property 'authorization'", with an sb_secret_ key 403 "Invalid Compact JWS".
+        if not service_key.startswith("eyJ"):
+            raise ValueError(
+                "SUPABASE_SERVICE_KEY must be the legacy service_role key (a JWT "
+                "starting with eyJ); Storage rejects sb_ keys in Authorization"
+            )
         self._base = f"{project_url.rstrip('/')}/storage/v1/object"
         self._bucket = quote(bucket, safe="")
-        # Storage requires `authorization`; like supabase-js, send the key in both
-        # headers and the API gateway accepts a JWT or an sb_secret_ key.
         self._headers = {
             "apikey": service_key,
             "Authorization": f"Bearer {service_key}",

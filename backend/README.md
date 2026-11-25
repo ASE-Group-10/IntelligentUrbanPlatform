@@ -229,8 +229,10 @@ Postgres.
 One-time setup in the shared Supabase project:
 
 1. **Storage → New bucket**: name `c10-evidence`, **private** (not public).
-2. **Project Settings → API keys**: copy a secret key (`sb_secret_...`) or the
-   legacy `service_role` key.
+2. **Project Settings → API Keys → Legacy API keys**: copy the `service_role`
+   key (a JWT starting with `eyJ`). The new `sb_secret_...` keys are not JWTs;
+   Storage rejects them in the `Authorization` header (403 "Invalid Compact JWS"),
+   so the client refuses them up front.
 
 Put both values in `backend/.env` only. The key bypasses Supabase's row-level
 security, so never commit it, paste it into chat or send it to the browser. In Azure,
@@ -238,7 +240,7 @@ store it as a deployment secret.
 
 ```sh
 SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_SERVICE_KEY=<secret key>
+SUPABASE_SERVICE_KEY=<legacy service_role key, eyJ...>
 C10_EVIDENCE_BUCKET=c10-evidence   # optional; this is the default
 ```
 

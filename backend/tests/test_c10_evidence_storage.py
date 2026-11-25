@@ -18,6 +18,7 @@ from app.components.c10_decision_records.store import StoreUnavailableError
 from app.demo.c10_storage import synthetic_snapshot
 
 PROJECT = "https://example.supabase.co"
+JWT = "eyJhbGciOi.payload.sig"
 DECISION = UUID("d7c6b5a4-9384-4756-a1b2-c3d4e5f60708")
 
 
@@ -44,7 +45,7 @@ class FakeStorage:
 
 def test_snapshot_round_trips_under_the_c10_prefix_without_overwrite():
     fake = FakeStorage()
-    storage = SupabaseEvidenceStorage(PROJECT, "sb_secret_x", "c10-evidence", fake)
+    storage = SupabaseEvidenceStorage(PROJECT, JWT, "c10-evidence", fake)
     snapshot = synthetic_snapshot()
 
     key = storage.put_snapshot(DECISION, snapshot)
@@ -57,19 +58,27 @@ def test_snapshot_round_trips_under_the_c10_prefix_without_overwrite():
     assert storage.get_snapshot(key) == snapshot
 
 
-@pytest.mark.parametrize("key", ["sb_secret_x", "eyJhbGciOi.jwt"])
-def test_key_is_sent_as_apikey_and_bearer(key):
+def test_key_is_sent_as_apikey_and_bearer():
     """Storage rejects a request without `authorization` (400 InvalidRequest)."""
     fake = FakeStorage()
-    SupabaseEvidenceStorage(PROJECT, key, "b", fake).put_snapshot(
+    SupabaseEvidenceStorage(PROJECT, JWT, "b", fake).put_snapshot(
         DECISION, synthetic_snapshot()
     )
-    assert fake.requests[0].get_header("Apikey") == key
-    assert fake.requests[0].get_header("Authorization") == f"Bearer {key}"
+    assert fake.requests[0].get_header("Apikey") == JWT
+    assert fake.requests[0].get_header("Authorization") == f"Bearer {JWT}"
+
+
+@pytest.mark.parametrize("key", ["sb_secret_x", "sb_publishable_x"])
+def test_non_jwt_keys_are_rejected_before_any_request(key):
+    """Storage answers 403 "Invalid Compact JWS" for them; say why up front."""
+    fake = FakeStorage()
+    with pytest.raises(ValueError, match="legacy service_role"):
+        SupabaseEvidenceStorage(PROJECT, key, "b", fake)
+    assert fake.requests == []
 
 
 def test_http_error_is_reported_as_unavailable():
-    storage = SupabaseEvidenceStorage(PROJECT, "k", "b", FakeStorage(fail_with=409))
+    storage = SupabaseEvidenceStorage(PROJECT, JWT, "b", FakeStorage(fail_with=409))
     with pytest.raises(StoreUnavailableError, match="POST 409: Duplicate"):
         storage.put_snapshot(DECISION, synthetic_snapshot())
 
@@ -83,7 +92,7 @@ def test_storage_is_off_until_configured():
     assert from_settings(empty) is None
     configured = SimpleNamespace(
         supabase_url=PROJECT,
-        supabase_service_key=SecretStr("k"),
+        supabase_service_key=SecretStr(JWT),
         c10_evidence_bucket="b",
     )
     assert isinstance(from_settings(configured), SupabaseEvidenceStorage)
