@@ -57,17 +57,15 @@ def test_snapshot_round_trips_under_the_c10_prefix_without_overwrite():
     assert storage.get_snapshot(key) == snapshot
 
 
-@pytest.mark.parametrize(
-    ("key", "bearer"),
-    [("sb_secret_x", None), ("eyJhbGciOi.jwt", "Bearer eyJhbGciOi.jwt")],
-)
-def test_secret_keys_go_in_apikey_and_jwts_also_as_bearer(key, bearer):
+@pytest.mark.parametrize("key", ["sb_secret_x", "eyJhbGciOi.jwt"])
+def test_key_is_sent_as_apikey_and_bearer(key):
+    """Storage rejects a request without `authorization` (400 InvalidRequest)."""
     fake = FakeStorage()
     SupabaseEvidenceStorage(PROJECT, key, "b", fake).put_snapshot(
         DECISION, synthetic_snapshot()
     )
     assert fake.requests[0].get_header("Apikey") == key
-    assert fake.requests[0].get_header("Authorization") == bearer
+    assert fake.requests[0].get_header("Authorization") == f"Bearer {key}"
 
 
 def test_http_error_is_reported_as_unavailable():

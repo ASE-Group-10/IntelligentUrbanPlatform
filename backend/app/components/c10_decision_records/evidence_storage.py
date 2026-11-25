@@ -40,10 +40,12 @@ class SupabaseEvidenceStorage:
     ) -> None:
         self._base = f"{project_url.rstrip('/')}/storage/v1/object"
         self._bucket = quote(bucket, safe="")
-        self._headers = {"apikey": service_key}
-        # New sb_secret_ keys are not JWTs and go only in `apikey`.
-        if service_key.startswith("eyJ"):
-            self._headers["Authorization"] = f"Bearer {service_key}"
+        # Storage requires `authorization`; like supabase-js, send the key in both
+        # headers and the API gateway accepts a JWT or an sb_secret_ key.
+        self._headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        }
         self._open = opener
 
     def put_snapshot(self, decision_id: UUID, snapshot: dict[str, Any]) -> str:
