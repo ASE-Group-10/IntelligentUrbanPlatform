@@ -81,6 +81,13 @@ schema, including `deliveryId`, `version`, `pickup`, `destination`, `cargo`,
 `timeWindow`, `constraints` (`vehicleKinds`: `van`, `truck`, `cargo_bike`),
 `status`, and `progress`.
 
+For the simulation slice, C05 calls
+`app.components.c04_delivery_management.planning.get_requests` on its own
+transaction connection. The optional `linked_to_plan` selector checks that
+all IDs exist in the run, then returns the deliveries still linked to that
+plan. C04 holds shared row locks through the caller's transaction so progress
+or linkage cannot change between the revision check and commit.
+
 **Failures:** `Invalid` (including `C04.INVALID_RUN_SCOPE`), `Forbidden`,
 `NotFound` (`C04.DELIVERY_NOT_FOUND` when any requested ID does not exist in
 the given `runScope`, including cross-run or live/simulation mismatches),

@@ -29,6 +29,10 @@ export const DEMO_RUN_ID = demo.runId;
 export const DEMO_SEGMENTS = demo.segments;
 export type DemoSegment = (typeof DEMO_SEGMENTS)[number];
 
+export function findDemoSegment(key: string | undefined): DemoSegment | undefined {
+  return DEMO_SEGMENTS.find((segment) => segment.segmentKey === key);
+}
+
 export interface SegmentProperties {
   segmentKey: string;
   status: SegmentStatus;

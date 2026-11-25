@@ -12,6 +12,16 @@ Add a row here when a component starts consuming events.
 from collections.abc import Iterable, Mapping
 
 SUBSCRIBER_QUEUES: Mapping[str, tuple[str, ...]] = {
+    "c12.delivery-recordings": (
+        "DeliverySubmitted",
+        "DeliveryUpdated",
+        "DeliveryProgressChanged",
+    ),
+    "c11.delivery-observations": (
+        "DeliverySubmitted",
+        "DeliveryUpdated",
+        "DeliveryProgressChanged",
+    ),
     "c08.plan-ready": ("PlanReady",),
     "c07.city-state-updated": ("CityStateUpdated",),
 }

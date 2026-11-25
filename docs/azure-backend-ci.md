@@ -112,3 +112,34 @@ run manually on `vm-ulop-rabbitmq-dev` and verified against:
 - `GET http://127.0.0.1:8000/health` → `200 OK` (`database: connected`)
 - OpenAPI routes for C02, C03, C06, C07, and C08
 - `c06-publisher`, `c07-worker` (Postgres store), and `c08-worker` running cleanly
+
+## Public HTTPS ingress (Nginx + Let's Encrypt)
+
+The VM's FastAPI container stays bound to `127.0.0.1:8000` (ports `8000`, `5672`,
+and `15672` are never opened in the Azure NSG). External HTTPS traffic enters
+through host Nginx on ports `80`/`443` for
+`ulop-dev-api.swedencentral.cloudapp.azure.com`:
+
+1. Copy `scripts/azure/nginx-ulop-api-bootstrap.conf` to
+   `/etc/nginx/sites-available/ulop-api.conf`, enable it in
+   `/etc/nginx/sites-enabled/ulop-api.conf`, remove
+   `/etc/nginx/sites-enabled/default`, create `/var/www/html`, and reload Nginx
+   (`sudo nginx -t && sudo systemctl reload nginx`). This HTTP-only config
+   serves only `/.well-known/acme-challenge/`; all other requests get `404`.
+2. Open inbound TCP `80` and `443` in the VM's Azure Network Security Group
+   (keep `22` restricted to operator IPs), then obtain the certificate with
+   `sudo certbot certonly --webroot -w /var/www/html -d ulop-dev-api.swedencentral.cloudapp.azure.com`.
+   Check that both files under `/etc/letsencrypt/live/ulop-dev-api.swedencentral.cloudapp.azure.com/`
+   exist before replacing the bootstrap configuration with
+   `scripts/azure/nginx-ulop-api.conf`. Test and reload Nginx again. Certbot
+   renewals retain the webroot challenge on port `80`.
+   The final HTTPS listener rejects unknown TLS names during the handshake and
+   returns `404` for a mismatched HTTP `Host` sent with the expected TLS name.
+   It forwards only `/health` and `/api/*`; `/api/v1/development*`, `/`,
+   `/static/*`, `/docs`, `/redoc`, and `/openapi.json` return `404`.
+3. In `/home/azureuser/ulop-deploy/.env` (passed into the `api` service in
+   `compose.yaml`), set:
+   - `ALLOWED_HOSTS=localhost,127.0.0.1,ulop-dev-api.swedencentral.cloudapp.azure.com`
+   - `CORS_ORIGINS=<https://frontend-origin>` (explicit frontend origin(s), never `*`;
+     default `:443`/`:80` ports are normalized, while nondefault ports remain)
+   - `SUPABASE_URL=<https://project-ref.supabase.co>`

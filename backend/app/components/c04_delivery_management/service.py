@@ -40,7 +40,6 @@ from app.components.c04_delivery_management.contracts import (
 from app.components.c04_delivery_management.planning import (
     PlanningGateway,
     PlanSummary,
-    StubPlanningGateway,
 )
 from app.components.c04_delivery_management.store import (
     advisory_lock,
@@ -122,6 +121,7 @@ class SubmitOutcome:
     status_code: int
     delivery: Delivery
     replayed: bool
+    correlation_id: UUID
     plan: PlanSummary | None = None
 
 
@@ -170,20 +170,13 @@ def _is_progress_updater(context: AuthContext, provider_id: UUID) -> bool:
     )
 
 
-class DeliveryService:
-    """C04 authoritative delivery store, HTTP commands, and internal interfaces."""
+class DeliveryPlanningService:
+    """C04's delivery-link command and audit storage on a caller-owned transaction."""
 
     def __init__(
-        self,
-        engine: Engine,
-        *,
-        planning_gateway: PlanningGateway | None = None,
-        clock: Callable[[], datetime] | None = None,
+        self, engine: Engine, *, clock: Callable[[], datetime] | None = None
     ) -> None:
         self.engine = engine
-        self.planning_gateway: PlanningGateway = (
-            planning_gateway or StubPlanningGateway()
-        )
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def _now(self) -> datetime:
@@ -254,12 +247,236 @@ class DeliveryService:
                 extra=_trace_extra(correlation_id, run_scope),
             )
 
+    def mark_requests_planned(
+        self,
+        context: AuthContext,
+        run_scope: RunScopeSelector,
+        request_ids: list[UUID],
+        plan_id: UUID,
+        expected_versions: dict[UUID, int],
+        key: str,
+        *,
+        connection: Connection | None = None,
+    ) -> Result[DeliveryLinkReceipt]:
+        operation = "C04.markRequestsPlanned"
+        if not _is_c05_service(context):
+            self._record_rejected_audit(
+                run_scope=run_scope,
+                context=context,
+                operation=operation,
+                outcome="Forbidden",
+                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
+                correlation_id=context.correlation_id,
+            )
+            return Failure("Forbidden", "C04.FORBIDDEN")
+
+        if (
+            not request_ids
+            or len(set(request_ids)) != len(request_ids)
+            or set(request_ids) != expected_versions.keys()
+            or not key.strip()
+            or len(key) > 200
+            or any(v < 1 for v in expected_versions.values())
+        ):
+            self._record_rejected_audit(
+                run_scope=run_scope,
+                context=context,
+                operation=operation,
+                outcome="Invalid",
+                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
+                correlation_id=context.correlation_id,
+            )
+            return Failure("Invalid", "C04.INVALID_REQUEST")
+
+        skey = scope_key_for(run_scope)
+        principal = str(context.principal_id)
+        request_hash = _digest(
+            {
+                "requestIds": [str(rid) for rid in request_ids],
+                "planId": str(plan_id),
+                "expectedVersions": {
+                    str(rid): ver for rid, ver in expected_versions.items()
+                },
+            }
+        )
+
+        def _execute(conn: Connection) -> Result[DeliveryLinkReceipt]:
+            advisory_lock(conn, json.dumps([operation, skey, principal, key]))
+            previous = (
+                conn.execute(
+                    select(command_receipts).where(
+                        command_receipts.c.scope_key == skey,
+                        command_receipts.c.principal_id == principal,
+                        command_receipts.c.operation == operation,
+                        command_receipts.c.idempotency_key == key,
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if previous is not None:
+                if previous["request_hash"] != request_hash:
+                    return Failure("Conflict", "C04.IDEMPOTENCY_CONFLICT")
+                return Ok(DeliveryLinkReceipt.model_validate(previous["response_body"]))
+
+            rows = (
+                conn.execute(
+                    select(deliveries)
+                    .where(
+                        deliveries.c.scope_key == skey,
+                        deliveries.c.delivery_id.in_(request_ids),
+                    )
+                    .order_by(deliveries.c.delivery_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .all()
+            )
+            by_id = {row["delivery_id"]: row for row in rows}
+            if len(by_id) != len(request_ids):
+                return Failure("NotFound", "C04.DELIVERY_NOT_FOUND")
+
+            for rid in request_ids:
+                row = by_id[rid]
+                if (
+                    row["status"] != "pending"
+                    or row["plan_id"] is not None
+                    or row["delivery"]["progress"]["status"] != "pending"
+                ):
+                    return Failure("Conflict", "C04.DELIVERY_NOT_PENDING")
+                if row["version"] != expected_versions[rid]:
+                    return Failure("Conflict", "C04.VERSION_CONFLICT")
+
+            timestamp = self._now()
+            new_versions: dict[UUID, int] = {}
+            for rid in request_ids:
+                current = Delivery.model_validate(by_id[rid]["delivery"])
+                next_version = current.version + 1
+                next_delivery = Delivery(
+                    delivery_id=current.delivery_id,
+                    version=next_version,
+                    status="planned",
+                    pickup=current.pickup,
+                    destination=current.destination,
+                    cargo=current.cargo,
+                    time_window=current.time_window,
+                    constraints=current.constraints,
+                    planned_at=timestamp,
+                    progress=current.progress,
+                    created_at=current.created_at,
+                    updated_at=timestamp,
+                )
+                result = conn.execute(
+                    update(deliveries)
+                    .where(
+                        deliveries.c.scope_key == skey,
+                        deliveries.c.delivery_id == rid,
+                        deliveries.c.version == expected_versions[rid],
+                        deliveries.c.status == "pending",
+                    )
+                    .values(
+                        version=next_version,
+                        status="planned",
+                        plan_id=plan_id,
+                        planned_at=timestamp,
+                        delivery=next_delivery.to_wire(),
+                        updated_at=timestamp,
+                    )
+                )
+                if result.rowcount != 1:
+                    raise _RollbackError(Failure("Conflict", "C04.VERSION_CONFLICT"))
+                new_versions[rid] = next_version
+
+            receipt = DeliveryLinkReceipt(
+                request_ids=list(request_ids),
+                plan_id=plan_id,
+                versions=new_versions,
+            )
+            conn.execute(
+                insert(command_receipts).values(
+                    scope_key=skey,
+                    principal_id=principal,
+                    operation=operation,
+                    idempotency_key=key,
+                    request_hash=request_hash,
+                    response_status=200,
+                    response_body=receipt.model_dump(mode="json", by_alias=True),
+                    created_at=timestamp,
+                )
+            )
+            self._record_audit(
+                conn,
+                scope_key=skey,
+                provider_id=None,
+                principal_id=principal,
+                operation=operation,
+                outcome="Ok",
+                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
+                correlation_id=context.correlation_id,
+                occurred_at=timestamp,
+            )
+            return Ok(receipt)
+
+        try:
+            if connection is not None:
+                with connection.begin_nested():
+                    outcome = _execute(connection)
+            else:
+                with self.engine.begin() as owned_conn:
+                    outcome = _execute(owned_conn)
+        except _RollbackError as aborted:
+            outcome = aborted.failure
+        except SQLAlchemyError:
+            self._record_rejected_audit(
+                run_scope=run_scope,
+                context=context,
+                operation=operation,
+                outcome="Unavailable",
+                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
+                correlation_id=context.correlation_id,
+            )
+            return Failure("Unavailable", "C04.STORE_UNAVAILABLE")
+
+        if isinstance(outcome, Failure):
+            self._record_rejected_audit(
+                run_scope=run_scope,
+                context=context,
+                operation=operation,
+                outcome=outcome.kind,
+                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
+                correlation_id=context.correlation_id,
+                details={"code": outcome.message},
+            )
+        else:
+            log.info(
+                "markRequestsPlanned: linked %d delivery request(s) to plan %s",
+                len(request_ids),
+                plan_id,
+                extra=_trace_extra(context.correlation_id, run_scope),
+            )
+        return outcome
+
+
+class DeliveryService(DeliveryPlanningService):
+    """C04 authoritative delivery store, HTTP commands, and internal interfaces."""
+
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        planning_gateway: PlanningGateway,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        super().__init__(engine, clock=clock)
+        self.planning_gateway = planning_gateway
+
     def _enqueue_event(
         self,
         connection: Connection,
         *,
         event_type: DeliveryEventType,
         delivery: Delivery,
+        provider_id: UUID,
         run_scope: RunScopeSelector,
         correlation_id: UUID,
         observed_at: datetime,
@@ -286,6 +503,7 @@ class DeliveryService:
             payload=DeliveryEventPayload(
                 delivery_id=delivery.delivery_id,
                 delivery_version=delivery.version,
+                provider_id=provider_id,
                 status=delivery.status,
                 delivery=delivery,
             ),
@@ -381,7 +599,22 @@ class DeliveryService:
                 else:
                     conflict = False
                     replayed = True
-                    saved_delivery = Delivery.model_validate(previous["response_body"])
+                    receipt = previous["response_body"]
+                    if "delivery" in receipt:
+                        saved_delivery = Delivery.model_validate(receipt["delivery"])
+                        correlation_id = UUID(receipt["correlationId"])
+                    else:
+                        # Earlier C04 receipts stored only the delivery. Its
+                        # submission event was committed in that same transaction.
+                        saved_delivery = Delivery.model_validate(receipt)
+                        correlation_id = connection.execute(
+                            select(outbox.c.correlation_id).where(
+                                outbox.c.scope_key == skey,
+                                outbox.c.delivery_id == saved_delivery.delivery_id,
+                                outbox.c.delivery_version == saved_delivery.version,
+                                outbox.c.event_type == "DeliverySubmitted",
+                            )
+                        ).scalar_one()
             else:
                 conflict = False
                 timestamp = self._now()
@@ -425,6 +658,7 @@ class DeliveryService:
                     connection,
                     event_type="DeliverySubmitted",
                     delivery=delivery,
+                    provider_id=context.acting_provider_id,
                     run_scope=run_scope,
                     correlation_id=correlation_id,
                     observed_at=timestamp,
@@ -449,7 +683,10 @@ class DeliveryService:
                         idempotency_key=command.idempotency_key,
                         request_hash=request_hash,
                         response_status=201,
-                        response_body=wire,
+                        response_body={
+                            "delivery": wire,
+                            "correlationId": str(correlation_id),
+                        },
                         created_at=timestamp,
                     )
                 )
@@ -490,6 +727,14 @@ class DeliveryService:
         )
         if isinstance(plan_result, Ok):
             plan_summary = plan_result.value
+            if not plan_summary.stub:
+                log.info(
+                    "submitDelivery: C05 generated plan %s v%d for delivery %s",
+                    plan_summary.plan_id,
+                    plan_summary.version,
+                    saved_delivery.delivery_id,
+                    extra=_trace_extra(correlation_id, run_scope),
+                )
         else:
             log.warning(
                 "submitDelivery: C05 generatePlan returned %s (%s) for delivery %s",
@@ -503,6 +748,7 @@ class DeliveryService:
             status_code=200 if replayed else 201,
             delivery=saved_delivery,
             replayed=replayed,
+            correlation_id=correlation_id,
             plan=plan_summary,
         )
 
@@ -728,6 +974,7 @@ class DeliveryService:
                             connection,
                             event_type="DeliveryUpdated",
                             delivery=next_delivery,
+                            provider_id=context.acting_provider_id,
                             run_scope=run_scope,
                             correlation_id=correlation_id,
                             observed_at=timestamp,
@@ -819,210 +1066,6 @@ class DeliveryService:
         if len(found) != len(unique_ids):
             return Failure("NotFound", "C04.DELIVERY_NOT_FOUND")
         return Ok([found[request_id] for request_id in request_ids])
-
-    def mark_requests_planned(
-        self,
-        context: AuthContext,
-        run_scope: RunScopeSelector,
-        request_ids: list[UUID],
-        plan_id: UUID,
-        expected_versions: dict[UUID, int],
-        key: str,
-        *,
-        connection: Connection | None = None,
-    ) -> Result[DeliveryLinkReceipt]:
-        operation = "C04.markRequestsPlanned"
-        if not _is_c05_service(context):
-            self._record_rejected_audit(
-                run_scope=run_scope,
-                context=context,
-                operation=operation,
-                outcome="Forbidden",
-                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
-                correlation_id=context.correlation_id,
-            )
-            return Failure("Forbidden", "C04.FORBIDDEN")
-
-        if (
-            not request_ids
-            or len(set(request_ids)) != len(request_ids)
-            or set(request_ids) != expected_versions.keys()
-            or not key.strip()
-            or len(key) > 200
-            or any(v < 1 for v in expected_versions.values())
-        ):
-            self._record_rejected_audit(
-                run_scope=run_scope,
-                context=context,
-                operation=operation,
-                outcome="Invalid",
-                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
-                correlation_id=context.correlation_id,
-            )
-            return Failure("Invalid", "C04.INVALID_REQUEST")
-
-        skey = scope_key_for(run_scope)
-        principal = str(context.principal_id)
-        request_hash = _digest(
-            {
-                "requestIds": [str(rid) for rid in request_ids],
-                "planId": str(plan_id),
-                "expectedVersions": {
-                    str(rid): ver for rid, ver in expected_versions.items()
-                },
-            }
-        )
-
-        def _execute(conn: Connection) -> Result[DeliveryLinkReceipt]:
-            advisory_lock(conn, json.dumps([operation, skey, principal, key]))
-            previous = (
-                conn.execute(
-                    select(command_receipts).where(
-                        command_receipts.c.scope_key == skey,
-                        command_receipts.c.principal_id == principal,
-                        command_receipts.c.operation == operation,
-                        command_receipts.c.idempotency_key == key,
-                    )
-                )
-                .mappings()
-                .first()
-            )
-            if previous is not None:
-                if previous["request_hash"] != request_hash:
-                    return Failure("Conflict", "C04.IDEMPOTENCY_CONFLICT")
-                return Ok(DeliveryLinkReceipt.model_validate(previous["response_body"]))
-
-            rows = (
-                conn.execute(
-                    select(deliveries)
-                    .where(
-                        deliveries.c.scope_key == skey,
-                        deliveries.c.delivery_id.in_(request_ids),
-                    )
-                    .order_by(deliveries.c.delivery_id)
-                )
-                .mappings()
-                .all()
-            )
-            by_id = {row["delivery_id"]: row for row in rows}
-            if len(by_id) != len(request_ids):
-                return Failure("NotFound", "C04.DELIVERY_NOT_FOUND")
-
-            for rid in request_ids:
-                row = by_id[rid]
-                if row["status"] != "pending":
-                    return Failure("Conflict", "C04.DELIVERY_NOT_PENDING")
-                if row["version"] != expected_versions[rid]:
-                    return Failure("Conflict", "C04.VERSION_CONFLICT")
-
-            timestamp = self._now()
-            new_versions: dict[UUID, int] = {}
-            for rid in request_ids:
-                current = Delivery.model_validate(by_id[rid]["delivery"])
-                next_version = current.version + 1
-                next_delivery = Delivery(
-                    delivery_id=current.delivery_id,
-                    version=next_version,
-                    status="planned",
-                    pickup=current.pickup,
-                    destination=current.destination,
-                    cargo=current.cargo,
-                    time_window=current.time_window,
-                    constraints=current.constraints,
-                    planned_at=timestamp,
-                    progress=current.progress,
-                    created_at=current.created_at,
-                    updated_at=timestamp,
-                )
-                result = conn.execute(
-                    update(deliveries)
-                    .where(
-                        deliveries.c.scope_key == skey,
-                        deliveries.c.delivery_id == rid,
-                        deliveries.c.version == expected_versions[rid],
-                        deliveries.c.status == "pending",
-                    )
-                    .values(
-                        version=next_version,
-                        status="planned",
-                        plan_id=plan_id,
-                        planned_at=timestamp,
-                        delivery=next_delivery.to_wire(),
-                        updated_at=timestamp,
-                    )
-                )
-                if result.rowcount != 1:
-                    raise _RollbackError(Failure("Conflict", "C04.VERSION_CONFLICT"))
-                new_versions[rid] = next_version
-
-            receipt = DeliveryLinkReceipt(
-                request_ids=list(request_ids),
-                plan_id=plan_id,
-                versions=new_versions,
-            )
-            conn.execute(
-                insert(command_receipts).values(
-                    scope_key=skey,
-                    principal_id=principal,
-                    operation=operation,
-                    idempotency_key=key,
-                    request_hash=request_hash,
-                    response_status=200,
-                    response_body=receipt.model_dump(mode="json", by_alias=True),
-                    created_at=timestamp,
-                )
-            )
-            self._record_audit(
-                conn,
-                scope_key=skey,
-                provider_id=None,
-                principal_id=principal,
-                operation=operation,
-                outcome="Ok",
-                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
-                correlation_id=context.correlation_id,
-                occurred_at=timestamp,
-            )
-            return Ok(receipt)
-
-        try:
-            if connection is not None:
-                with connection.begin_nested():
-                    outcome = _execute(connection)
-            else:
-                with self.engine.begin() as owned_conn:
-                    outcome = _execute(owned_conn)
-        except _RollbackError as aborted:
-            outcome = aborted.failure
-        except SQLAlchemyError:
-            self._record_rejected_audit(
-                run_scope=run_scope,
-                context=context,
-                operation=operation,
-                outcome="Unavailable",
-                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
-                correlation_id=context.correlation_id,
-            )
-            return Failure("Unavailable", "C04.STORE_UNAVAILABLE")
-
-        if isinstance(outcome, Failure):
-            self._record_rejected_audit(
-                run_scope=run_scope,
-                context=context,
-                operation=operation,
-                outcome=outcome.kind,
-                target_ids=[str(plan_id), *(str(rid) for rid in request_ids)],
-                correlation_id=context.correlation_id,
-                details={"code": outcome.message},
-            )
-        else:
-            log.info(
-                "markRequestsPlanned: linked %d delivery request(s) to plan %s",
-                len(request_ids),
-                plan_id,
-                extra=_trace_extra(context.correlation_id, run_scope),
-            )
-        return outcome
 
     def update_progress(
         self,
@@ -1143,6 +1186,7 @@ class DeliveryService:
                                 connection,
                                 event_type="DeliveryProgressChanged",
                                 delivery=next_delivery,
+                                provider_id=row["provider_id"],
                                 run_scope=run_scope,
                                 correlation_id=context.correlation_id,
                                 observed_at=progress.updated_at,

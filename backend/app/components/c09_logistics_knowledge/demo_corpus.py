@@ -12,7 +12,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.components.c09_logistics_knowledge.contracts import (
     PolicyQuery,
@@ -29,7 +29,7 @@ DEMO_ZONES = {"dublin-D1", "dublin-D2", "dublin-D8"}
 DEMO_CURATOR = AuthContext(
     principal_id="demo-curator",
     principal_type="User",
-    roles=["KnowledgeCurator"],
+    roles=["curator"],
     correlation_id=uuid4(),
 )
 
@@ -71,13 +71,15 @@ HELLO_WORLD_QUERY = {
 }
 
 
-def hello_world_query(service: LogisticsKnowledge) -> str:
+def hello_world_query(
+    service: LogisticsKnowledge, correlation_id: UUID | None = None
+) -> str:
     """Query as C05 would and summarise the result in one line."""
     ctx = AuthContext(
         principal_id="service:c05",
         principal_type="Service",
         roles=["Service:C05"],
-        correlation_id=uuid4(),
+        correlation_id=correlation_id or uuid4(),
     )
     result = service.query_knowledge(ctx, PolicyQuery.model_validate(HELLO_WORLD_QUERY))
     if not isinstance(result, Ok):
@@ -90,7 +92,7 @@ def hello_world_query(service: LogisticsKnowledge) -> str:
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     from app.components.c06_city_monitoring.router import libpq_url
     from app.components.c09_logistics_knowledge.postgres_store import (
         PostgresKnowledgeStore,
@@ -100,7 +102,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--conflict", action="store_true", help="add the amendment")
     parser.add_argument("--query", action="store_true", help="run the HGV D2 query")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--correlation-id", type=UUID, help="original delivery trace for --query"
+    )
+    args = parser.parse_args(argv)
     configure_logging("C09")
     # the API container's DATABASE_URL is SQLAlchemy's form; psycopg needs libpq's
     dsn = libpq_url(
@@ -121,7 +126,7 @@ def main() -> None:
         else:
             print(f"FAILED {result.kind}: {result.message}")
     if args.query:
-        print(hello_world_query(service))
+        print(hello_world_query(service, args.correlation_id))
 
 
 if __name__ == "__main__":

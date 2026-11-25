@@ -3,8 +3,8 @@ info:
   title: C11 KPI Analytics HTTP API
   version: 1.0.0
   summary: C01-facing kpi analytics contract proposal.
-  description: 'Proposal for Julian and Oscar review under #48; no runtime endpoints are implemented
-    by this change. Bearer identity is resolved by C02. Client provider/run/resource IDs are requested
+  description: 'Proposal for Julian and Oscar review under #48; current runtime exposes read-only endpoints with definition unconfigured-v1 (no agreed formulas;
+    values remain unavailable). Bearer identity is resolved by C02. Client provider/run/resource IDs are requested
     filters, not authorisation. Every operation enforces roles, provider scope and session ownership
     server-side. Success responses contain the domain value directly; Failure kinds map to HTTP error
     responses. All examples are synthetic. Errors/auth details and transport-only paging/idempotency

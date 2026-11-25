@@ -158,6 +158,7 @@ class DeliveryLinkReceipt(ContractModel):
 class DeliveryEventPayload(ContractModel):
     delivery_id: UUID4
     delivery_version: Version
+    provider_id: UUID4
     status: DeliveryStatus
     delivery: Delivery
 

@@ -101,25 +101,28 @@ export interface DeliveryDraft {
   tempMax: string;
 }
 
-export const DUBLIN_DEMO_DRAFT: DeliveryDraft = {
-  pickupAddress: "Dublin Port",
-  pickupLatitude: "53.3478",
-  pickupLongitude: "-6.2297",
-  pickupInstructions: "",
-  destinationAddress: "Trinity College Dublin",
-  destinationLatitude: "53.3438",
-  destinationLongitude: "-6.2546",
-  destinationInstructions: "",
-  cargoDescription: "Office supplies",
-  weightKg: "4.5",
-  parcelCount: "2",
-  windowStart: "2026-11-20T09:00:00Z",
-  windowEnd: "2026-11-20T12:00:00Z",
-  vehicleKinds: ["van", "cargo_bike"],
-  fragile: false,
-  tempMin: "",
-  tempMax: "",
-};
+export function dublinDemoDraft(now = Date.now()): DeliveryDraft {
+  const departure = now + 30 * 60_000;
+  return {
+    pickupAddress: "Dublin Port",
+    pickupLatitude: "53.3478",
+    pickupLongitude: "-6.2297",
+    pickupInstructions: "",
+    destinationAddress: "Trinity College Dublin",
+    destinationLatitude: "53.3438",
+    destinationLongitude: "-6.2546",
+    destinationInstructions: "",
+    cargoDescription: "Office supplies",
+    weightKg: "4.5",
+    parcelCount: "2",
+    windowStart: new Date(departure).toISOString(),
+    windowEnd: new Date(departure + 3 * 60 * 60_000).toISOString(),
+    vehicleKinds: ["van", "cargo_bike"],
+    fragile: false,
+    tempMin: "",
+    tempMax: "",
+  };
+}
 
 export interface DeliveryPayloadFields {
   pickup: {
@@ -165,6 +168,7 @@ export class DeliveryRequestError extends Error {
 
 export interface SubmitDeliveryResult {
   delivery: Delivery;
+  runId: string | null;
   replayed: boolean;
   correlationId: string | null;
   planId: string | null;
@@ -436,6 +440,7 @@ export async function submitDeliveryRequest(
   if (!response.ok) throw parseApiError(body);
   return {
     delivery: deliverySchema.parse(body),
+    runId: options.runId || null,
     replayed: response.headers.get("Idempotency-Replayed") === "true",
     correlationId: response.headers.get("X-Correlation-ID") ?? options.correlationId,
     planId: response.headers.get("X-Plan-Id"),

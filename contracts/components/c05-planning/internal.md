@@ -1,8 +1,9 @@
 # C05 Planning and Replanning
 
-Contract draft for UC03 and UC07, issue #32. Pair Ye + Zecheng.
-Reviewers Bruno or Alejandro for C07 compatibility. Proposed HTTP and event
-fields require review with C01, C08 and C10 before implementation.
+UC03 and UC07 contracts (#32), with the Dublin walking-skeleton implementation
+tracked in [#118](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/118).
+Pair Ye + Zecheng. Bruno accepted external review of #118 and requested Alejandro
+for the shared C01/C07 and integration changes. [Review discussion](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/118#issuecomment-7134488845).
 
 C05 owns proposals, confirmed plans and revisions. C08 owns actual allocation
 and operational commitments. Planning reads those facts when checking feasibility.
@@ -24,6 +25,152 @@ interface. The agreements with C07 that shaped them are in
 
 ## Provided interfaces
 
+### generatePlan(delivery, runScope, correlationId, key) → Result\<Plan\>
+
+For hop 4 of [#72](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/72),
+C04 commits a Dublin simulation delivery before its planning gateway projects the
+saved row into `SavedDelivery` and calls `app.state.planning.generate_plan` in
+process. C04 owns its delivery row and the authorised read of that row. A
+successful simulation handoff returns `X-Plan-Id`, `X-Plan-Version` and the original
+`X-Correlation-ID` alongside the delivery response. On the Deliveries page,
+**Review plan** opens that plan in the same run. The saved fields follow the
+[C04 delivery contract](../c04-delivery-management/internal.md).
+
+| Argument | What C04 supplies |
+| --- | --- |
+| `delivery` | A `SavedDelivery` constructed from the committed [C04 delivery](../c04-delivery-management/examples/delivery-submitted.json). C05 reads `deliveryId`, `version`, `status`, `progress.status`, `cargo.weightKg`, `constraints.vehicleKinds` and `timeWindow`. |
+| `run_scope` | A `PlanScope` with `scope="simulation"` and the delivery's UUIDv4 `runId`. |
+| `correlation_id` | The UUIDv4 from the original delivery request, forwarded through C05 to C09 and C10 and retained for `PlanReady`. |
+| `key` | C04 uses `c04:{deliveryId}:v{version}` when submitting or replaying a delivery. The saved-example importer uses `c04:generate:{deliveryId}:v{version}`. Both keys stay stable across retries and must be nonblank and at most 200 characters. |
+
+The Dublin proposal uses the Eden Quay segment and one van with the saved cargo
+weight. Supply the version as a JSON integer, the weight as a JSON number and
+the delivery window bounds as RFC 3339 UTC strings (for example, `2026-11-20T09:00:00Z`).
+The delivery and its progress must both be pending, and its constraints
+must allow a van. Departure is the later of the scenario start and the delivery
+window start. The six-minute route must finish within that window. C05 queries
+C09 for van delivery in Dublin D1/D2 during the saved window and passes the
+returned evidence snapshot unchanged to C10. C09 reads the shared live policy
+corpus and logs the same correlation ID. C10 records the simulation run and
+the corpus version used for this decision. C10's `PlanGenerated` decision,
+the C05 proposal and the generation receipt share one PostgreSQL transaction.
+A write failure rolls all three back. The first `PlanReady` outbox entry belongs
+to confirmation in hop 5.
+
+`Ok(Plan)` returns the committed `planId`, `version=1`,
+`status="awaiting_confirmation"` and `decisionId`. Retrying the same projected
+delivery with the same caller, run and key returns that original version.
+Different projected facts under the same key give `Conflict`. A signed-in
+operator with access to the run can read the current version with
+`GET /api/v1/plans/{planId}?scope=simulation&runId={runId}`.
+
+#### Run hop 4 from the saved delivery example
+
+From the repository root, use the local Compose stack and its migrated database.
+The last command imports the saved example with its original delivery ID and
+dates into C04's simulation store. It commits the delivery, then calls C05.
+For a wall-clock closure and detour, use the [full walkthrough](#run-the-dublin-replan)
+with `--fresh`.
+
+```sh
+docker compose up -d --build
+docker compose exec -T api python -m app.components.c09_logistics_knowledge.demo_corpus
+docker compose exec -T api python -m app.demo.c05 < contracts/components/c04-delivery-management/examples/delivery-submitted.json
+```
+
+In PowerShell, use the following form for the last command.
+
+```powershell
+Get-Content -Raw contracts/components/c04-delivery-management/examples/delivery-submitted.json | docker compose exec -T api python -m app.demo.c05
+```
+
+The CLI prints the committed plan as JSON. Repeating it with the same inputs
+returns the same plan and decision IDs. The defaults for `--run-id` and
+`--correlation-id` come from the [Dublin fixture](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/blob/develop/fixtures/dublin-scenario.json).
+Pass the delivery's original values when replaying another trace. The end-to-end
+check starts at C04's submit handler and requires evidence of its call to C05.
+
+### Confirm a generated proposal (hop 5)
+
+Sign in as an operator, submit a Dublin simulation delivery and select **Review
+plan**. The saved-example CLI also prints a `/plans?…` link. The Plans page
+loads the proposal for that run and displays **Confirm plan** above the vehicle
+assignments. The URL carries `planId`, `scope`, `runId` and the original
+`correlationId`. The shell sends the selected `X-Acting-Provider` and the delivery's
+`X-Correlation-ID` on the read and confirmation. The page shows the saved plan ID
+and version, including after a revision. Vehicle allocation follows asynchronously.
+
+For a delivery submitted through C04, reading and confirming its proposal
+requires an operator acting for the provider that owns the delivery. A different
+acting provider receives HTTP 404 on a read, confirmation or confirmation retry,
+including within the same shared run. Imported Dublin
+examples carry fixture provenance and are shared with operators authorised
+for that run. The local fixture confirmation CLI accepts only those imports.
+
+The action sends `POST /api/v1/plans/{planId}/confirmation` with the saved
+version in `expectedVersion`, the same `runScope`, and a stable
+`Idempotency-Key`. C05 calls C04's `markRequestsPlanned` on the same PostgreSQL
+connection. C04 checks each delivery version and records the link and its C10
+audit under the C05 service identity. C05 records `C05.confirmPlan` with the
+operator principal and request correlation ID from C02. Both audits, the next
+confirmed version with its original decision ID, the receipt and the first
+`PlanReady` outbox entry commit together. A retry of the same successful
+command returns its receipt without another success audit or event. A
+conflicting version requires a fresh read. If C05 rejects an authenticated
+confirmation, it records the outcome in a separate transaction after any
+business rollback.
+
+The `c05-publisher` worker sends the committed envelope to the topic exchange
+with routing key `PlanReady`. It marks the row published after RabbitMQ
+confirms receipt. If that mark is lost, the worker sends the same event ID
+again. Concurrent publishers can process different plans or runs. For one
+plan in one run, the confirmation event must have a committed publication
+mark before a worker can claim the revision event.
+The integration test receives the message and checks it against the
+saved row and the C08 event contract. Run it from `backend/` with
+`TEST_DATABASE_URL` pointing to a dedicated test database and
+`TEST_RABBITMQ_URL` pointing to the test broker.
+
+```sh
+uv run pytest tests/test_c05_confirm_plan.py tests/test_c05_outbox_publisher.py
+```
+
+### Read a confirmed delivery route for allocation
+
+C08 can use two in-process functions from
+`app.components.c05_planning.allocation`. Both take a SQLAlchemy connection
+and the `RunScopeSelector` built from the received `PlanReady` envelope's
+`scope` and `runId`.
+
+| Operation | Result |
+| --- | --- |
+| `get_delivery_route(conn, run_scope, plan_id, plan_version, delivery_id)` | `Ok(ConfirmedDeliveryRoute)` contains the saved `plan`, its single matching `route` and the same version's offset-aware `planned_departure_at`. Pass the plan ID and version from the event payload and the delivery ID from its requirement. |
+| `check_current_version(conn, run_scope, plan_id, plan_version)` | `Ok(None)` when that version is the current confirmed plan. A different head or an unconfirmed head gives `Conflict`. An unknown plan in that scope gives `NotFound`. |
+
+The first read also works for an older confirmed version. A proposal, unknown
+version, different run or delivery with no matching route gives `NotFound`.
+Multiple matching routes give `Invalid`. The returned plan includes the
+decision ID and resource requirements for checking the envelope.
+
+For an allocation, call the current-version check immediately before saving
+the commitment, on the same connection inside `with engine.begin() as conn:`.
+Use PostgreSQL `READ COMMITTED`. On success, C05 holds a shared plan lock
+until that transaction ends. Confirmation and future revision writers must
+take the matching exclusive lock with `store.lock_plan` before advancing the
+version. A failed check must prevent the allocation from being committed.
+With DBAPI autocommit, a different isolation level or no active transaction,
+the check returns `Unavailable`. Let database exceptions leave the transaction
+so the worker can retry after rollback with the event still unprocessed.
+
+With a dedicated PostgreSQL database and RabbitMQ broker configured as above,
+run the following from `backend/`. The broker test reads the Dublin route using
+the identifiers from the delivered message. The lookup tests add a later
+confirmed version to check historical reads and concurrent allocation checks.
+
+```sh
+uv run pytest tests/test_c05_confirm_plan.py tests/test_c05_allocation_lookup.py
+```
+
 ### findAffectedWork(changeScope) → Result\<AffectedWork\>
 
 C07 asks C05 which unfinished work a change touches. C05 owns plans, so it
@@ -40,7 +187,7 @@ Examples [request](examples/find-affected-work-request.json) and
 | `segmentKeys` | array of string | one of | Segments whose condition changed |
 | `resourceIds` | array of UUID | one of | Resources whose availability changed or failed |
 | `planIds` | array of UUID | one of | Plans named directly (for example by `OperationalDisruption`) |
-| `from` / `to` | timestamp | no | Time window the change applies to; default now → open-ended |
+| `from` / `to` | timestamp | no | Include routes overlapping `[from, to)`. Omitting `from` uses the C05 clock at discovery. Omitting `to` leaves the window open-ended. |
 | `scope` | enum | yes | `live` or `simulation`, copied from the event that triggered the detection |
 | `runId` | UUID | when simulation | Simulation run; must be absent when `scope` is `live` |
 
@@ -104,28 +251,183 @@ returns the first outcome again. Because the key includes `basedOnPlanVersion`, 
 also returns the saved result when that disruption version already produced a
 revision for that plan and run, even if a retry carries a newer `basedOnPlanVersion`.
 
+#### Run the Dublin replan
+
+The C07 worker uses its existing `PlanningPort` in-process. Discovery starts
+from the current confirmed plans in the event's partition and reads progress
+through C04. The revision locks the plan, checks its base version and rereads
+the linked deliveries. It queries C06 for the latest conditions on the current
+route and the detour. A selected detour uses the delivery's current van and
+capacity requirements, the C09 policy evidence and the saved delivery window.
+After evaluating the route, C05 asks C06 to hold that snapshot version through
+commit. If city conditions changed meanwhile, C05 returns `Unavailable` so
+C07 can retry against current facts. A stale plan version returns `Conflict`
+for C07's one rediscovery attempt.
+Once C05 holds that version, it rechecks departure, road validity and the
+delivery deadline at decision time. If the detour no longer fits, it records
+`ReviewRequired` and keeps the current plan.
+The fixed route covers one unfinished Dublin delivery. An explicit open report
+for Abbey Street Lower must cover the full eight-minute trip. A reported delay
+or a speed too low for the 1,600 m detour requires operator review. C08 owns
+the vehicle and driver commitment.
+
+The revision, C10 decision with its evidence, request receipt and revised
+`PlanReady` commit together. The event's `causationId` is the triggering
+`CityStateUpdated.eventId`. C07 receives `PlanSaved` after commit. Replaying
+the same saved disruption version can recover that result without advancing
+the plan or publishing a third event. `NoChange` and `ReviewRequired` record
+the reason and retain the current plan.
+
+From `backend/`, point `TEST_DATABASE_URL` at a dedicated test database and
+`TEST_RABBITMQ_URL` at the test broker, then run:
+
+```sh
+uv run pytest -q tests/test_c05_replanning.py
+```
+
+The test confirms a generated delivery, injects the closure from the shared
+Dublin fixture, and follows the C06 outbox through RabbitMQ and the C07
+consumer to the revised C05 event. It uses a clock on the fixture's date and
+reads both saved routes through the C08 lookup.
+
+For a wall-clock run, start Compose and seed the shared C09 policy corpus.
+Run these commands at the repository root.
+
+```sh
+docker compose up -d --build
+docker compose exec -T api python -m app.components.c09_logistics_knowledge.demo_corpus
+```
+
+**From C01 and C04.** Sign in to the [frontend](../../../frontend/README.md#sign-in-to-resources)
+as an operator, choose the acting provider, open **Deliveries**, select **Dublin
+simulation** and submit the Dublin preset with a current delivery window. Click
+**Review plan**. The URL identifies the proposal (`planId`), simulation (`runId`)
+and original submission trace (`correlationId`). Use these three values below
+as `plan`, `run` and `trace` for confirmation and the closure.
+
+With a signed-in operator's `ULOP_TOKEN`, the checker can also submit through
+C04 over HTTP. Running `scripts/hello-world.sh --run-id <run-uuid>
+--correlation-id <trace-uuid>` without a plan ID starts one new delivery with
+a three-hour window starting in 30 minutes. It prints the Plans link and the
+arguments for resuming after confirmation. This first invocation leaves the
+road open for the operator and driver.
+
+**From the saved delivery example.** For the local fixture walkthrough, generate
+a fresh example with the following commands in a POSIX shell.
+
+```sh
+run=$(python -c 'import json; print(json.load(open("fixtures/dublin-scenario.json"))["runId"])')
+trace=$(python -c 'from uuid import uuid4; print(uuid4())')
+proposal=$(docker compose exec -T api python -m app.demo.c05 --fresh --run-id "$run" --correlation-id "$trace" \
+  < contracts/components/c04-delivery-management/examples/delivery-submitted.json)
+plan=$(printf '%s' "$proposal" | python -c 'import json, sys; print(json.load(sys.stdin)["planId"])')
+```
+
+Each `--fresh` invocation creates a new pending delivery ID and generation
+key. Submission and progress timestamps use the current UTC time. The window
+opens 30 minutes later and keeps the example's original duration. The plan,
+its decision and its Plans link retain the supplied run and trace.
+
+When testing the C08 driver commitment with
+[PR #122](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/122),
+bind the vehicle and driver to the proposal **before** confirmation.
+Choose one way to confirm the new proposal.
+
+- **C01 browser check.** Select **Confirm plan** on the linked proposal.
+  For a saved example, open the printed `/plans?…` link after signing in and
+  selecting the operator's acting provider. The same plan should display v2.
+- **Local Compose check without hosted sign-in.** Run the one-shot demo
+  service with the plan, run and trace from generation.
+
+  ```sh
+  docker compose run --rm demo-confirm "$plan" --run-id "$run" --correlation-id "$trace"
+  ```
+
+  The command calls C05 with a synthetic operator and prints the committed
+  v2 plan. A retry returns the original confirmation. The checker reports
+  hop 5 as `WIRED` and identifies the CLI fixture and the C08 broker receipt.
+  Use a fresh proposal and the browser path for the C01 HTTP acceptance check.
+
+For the C08 commitment check, have the driver accept the offer before
+injecting the closure.
+
+Run the following during the 30-minute lead time. The checker injects a
+fresh Eden Quay closure into the same run with the delivery's trace. C07
+can then find the unfinished route and request the v3 revision.
+
+```sh
+scripts/hello-world.sh --run-id "$run" --correlation-id "$trace" --plan-id "$plan"
+```
+
+PowerShell uses the same sequence. After starting Compose and loading the
+corpus, generate the proposal with these commands.
+
+```powershell
+$run = (Get-Content -Raw fixtures/dublin-scenario.json | ConvertFrom-Json).runId
+$trace = [guid]::NewGuid().ToString()
+$proposal = Get-Content -Raw contracts/components/c04-delivery-management/examples/delivery-submitted.json |
+  docker compose exec -T api python -m app.demo.c05 --fresh --run-id $run --correlation-id $trace
+$plan = ($proposal | ConvertFrom-Json).planId
+```
+
+Confirm through Plans or run
+`docker compose run --rm demo-confirm $plan --run-id $run --correlation-id $trace`.
+Then run `python scripts/hello_world.py --run-id $run --correlation-id $trace --plan-id $plan`.
+
+The report follows the plan through the following records.
+
+| Hop | Evidence for this delivery |
+| --- | --- |
+| 3–4 | C04's `DeliverySubmitted` outbox record and retained API logs identify the original submission and the actual in-process handoff for this delivery and plan. The C05 generation receipt and C10 decision identify the saved proposal and its C09 evidence. The checker reports `PASS` for the complete handoff and `WIRED` for generation from a saved example. |
+| 5 | The operator confirmation receipt, linked C04 delivery, confirmed version and published outbox envelope identify the first `PlanReady`. The checker looks back in the C08 worker logs for acknowledgement of that exact event. |
+| 8 | C07 must record `PlanSaved` for this plan and its confirmed base version under the triggering closure. The C10 replan decision, revised plan and second outbox envelope identify the detour. C05 publisher and C08 worker logs must match the revised event in the same run and trace. |
+
+To review the same delivery again, pass the C06 closure event ID from the
+first run. This mode reads the saved records and retained worker logs. A
+missing subscriber log leaves receipt unverified, even if PostgreSQL has a
+publication timestamp.
+
+```sh
+printf 'C06 closure event UUID: '
+read -r closure
+scripts/hello-world.sh --run-id "$run" --correlation-id "$trace" --plan-id "$plan" --closure-event-id "$closure"
+```
+
+The report distinguishes broker receipt from an accepted vehicle assignment.
+Checking the driver's commitment requires C08's allocation and offer records.
+The overall command exits with status 1 while any of the team's hops still
+has incomplete evidence.
+
 ## Required interfaces
 
 | Provider | Operation | Use by C05 |
 | --- | --- | --- |
 | C02 | `authorize(context, action, scope)` | Authorise generation, confirmation and reads within the permitted scope |
 | C03 | `listEligibleResources(scope)` | Read resource capabilities, observed availability and quality |
-| C04 | `getRequests(context, requestIds)` | Read requirements, versions and progress |
-| C04 | `markRequestsPlanned(requestIds, planId)` | Link deliveries when confirming a plan |
+| C04 | `getRequests(context, runScope, requestIds)` | Read requirements, versions and progress in the authorised run |
+| C04 | `markRequestsPlanned(context, runScope, requestIds, planId, expectedVersions, key)` | Link deliveries when confirming a plan |
 | C06 | `getCitySnapshot(scope, freshnessPolicy)` | Read versioned and quality-labelled city conditions; definition in [C06](../c06-city-monitoring/internal.md) |
 | C09 | `queryKnowledge(context, policyQuery)` | Obtain applicable policy evidence and provenance |
-| C10 | `recordDecision(decisionRecord)` | Preserve actual input versions, alternatives, reasons and exact evidence used |
+| C10 | `recordDecision(conn, ctx, record)` | Save actual input versions, alternatives, reasons and exact evidence on the C05 transaction's connection |
+| C10 | `recordOutcome(conn, ctx, outcome)` | Record the signed-in operator's confirmation outcome using the request context |
 
 C02/C03/C04/C09/C10 provider definitions remain authoritative as their contracts
 are published. Required operations listed here do not define their fields.
 
+The [C02 service identity contract](../c02-identity-access/internal.md) also
+specifies a backend-issued caller context for workers such as C07. C02 tracks
+worker identities as follow-up in [#56](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/56). The current
+C04 generation and C07 replan ports take the run and trace. Adding a trusted
+caller context to those ports and covering their protected service writes
+with C10 requires coordination with C02 and the calling components. C05's
+producer identity on an outgoing decision identifies the decision author.
+
 ## Planning and persistence rules
 
-The proposed C01 HTTP operations are in `openapi.yaml`. Authentication is obtained
-from the bearer token. HTTP paths use `/api/v1/plans`; HTTP errors use the
-C11/C12-style `error { code, message, correlationId }` envelope proposal, pending
-shared frontend review. This transport mapping does not change the internal
-`Result` contract or C07 models. Authorisation and scope checks use C02.
+The C01 read and confirmation operations are in `openapi.yaml`. The API uses
+the shell's bearer token and provider context, enforces run access and returns
+`error { code, message, correlationId }` on these operations. Internal C07 calls
+use the typed `Result` contract.
 An initial proposal awaits operator confirmation. Confirmation checks its expected version, links its
 deliveries and queues `PlanReady` atomically with the confirmed state and decision
 references. A saved revision atomically records its expected-version update,
@@ -140,13 +442,12 @@ For UC07, `trigger.citySnapshotVersion` records the City State that triggered
 the request when C07 provides it. C05 reads current conditions in the same run
 and records the version it actually uses for the decision.
 
-C08 uses `planId`, `planVersion` and the event's run scope to look up C05's
-current plan. It rechecks that the event version is still current before
-committing resources. The `requirements` list describes all resource needs for
+The `requirements` list in the `PlanReady` payload describes all resource needs for
 unfinished deliveries in that plan version. C08 checks which existing
-commitments still satisfy those needs against the revised route and timing.
+commitments still satisfy those needs using the
+[confirmed delivery route and departure](#read-a-confirmed-delivery-route-for-allocation).
 
-For the C05 → C08 handoff in #107, the scoped lookup takes the event's
+For the [C05 → C08 handoff](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950), the scoped lookup takes the event's
 `planId`, `planVersion` and run scope, plus the unfinished `deliveryId`.
 It returns the matching route and its `plannedDepartureAt` together from
 that confirmed version. The result identifies the scope, plan and version.
@@ -176,7 +477,8 @@ Versions 3 and 4 have the same van capacity requirement. The
 [PlanReady event](examples/plan-ready-revision-event.json) carries that requirement
 with version 4 and its decision ID. It retains the closure correlation ID and
 simulation run ID and has its own event ID.
-HTTP examples and this event illustrate proposed fields pending consumer review.
+These are contract examples. A fresh walking-skeleton delivery starts at v1,
+confirms at v2 and takes the detour at v3.
 
 ## Agreed with C07 (#59, 20 Nov 2026)
 
@@ -199,9 +501,10 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
 4. **ReplanOutcome.** It gains `reason` (text, optional), required when `status` is
    `ReviewRequired`. `Infeasible` is no longer a failure. The remaining failures are
    `Invalid`, `NotFound`, `Conflict` and `Unavailable`.
-5. **PlanSaved.** It is returned when the revision and its `PlanReady` outbox entry
-   are saved together. C05 owns the publication state; it is not part of the
-   response to C07.
+5. **PlanSaved.** C05 returns the committed revision's `newPlanVersion` and
+   `decisionId` after saving the revision and its `PlanReady` outbox entry
+   together. C05 owns the publication state. C07 owns recording the returned
+   version for the Disruptions view.
 6. **Port.** `PlanningPort` returns a typed `Result` (`app.shared.result`: `Ok` or
    `Failure`) from both calls, instead of raising exceptions.
 7. **Unavailable and retry.** C07 marks the detection result as `retryable` only
@@ -221,10 +524,11 @@ HTTP examples and this event illustrate proposed fields pending consumer review.
 
 ## Open coordination points
 
-- The HTTP paths, proposal representation, priorities and resource-needs schema
-  are proposals for C01/C03/C04/C08 review. Only the two C07 interfaces above
-  have existing typed models. New HTTP/event schemas have no runtime yet.
-- Exchange/routing and the canonical shared event envelope are tracked in #28.
-  The event draft refers to the existing C06 envelope to avoid another copy.
-- C05 receives replanning through an internal call from C07. No direct subscription
-  to `CityStateUpdated` is currently proposed.
+- The integrated C04 handoff uses the authoritative delivery table introduced
+  in [#123](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/123).
+  The confirmed delivery and its planning receipt are written through C04
+  on C05's transaction. The accepted proposal remains accessible from **Review plan**.
+- The [C08 version lookup agreed in #114](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950)
+  is connected in [PR #122](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/122).
+  That change depends on #119 and rechecks the version inside the allocation
+  transaction. On #119 alone, the C08 worker still uses its demo plan reader.

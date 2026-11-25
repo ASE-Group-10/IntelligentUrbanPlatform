@@ -15,6 +15,7 @@ from app.components.c04_delivery_management.contracts import (
     DeliveryProgress,
     SubmitDeliveryRequest,
 )
+from app.components.c04_delivery_management.planning import StubPlanningGateway
 from app.components.c04_delivery_management.service import DeliveryService
 from app.shared.auth import AuthContext
 from app.shared.contracts import RunScopeSelector
@@ -35,7 +36,9 @@ def test_c04_postgres_submit_plan_link_and_progress(c04_database, example):
     engine = create_engine(_sqlalchemy_url(c04_database))
     try:
         fixed_now = datetime(2026, 11, 20, 8, 0, 0, tzinfo=UTC)
-        service = DeliveryService(engine, clock=lambda: fixed_now)
+        service = DeliveryService(
+            engine, planning_gateway=StubPlanningGateway(), clock=lambda: fixed_now
+        )
 
         provider_id = uuid4()
         operator_ctx = AuthContext(
@@ -107,6 +110,7 @@ def test_c04_postgres_submit_plan_link_and_progress(c04_database, example):
             events = conn.execute(select(c04_store.outbox)).mappings().all()
         assert len(events) == 2
         for row in events:
-            DeliveryEvent.model_validate(row["envelope"])
+            parsed = DeliveryEvent.model_validate(row["envelope"])
+            assert parsed.payload.provider_id == provider_id
     finally:
         engine.dispose()

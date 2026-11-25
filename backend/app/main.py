@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -16,6 +17,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.components.c02_identity_access.tokens import SupabaseVerifier
 from app.components.c04_delivery_management.router import router as deliveries_router
 from app.components.c04_delivery_management.service import DeliveryService
+from app.components.c05_planning.delivery_gateway import DeliveryPlanningGateway
+from app.components.c05_planning.router import router as planning_router
+from app.components.c05_planning.service import PlanningService
+from app.components.c05_planning.store import PostgresPlanStore
 from app.components.c06_city_monitoring.ingestion import CityMonitoring
 from app.components.c06_city_monitoring.postgres_store import PostgresCityStateStore
 from app.components.c06_city_monitoring.router import libpq_url
@@ -30,9 +35,14 @@ from app.components.c09_logistics_knowledge.postgres_store import (
     PostgresKnowledgeStore,
 )
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
+from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
+from app.components.c10_decision_records.service import DecisionRecords
+from app.components.c11_kpi_analytics.router import router as analytics_router
+from app.components.c12_simulation_replay.router import router as replay_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
-from app.config import get_settings
+from app.config import get_ingress_settings, get_settings
+from app.demo.feed import load_scenario
 from app.infrastructure.database import make_engine
 from app.infrastructure.errors import APIError, api_error_handler
 from app.integrations.identity import router as identity_router
@@ -66,36 +76,46 @@ def create_app(
         app.state.identity_verifier = identity_verifier or (
             SupabaseVerifier(str(project_url)) if project_url else None
         )
-        app.state.engine = engine or make_engine(
-            app.state.settings.database_url.get_secret_value()
-        )
+        database_url = app.state.settings.database_url.get_secret_value()
+        conninfo = libpq_url(database_url)
+        service_clock = clock or (lambda: datetime.now(UTC))
+        app.state.engine = engine or make_engine(database_url)
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
         )
-        app.state.deliveries = deliveries or DeliveryService(
-            app.state.engine,
-            planning_gateway=planning_gateway,
-            clock=clock,
+        replay_url = getattr(app.state.settings, "replay_database_url", None)
+        app.state.replay_engine = (
+            make_engine(replay_url.get_secret_value()) if replay_url else None
         )
         app.state.city_monitoring = CityMonitoring(
-            store=city_state_store
-            or PostgresCityStateStore(
-                libpq_url(app.state.settings.database_url.get_secret_value())
-            ),
-            clock=clock or (lambda: datetime.now(UTC)),
+            store=city_state_store or PostgresCityStateStore(conninfo),
+            clock=service_clock,
         )
         app.state.disruption_store = disruption_store or PostgresDisruptionStore(
-            libpq_url(app.state.settings.database_url.get_secret_value())
+            conninfo
         )
         # C09 runs in-process; C05 calls app.state.knowledge.query_knowledge
         app.state.knowledge = LogisticsKnowledge(
-            PostgresKnowledgeStore(
-                libpq_url(app.state.settings.database_url.get_secret_value()),
-                DEMO_ZONES,
-            ),
-            clock=clock or (lambda: datetime.now(UTC)),
+            PostgresKnowledgeStore(conninfo, DEMO_ZONES),
+            clock=service_clock,
+        )
+        app.state.dublin_scenario = load_scenario()
+        app.state.planning = PlanningService(
+            PostgresPlanStore(conninfo),
+            app.state.knowledge,
+            DecisionRecords(PostgresDecisionStore(), clock=service_clock),
+            app.state.dublin_scenario,
+            clock=service_clock,
+        )
+        app.state.deliveries = deliveries or DeliveryService(
+            app.state.engine,
+            planning_gateway=planning_gateway
+            or DeliveryPlanningGateway(app.state.planning),
+            clock=service_clock,
         )
         yield
+        if app.state.replay_engine is not None:
+            app.state.replay_engine.dispose()
         if engine is None:
             app.state.engine.dispose()
 
@@ -103,12 +123,11 @@ def create_app(
         title="Urban Logistics · UC01 Resource API",
         version="0.1.0",
         description="C02 identity, persistent resources, mock mapping and C08. "
-        "C10 uses a durable audit stand-in. Events stay in an unpublished outbox.",
+        "C05 generates simulation proposals with C09 policy evidence and C10 "
+        "decision records. Resource registration uses a durable audit stand-in.",
         lifespan=lifespan,
     )
-    app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "testserver"]
-    )
+    allowed_hosts, cors_origins = get_ingress_settings(settings)
 
     @app.middleware("http")
     async def request_context(request, call_next):
@@ -123,6 +142,29 @@ def create_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-Acting-Provider",
+                "X-Correlation-ID",
+            ],
+            expose_headers=[
+                "Idempotency-Replayed",
+                "Location",
+                "X-Correlation-ID",
+                "X-Plan-Id",
+                "X-Plan-Stub",
+                "X-Plan-Version",
+            ],
+        )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
 
     app.add_exception_handler(APIError, api_error_handler)
 
@@ -184,10 +226,13 @@ def create_app(
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.include_router(allocation_router)
+    app.include_router(planning_router)
     app.include_router(identity_router)
     app.include_router(router)
     app.include_router(deliveries_router)
     app.include_router(city_state_router)
+    app.include_router(analytics_router)
+    app.include_router(replay_router)
     app.include_router(disruptions_router)
     return app
 
