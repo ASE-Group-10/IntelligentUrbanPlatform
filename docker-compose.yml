@@ -119,6 +119,7 @@ services:
         required: false
     environment:
       <<: *sqlalchemy-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # LOCAL disposable credentials only; never use this login on Supabase.
       REPLAY_DATABASE_URL: postgresql+psycopg://c12_playback:c12_local_only@db:5432/ulop
     ports:
@@ -169,7 +170,9 @@ services:
   c08-worker:
     <<: *backend
     command: ["python", "-m", "app.components.c08_allocation.worker"]
-    environment: *sqlalchemy-env
+    environment:
+      <<: *sqlalchemy-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on: *after-migrations
 
   # Local-only, idempotent role provisioning. It ignores all configurable DB URLs
