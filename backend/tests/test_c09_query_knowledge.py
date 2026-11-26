@@ -79,8 +79,15 @@ def test_unknown_zone_is_invalid(query):
 
 def test_caller_without_query_role_is_forbidden(query):
     store = InMemoryKnowledgeStore({"dublin-D2"}, _passages())
-    result = _service(store).query_knowledge(_ctx("KnowledgeCurator"), query)
+    result = _service(store).query_knowledge(_ctx("curator"), query)
     assert result == Failure("Forbidden", "C09.FORBIDDEN")
+
+
+@pytest.mark.parametrize("role", ["operator", "admin"])
+def test_c02_operator_and_admin_may_query(query, role):
+    """User roles are C02's names (`operator`), not a C09-only dialect."""
+    store = InMemoryKnowledgeStore({"dublin-D2"}, _passages())
+    assert isinstance(_service(store).query_knowledge(_ctx(role), query), Ok)
 
 
 def test_unreachable_store_is_unavailable(query):

@@ -330,7 +330,7 @@ def test_producer_must_match_the_calling_service(service, backend, ctx):
 def test_outcome_is_stored_with_principal_and_correlation_from_context(
     service, backend
 ):
-    ctx = _ctx("User", "LogisticsOperator")
+    ctx = _ctx("User", "operator")
     tx = backend.begin()
 
     result = service.record_outcome(tx, ctx, _outcome())

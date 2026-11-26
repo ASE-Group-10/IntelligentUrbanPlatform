@@ -69,6 +69,8 @@ def denied():
     operation_id="listVehicleAssignments",
 )
 def list_assignments(request: Request, ctx: Identity, run_id: RunId = None):
+    request.state.c08_scope = "simulation" if run_id else "live"
+    request.state.c08_run_id = run_id
     operator = is_operator(ctx)
     if not operator and "driver" not in ctx.roles:
         raise denied()
@@ -88,6 +90,8 @@ def list_assignments(request: Request, ctx: Identity, run_id: RunId = None):
 
 def traced(request, result):
     request.state.correlation_id = result["correlationId"]
+    request.state.c08_outcome = result["acceptanceStatus"]
+    request.state.c08_assignment = result["assignmentRef"]
     logging.getLogger("uvicorn.error").info(
         "C08 assignmentRef=%s outcome=%s correlationId=%s",
         result["assignmentRef"],
@@ -110,6 +114,8 @@ def assign_vehicle(
     key: Key,
     run_id: RunId = None,
 ):
+    request.state.c08_scope = "simulation" if run_id else "live"
+    request.state.c08_run_id = run_id
     if not is_operator(ctx):
         raise denied()
     return traced(request, store(request).offer(ctx, body, key, run_id))
@@ -129,6 +135,8 @@ def record_offer_response(
     key: Key,
     run_id: RunId = None,
 ):
+    request.state.c08_scope = "simulation" if run_id else "live"
+    request.state.c08_run_id = run_id
     if "driver" not in ctx.roles:
         raise denied()
     return traced(

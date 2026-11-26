@@ -1,6 +1,21 @@
 # C12 Simulation and Replay: internal interfaces (UC12)
 
-Status: contract proposal; no runtime endpoint is implemented here. Follows #35/#46;
+Current integration increment (#16/#17): HTTP routing, C02 analyst/provider checks,
+owned PostgreSQL storage and C04 receive workers are implemented. See the
+[executable integration guide](../../../docs/c11-c12-integration.md) for commands,
+recording coverage and outstanding agreements. This supersedes the original
+proposal's no-runtime/no-database statements below. No completed paired session or
+full thin-slice integration is claimed. C11 values remain unavailable until metric
+formulas are agreed; C12 C04-only captures remain explicitly incomplete.
+
+Current capture requires authoritative C04 `payload.providerId` matching the
+explicitly registered run provider; other providers' outcomes are not recorded.
+Root local Compose starts both workers and provisions a restricted local playback
+login outside shared database migrations. Shared/deployed credentials remain
+separately provisioned by the database owner.
+
+
+Original contract proposal (historical context; current runtime noted above). Follows #35/#46;
 HTTP publication is tracked by #48. Pair: Jolin + Qingyuan. Requested HTTP reviewers:
 Julian (Antel0p3) and Oscar (OscarGomezGonzalezz). AI-assisted preparation for Jolin;
 no completed paired work or UC12 handover is claimed.

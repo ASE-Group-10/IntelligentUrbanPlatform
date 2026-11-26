@@ -56,8 +56,9 @@ by the operator.
 
 The VM runs from `/home/azureuser/ulop-deploy` using its host-local
 `compose.yaml` and `.env`. During a release, `scripts/azure/deploy-backend.sh`
-applies `scripts/azure/backend-image.override.yml` to pin the four backend
-services (`api`, `c06-publisher`, `c07-worker`, `c08-worker`) to
+applies `scripts/azure/backend-image.override.yml` to pin the eight backend
+services (`api`, `c04-publisher`, `c05-publisher`, `c06-publisher`,
+`c07-worker`, `c08-worker`, `c11-worker`, `c12-worker`) to
 `${BACKEND_IMAGE}`. Once verification succeeds (or after a verified rollback),
 the script also writes the active image into
 `/home/azureuser/ulop-deploy/compose.override.yml` so subsequent plain
@@ -84,18 +85,19 @@ reverting to `compose.yaml`'s default image.
      against `public.schema_migrations` (aborts before recreating containers if
      any migration is missing).
    - `docker compose -f compose.yaml -f backend-image.override.yml up -d` for
-     `api`, `c06-publisher`, `c07-worker`, and `c08-worker` (wrapped so partial
+     all eight backend services listed above (wrapped so partial
      rollout failures trigger rollback instead of leaving mixed versions).
    - Bounded-timeout health check (`--connect-timeout 2 --max-time 5`) against
      `http://127.0.0.1:8000/health` checking `"status":"ok"` and
      `"database":"connected"`, RabbitMQ active-consumer check on
-     `c07.city-state-updated` and `c08.plan-ready`, and verification that all
-     four services stay `running` with zero restarts.
+     `c07.city-state-updated`, `c08.plan-ready`, `c11.delivery-observations`,
+     and `c12.delivery-recordings`, and verification that all
+     eight services stay `running` with zero restarts.
    - Persisting the verified image to `compose.override.yml` and
      `.last-deployed-image`.
 4. **Rollback**:
    - **Automatic**: If `docker compose up`, `/health`, RabbitMQ consumer
-     attachment, or container restart checks fail, the script restores all four
+     attachment, or container restart checks fail, the script restores all eight
      services to the previous `api` image, re-runs the full health and worker
      verification, updates `compose.override.yml`, and reports
      `ROLLBACK_STATUS=RECOVERED` or `ROLLBACK_STATUS=FAILED`.
@@ -143,3 +145,20 @@ through host Nginx on ports `80`/`443` for
    - `CORS_ORIGINS=<https://frontend-origin>` (explicit frontend origin(s), never `*`;
      default `:443`/`:80` ports are normalized, while nondefault ports remain)
    - `SUPABASE_URL=<https://project-ref.supabase.co>`
+
+The host Compose file must define all eight services before using this deployment
+script. All eight must exist in the selected image, including rollback images;
+do not roll back to revisions predating these entry points. The demo-feed
+one-shot service is not part of the continuously running release group.
+
+Before pulling or starting a release, and before rollback, the script resolves
+Compose JSON and checks each of the eight service images against the requested
+image. The workflow uploads only the script: when upgrading an existing VM,
+copy the current `scripts/azure/backend-image.override.yml` to
+`/home/azureuser/ulop-deploy/backend-image.override.yml` first. A legacy override
+that leaves any service on an old image now aborts before rollout.
+
+Run `python3 scripts/azure/test-backend-rollout.py` from the repository root.
+The stub tracks images separately per service and verifies stale-image rollback,
+legacy-override rejection before `up`, and an API-only rollback mutation that
+must fail verification.
