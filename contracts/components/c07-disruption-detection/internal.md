@@ -33,7 +33,7 @@ C10 and C12 will read it, so it should stay stable. Persisted by
 | `cause` | enum | yes | Same as SegmentCondition `cause`, plus `resource` / `operational` |
 | `severity` | enum | yes | `low` / `medium` / `high`. Slice rule: `closed` on a used segment = `high` |
 | `segmentKeys` / `resourceIds` | arrays | yes | What is disrupted |
-| `affectedPlans` | array | yes | `[{ planId, planVersion, replanRequested, replanOutcome }]` |
+| `affectedPlans` | array | yes | `[{ planId, planVersion, replanRequested, replanOutcome, newPlanVersion }]`. `newPlanVersion` is the version C05 saved with `PlanSaved`, otherwise `null`, so C01 can show v2 → v3 |
 | `triggerEventIds` | array of UUID | yes | Every event folded into this record (dedup) |
 | `quality` | enum | yes | Confidence in the classification |
 | `createdAt` / `updatedAt` | timestamp | yes | |

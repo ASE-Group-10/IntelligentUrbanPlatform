@@ -141,6 +141,7 @@ describe("DisruptionList", () => {
     expect(card).toHaveTextContent("9e2c4b6a");
     expect(card).toHaveTextContent("version 3");
     expect(card).toHaveTextContent("Revised plan saved");
+    expect(card).not.toHaveTextContent("→");
     expect(screen.getByText(/1 disruption in the Dublin simulation/)).toBeInTheDocument();
   });
 
@@ -240,5 +241,18 @@ describe("DisruptionList", () => {
     expect(screen.queryByText(/session has ended/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Last known: 1 disruption/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /Roadworks on/ })).toBeInTheDocument();
+  });
+
+  it("shows the plan version C05 saved for the revision", async () => {
+    const revised = {
+      ...DISRUPTION,
+      affectedPlans: [{ ...DISRUPTION.affectedPlans[0], planVersion: 2, newPlanVersion: 3 }],
+    };
+    renderList(signedIn(replies([200, { disruptions: [revised] }])));
+
+    const card = await screen.findByRole("region", { name: /Roadworks on/ });
+    expect(card).toHaveTextContent("version 2 → 3");
+    expect(screen.getByLabelText("version 2 revised to 3")).toBeInTheDocument();
+    expect(card).toHaveTextContent("Revised plan saved");
   });
 });

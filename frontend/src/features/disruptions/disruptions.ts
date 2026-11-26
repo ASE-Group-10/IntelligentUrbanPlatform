@@ -10,6 +10,8 @@ const affectedPlanSchema = z.object({
   planVersion: z.number().int().min(1),
   replanRequested: z.boolean(),
   replanOutcome: z.enum(["NoChange", "ReviewRequired", "PlanSaved"]).nullable().optional(),
+  /** Version C05 saved with `PlanSaved`; with `planVersion` it shows the revision. */
+  newPlanVersion: z.number().int().min(1).nullable().optional(),
 });
 
 const disruptionSchema = z.object({

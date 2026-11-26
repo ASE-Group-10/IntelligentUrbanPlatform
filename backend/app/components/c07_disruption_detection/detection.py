@@ -432,6 +432,7 @@ def _accepted(
                 "plan_version": request.trigger.based_on_plan_version,
                 "replan_requested": True,
                 "replan_outcome": outcome.status,
+                "new_plan_version": outcome.new_plan_version,
             }
         ),
         request=request,

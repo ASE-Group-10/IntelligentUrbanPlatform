@@ -195,6 +195,9 @@ class AffectedPlan(ContractModel):
     plan_version: Version
     replan_requested: bool
     replan_outcome: ReplanOutcomeStatus | None = None
+    new_plan_version: Version | None = None
+    """The version C05 saved for this plan (set with ``PlanSaved``), so C01 can
+    show the revision, e.g. v2 → v3."""
 
 
 class Disruption(ContractModel):

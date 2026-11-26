@@ -174,8 +174,16 @@ function DisruptionCard({ disruption }: { disruption: Disruption }) {
                   className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
                 >
                   <span>
-                    Plan <span className="font-mono text-xs">{plan.planId.slice(0, 8)}</span> ·
-                    version {plan.planVersion}
+                    Plan <span className="font-mono text-xs">{plan.planId.slice(0, 8)}</span> ·{" "}
+                    {plan.newPlanVersion ? (
+                      <span
+                        aria-label={`version ${plan.planVersion} revised to ${plan.newPlanVersion}`}
+                      >
+                        version {plan.planVersion} → {plan.newPlanVersion}
+                      </span>
+                    ) : (
+                      `version ${plan.planVersion}`
+                    )}
                   </span>
                   <span
                     className={
