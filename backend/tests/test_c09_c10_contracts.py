@@ -1,9 +1,12 @@
 """Every C09/C10 contract example (openapi.yaml and examples/*.json) must validate
 against its model. A failing test means the contract drifted."""
 
+import asyncio
 import copy
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 import yaml
@@ -11,7 +14,8 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.components.c09_logistics_knowledge import contracts as c09
 from app.components.c10_decision_records import contracts as c10
-from app.shared.c09_c10_common import ErrorBody
+from app.infrastructure.errors import APIError, api_error_handler
+from app.shared.c09_c10_common import ErrorResponse
 
 CONTRACTS = Path(__file__).resolve().parents[2] / "contracts" / "components"
 FILES = [
@@ -38,7 +42,9 @@ MODELS = {
     "C09QueryKnowledgeOkResponse": c09.KnowledgeResult,
     "C09QueryKnowledgeLowConfidenceResponse": c09.KnowledgeResult,
     "C09QueryKnowledgeConflictResponse": c09.KnowledgeResult,
-    "C09ErrorUnavailable": ErrorBody,
+    "C09ErrorUnavailable": ErrorResponse,
+    "C09C10ErrorUnauthenticated": ErrorResponse,
+    "C09C10ErrorValidationFailed": ErrorResponse,
     "C09PublishKnowledgeRequest": c09.PublishKnowledgeRequest,
     "C09PublishKnowledgeResponse": c09.KnowledgePublication,
     "C10RecordOutcomeRequest": c10.AuditOutcome,
@@ -52,7 +58,7 @@ MODELS = {
     "C10ExplainDecisionOkResponse": c10.Explanation,
     "C10ExplainDecisionPartialResponse": c10.Explanation,
     "C10GetDecisionEvidenceResponse": c10.DecisionEvidence,
-    "C10ErrorDecisionAmbiguous": ErrorBody,
+    "C10ErrorDecisionAmbiguous": ErrorResponse,
 }
 
 
@@ -271,3 +277,47 @@ def test_rejects_snapshot_with_conflicts_but_non_conflict_status(status):
     snapshot["retrievalStatus"] = status
     with pytest.raises(ValidationError, match="Conflict exactly when"):
         c09.EvidenceSnapshot.model_validate(snapshot)
+
+
+# ---- error body: one C01 handler for C02 and C09/C10 (#133 review) ----
+
+C02 = CONTRACTS / "c02-identity-access"
+
+
+def _c02_error_examples():
+    """Every error example C02 publishes: its examples/ file and openapi responses."""
+    yield json.loads((C02 / "examples" / "unauthenticated-error.json").read_text())
+    responses = yaml.safe_load((C02 / "openapi.yaml").read_text(encoding="utf-8"))[
+        "components"
+    ]["responses"]
+    for response in responses.values():
+        yield response["content"]["application/json"]["example"]
+
+
+@pytest.mark.parametrize(
+    "body", list(_c02_error_examples()), ids=lambda b: b["error"]["code"]
+)
+def test_c02_error_examples_validate_as_c09_c10_errors(body):
+    """C01 uses one handler, so C09/C10's model must accept C02's own errors."""
+    ErrorResponse.model_validate(body)
+
+
+def test_validation_error_from_the_app_handler_validates():
+    """The real 422 body (app/main.py) carries a ``fields`` array."""
+    fields = [{"path": "body.timeWindow", "message": "bad", "code": "value_error"}]
+    request = SimpleNamespace(state=SimpleNamespace(correlation_id=str(uuid4())))
+    response = asyncio.run(
+        api_error_handler(
+            request, APIError(422, "VALIDATION_FAILED", "Correct.", fields=fields)
+        )
+    )
+    body = ErrorResponse.model_validate_json(response.body)
+    assert body.error.fields[0].path == "body.timeWindow"
+
+
+def test_rejects_lower_case_error_code():
+    bad(
+        "C09C10ErrorUnauthenticated",
+        lambda d: d["error"].update(code="nope"),
+        ErrorResponse,
+    )

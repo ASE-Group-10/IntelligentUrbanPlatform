@@ -43,9 +43,11 @@ def make_consumer(
             if result
             in {
                 "ineligible vehicle",
+                "ineligible driver",
                 "insufficient capacity",
                 "unresolved",
                 "event differs from saved plan",
+                "invalid saved delivery route",
                 "incompatible route",
             }
             else logging.INFO

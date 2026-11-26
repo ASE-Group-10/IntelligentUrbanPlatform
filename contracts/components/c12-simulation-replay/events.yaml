@@ -3,10 +3,11 @@ info:
   title: C12 Simulation and Replay Events
   version: 1.0.0
   description: |
-    Proposed receive boundary, not an implemented worker or agreed subscription.
+    C04 receive worker is implemented in the current integration increment.
+    CityStateUpdated below remains a proposed input, not an implemented subscription.
     Preserves the #15/#22 review gate while adopting the component layout (#35).
     C06 owns CityStateUpdated; this consumer references that definition unchanged.
-    C04/C05/C08 operational event types and C10 access contracts remain pending
+    C05/C08 operational event consumption and C10 access contracts remain pending
     producer/consumer agreement. No substitute message definitions are invented.
     See internal.md for service boundaries, limitations and remaining agreements.
     C12 publishes no event under this proposal.
@@ -19,6 +20,21 @@ servers:
     protocol: amqp
     description: Local broker; exchange, queue names and subscriptions still need agreement.
 channels:
+  deliveryInput:
+    address: ulop.events
+    description: >-
+      Queue c12.delivery-recordings. Receives C04-owned version 1 delivery outcomes.
+      C11 binds authoritative C04 payload.providerId atomically; legacy unbound
+      observations stay private. C12 records only explicitly registered simulation
+      runs and matching providerId; captured coverage is
+      C04-only and is labelled incomplete. Playback has no broker input/output.
+    messages:
+      submitted:
+        $ref: '../c04-delivery-management/events.yaml#/components/messages/DeliverySubmitted'
+      updated:
+        $ref: '../c04-delivery-management/events.yaml#/components/messages/DeliveryUpdated'
+      progress:
+        $ref: '../c04-delivery-management/events.yaml#/components/messages/DeliveryProgressChanged'
   cityStateInput:
     address: ulop.events
     description: |
@@ -30,6 +46,15 @@ channels:
       cityStateUpdated:
         $ref: '../c06-city-monitoring/events.yaml#/components/messages/CityStateUpdated'
 operations:
+  receiveDeliveryOutcomes:
+    action: receive
+    channel:
+      $ref: '#/channels/deliveryInput'
+    title: Receive C04 delivery outcomes
+    messages:
+    - $ref: '#/channels/deliveryInput/messages/submitted'
+    - $ref: '#/channels/deliveryInput/messages/updated'
+    - $ref: '#/channels/deliveryInput/messages/progress'
   receiveCityStateUpdated:
     action: receive
     channel:

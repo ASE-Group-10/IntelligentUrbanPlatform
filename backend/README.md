@@ -1,5 +1,8 @@
 # UC01 resource backend
 
+C11/C12 runtime, workers, local demo and restricted replay setup:
+[integration guide](../docs/c11-c12-integration.md).
+
 FastAPI application with SQLAlchemy/psycopg persistence in PostgreSQL.
 This increment implements UC01 only. UC02 and other component APIs remain future work.
 
@@ -382,8 +385,7 @@ uv run python -m app.demo.c08 --provider "$PROVIDER_ID" --resource "$RESOURCE_ID
 By default this seeds C05’s confirmed v3 plan in the Dublin simulation and
 publishes the same `PlanReady` twice with the closure feed’s correlation ID.
 Running it again with the same provider, vehicle and driver replays the event.
-When C05 publishes the event, run the same command with `--seed-only` before
-confirming the plan. This prepares the saved-plan lookup and driver mapping. C08 reads
+Use `--seed-only` to stage this standalone fixture for an external publisher. C08 reads
 the C03 vehicle and reserves capacity separately in each run. Add `--live`
 for the original standalone demo with a fresh plan and a 12.5 kg reservation.
 The assignment endpoints take an optional `runId` query parameter on reads
@@ -411,13 +413,34 @@ Dublin scenario start time as departure for checking C03 operating hours.
 A van that cannot cover the detour shows **Revised plan needs a new allocation**.
 Its old offer is closed and its capacity becomes available to other plans.
 
-Use `--revision --seed-only` when testing with an external publisher. The local
-saved-plan lookup stands in for C05 until the teams integrate the versioned read.
+Use `--revision --seed-only` when testing the v4 fixture with an external publisher.
 
-To run the automated demonstration, configure a dedicated `TEST_DATABASE_URL`
-ending in `_test` and `TEST_RABBITMQ_URL`, then run
-`uv run pytest tests/test_c08_driver_acceptance.py`. The test rebuilds the
-test schemas, uses its own RabbitMQ exchange/queue, and substitutes token
+### Use a generated C05 plan
+
+After C05 generates the Dublin proposal, bind its vehicle and driver from
+`backend/` before selecting **Confirm plan**. Use the plan and run IDs from
+C05's proposal link and the provider, resource and driver IDs from hop 6.
+
+```sh
+uv run python -m app.demo.c08 --c05-plan "$PLAN_ID" --run-id "$RUN_ID" \
+  --provider "$PROVIDER_ID" --resource "$RESOURCE_ID" --driver "$DRIVER_ID"
+```
+
+C05 publishes both confirmation and revision. The C08 worker reads the route,
+departure and requirements from the confirmed C05 version on its allocation
+transaction. Confirm the proposal, send and accept the offer, then trigger the
+Dublin closure in the same run. A compatible detour keeps the same assignment,
+offer and reserved capacity at the new version.
+
+To test with PostgreSQL and RabbitMQ, set a dedicated `TEST_DATABASE_URL`
+ending in `_test` and `TEST_RABBITMQ_URL`. From `backend/`, run
+
+```sh
+uv run pytest tests/test_c08_driver_acceptance.py \
+  tests/test_c05_replanning.py::test_dublin_closure_revises_the_confirmed_plan_through_rabbitmq
+```
+
+The tests rebuild the test schemas, use isolated RabbitMQ queues and substitute token
 verification for interactive Supabase sign-in. Offer expiry, replacement selection,
 multi-agent negotiation and downstream evidence/disruption events are follow-up work.
 

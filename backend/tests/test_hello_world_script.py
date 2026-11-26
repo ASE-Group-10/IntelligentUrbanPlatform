@@ -29,6 +29,31 @@ OTHER_EVENT = "dc5741bc-6885-4466-b3a7-d8be3a023cbb"
 CREATED = "evaluated: created, 1 replan request(s)"
 
 
+@pytest.mark.parametrize("mismatch", ["runId", "correlationId", "providerId"])
+def test_analytics_cannot_pass_evidence_from_another_trace(monkeypatch, mismatch):
+    monkeypatch.setattr(hello_world, "TOKEN", "synthetic-test-token")
+    monkeypatch.setattr(hello_world, "API", "http://127.0.0.1:8000")
+    monkeypatch.setenv("ULOP_ACTING_PROVIDER", DELIVERY)
+    proof = {
+        "runId": PLAN,
+        "correlationId": CID,
+        "providerId": DELIVERY,
+        "hops": {"9": "PASS", "10": "PASS"},
+        "replay": {"status": "completed", "cursor": 1, "sourceEventIds": [EVENT]},
+    }
+    proof[mismatch] = OTHER_EVENT
+    monkeypatch.setattr(hello_world, "compose", lambda *args: json.dumps(proof))
+    hops = {n: hello_world.Hop(n, str(n)) for n in (9, 10)}
+    hello_world.check_analytics(
+        hops,
+        PLAN,
+        CID,
+        {("POST", "/api/v1/analytics/kpis/query"), ("GET", "/api/v1/simulation-runs")},
+        {"c11.delivery-observations": 1, "c12.delivery-recordings": 1},
+    )
+    assert all(h.status == "WIRED" for h in hops.values())
+
+
 def test_missing_docker_is_reported_as_an_unavailable_hop(monkeypatch):
     def missing(*args, **kwargs):
         raise FileNotFoundError("docker")

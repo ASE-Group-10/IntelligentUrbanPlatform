@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -39,9 +40,11 @@ from app.components.c09_logistics_knowledge.postgres_store import (
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
 from app.components.c10_decision_records.service import DecisionRecords
+from app.components.c11_kpi_analytics.router import router as analytics_router
+from app.components.c12_simulation_replay.router import router as replay_router
 from app.components.resources.router import router
 from app.components.resources.service import ResourceService
-from app.config import get_settings
+from app.config import get_ingress_settings, get_settings
 from app.demo.feed import load_scenario
 from app.infrastructure.database import make_engine
 from app.infrastructure.errors import APIError, api_error_handler
@@ -83,6 +86,10 @@ def create_app(
         app.state.resources = ResourceService(
             app.state.engine, app.state.settings.availability_max_age_seconds
         )
+        replay_url = getattr(app.state.settings, "replay_database_url", None)
+        app.state.replay_engine = (
+            make_engine(replay_url.get_secret_value()) if replay_url else None
+        )
         app.state.city_monitoring = CityMonitoring(
             store=city_state_store or PostgresCityStateStore(conninfo),
             clock=service_clock,
@@ -119,8 +126,12 @@ def create_app(
                 if telemetry is not None:
                     await run_in_threadpool(telemetry.shutdown)
             finally:
-                if engine is None:
-                    app.state.engine.dispose()
+                try:
+                    if app.state.replay_engine is not None:
+                        app.state.replay_engine.dispose()
+                finally:
+                    if engine is None:
+                        app.state.engine.dispose()
 
     app = FastAPI(
         title="Urban Logistics · UC01 Resource API",
@@ -130,9 +141,7 @@ def create_app(
         "decision records. Resource registration uses a durable audit stand-in.",
         lifespan=lifespan,
     )
-    app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "testserver"]
-    )
+    allowed_hosts, cors_origins = get_ingress_settings(settings)
 
     @app.middleware("http")
     async def request_context(request, call_next):
@@ -152,6 +161,29 @@ def create_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-Acting-Provider",
+                "X-Correlation-ID",
+            ],
+            expose_headers=[
+                "Idempotency-Replayed",
+                "Location",
+                "X-Correlation-ID",
+                "X-Plan-Id",
+                "X-Plan-Stub",
+                "X-Plan-Version",
+            ],
+        )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
 
     app.add_exception_handler(APIError, api_error_handler)
 
@@ -218,6 +250,8 @@ def create_app(
     app.include_router(router)
     app.include_router(deliveries_router)
     app.include_router(city_state_router)
+    app.include_router(analytics_router)
+    app.include_router(replay_router)
     app.include_router(disruptions_router)
     return app
 
