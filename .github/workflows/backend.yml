@@ -63,6 +63,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Verify Azure deployment rollback with Docker stubs
+        run: python3 scripts/azure/test-backend-rollout.py
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 

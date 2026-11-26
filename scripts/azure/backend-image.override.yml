@@ -9,3 +9,11 @@ services:
   c08-worker:
     image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
 
+  c04-publisher:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
+  c05-publisher:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
+  c11-worker:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
+  c12-worker:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to the verified release image}
