@@ -150,3 +150,15 @@ The host Compose file must define all eight services before using this deploymen
 script. All eight must exist in the selected image, including rollback images;
 do not roll back to revisions predating these entry points. The demo-feed
 one-shot service is not part of the continuously running release group.
+
+Before pulling or starting a release, and before rollback, the script resolves
+Compose JSON and checks each of the eight service images against the requested
+image. The workflow uploads only the script: when upgrading an existing VM,
+copy the current `scripts/azure/backend-image.override.yml` to
+`/home/azureuser/ulop-deploy/backend-image.override.yml` first. A legacy override
+that leaves any service on an old image now aborts before rollout.
+
+Run `python3 scripts/azure/test-backend-rollout.py` from the repository root.
+The stub tracks images separately per service and verifies stale-image rollback,
+legacy-override rejection before `up`, and an API-only rollback mutation that
+must fail verification.

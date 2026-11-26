@@ -230,6 +230,24 @@ verify_rollout() {
   return 0
 }
 
+verify_resolved_images() {
+  local expected_image="$1"
+  local resolved
+  if ! resolved="$(BACKEND_IMAGE="${expected_image}" docker compose "${COMPOSE_FILES[@]}" config --format json)"; then
+    echo "ERROR: Could not resolve deployment Compose configuration" >&2
+    return 1
+  fi
+  RESOLVED_COMPOSE="${resolved}" python3 - "${expected_image}" "${SERVICES[@]}" <<'PYTHON'
+import json, os, sys
+services = json.loads(os.environ["RESOLVED_COMPOSE"])["services"]
+for name in sys.argv[2:]:
+    actual = services.get(name, {}).get("image")
+    if actual != sys.argv[1]:
+        print(f"ERROR: Resolved image for {name}: {actual!r}; expected {sys.argv[1]}", file=sys.stderr)
+        sys.exit(1)
+PYTHON
+}
+
 rollback_and_verify() {
   if [[ -z "${PREVIOUS_IMAGE}" || "${PREVIOUS_IMAGE}" == "${TARGET_IMAGE}" ]]; then
     echo "ROLLBACK_STATUS=SKIPPED (no distinct previous image recorded)" >&2
@@ -237,6 +255,7 @@ rollback_and_verify() {
   fi
 
   echo "Rolling back all backend services to ${PREVIOUS_IMAGE}..." >&2
+  verify_resolved_images "${PREVIOUS_IMAGE}" || return 1
   if ! BACKEND_IMAGE="${PREVIOUS_IMAGE}" docker compose "${COMPOSE_FILES[@]}" up -d "${SERVICES[@]}"; then
     echo "ROLLBACK_STATUS=FAILED (docker compose up failed while restoring ${PREVIOUS_IMAGE})" >&2
     return 1
@@ -259,6 +278,8 @@ echo "Target image: ${TARGET_IMAGE}"
 if [[ -n "${PREVIOUS_IMAGE}" ]]; then
   echo "Previous api image: ${PREVIOUS_IMAGE}"
 fi
+
+verify_resolved_images "${TARGET_IMAGE}"
 
 echo "Pulling target backend image..."
 BACKEND_IMAGE="${TARGET_IMAGE}" docker compose "${COMPOSE_FILES[@]}" pull "${SERVICES[@]}"
