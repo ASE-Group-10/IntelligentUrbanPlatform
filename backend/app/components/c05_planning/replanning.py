@@ -16,6 +16,9 @@ from app.components.c07_disruption_detection.contracts import (
 from app.components.c09_logistics_knowledge.demo_corpus import DEMO_ZONES
 from app.components.c09_logistics_knowledge.postgres_store import PostgresKnowledgeStore
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
+from app.components.c10_decision_records.evidence_storage import (
+    SupabaseEvidenceStorage,
+)
 from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
 from app.components.c10_decision_records.service import DecisionRecords
 from app.demo.feed import Scenario, load_scenario
@@ -55,14 +58,17 @@ class Replanning:
 
 
 def make_replanning(
-    conninfo: str, *, clock: Callable[[], datetime] | None = None
+    conninfo: str,
+    *,
+    clock: Callable[[], datetime] | None = None,
+    evidence: SupabaseEvidenceStorage | None = None,
 ) -> Replanning:
     """Build the same PostgreSQL-backed C06, C09 and C10 services used by the API."""
     now = clock or (lambda: datetime.now(UTC))
     return Replanning(
         PostgresPlanStore(conninfo),
         LogisticsKnowledge(PostgresKnowledgeStore(conninfo, DEMO_ZONES), clock=now),
-        DecisionRecords(PostgresDecisionStore(), clock=now),
+        DecisionRecords(PostgresDecisionStore(), clock=now, evidence=evidence),
         load_scenario(),
         now,
         CityMonitoring(PostgresCityStateStore(conninfo), clock=now),

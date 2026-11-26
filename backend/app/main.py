@@ -38,6 +38,7 @@ from app.components.c09_logistics_knowledge.postgres_store import (
     PostgresKnowledgeStore,
 )
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
+from app.components.c10_decision_records.evidence_storage import from_settings
 from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
 from app.components.c10_decision_records.service import DecisionRecords
 from app.components.c11_kpi_analytics.router import router as analytics_router
@@ -106,7 +107,11 @@ def create_app(
         app.state.planning = PlanningService(
             PostgresPlanStore(conninfo),
             app.state.knowledge,
-            DecisionRecords(PostgresDecisionStore(), clock=service_clock),
+            DecisionRecords(
+                PostgresDecisionStore(),
+                clock=service_clock,
+                evidence=from_settings(app.state.settings),
+            ),
             app.state.dublin_scenario,
             clock=service_clock,
         )

@@ -223,11 +223,13 @@ TEST_RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F uv run pytest
 
 ## C10 evidence in Supabase Storage
 
-C10 can store an `EvidenceSnapshot` as an immutable JSON object in a private
-Supabase Storage bucket and read it back (#130). Objects use the C10 prefix
-`c10/evidence/<decisionId>/<snapshotId>.json`. Uploads never overwrite. For the
-thin slice only the transport is wired: `recordDecision` still keeps evidence in
-Postgres.
+Every time `recordDecision` stores a decision, C10 also uploads each of its
+`EvidenceSnapshot`s as an immutable JSON object to a private Supabase Storage
+bucket (#130). This covers C05's proposal (API) and replan (C07 worker) decisions.
+Objects use the C10 prefix `c10/evidence/<decisionId>/<snapshotId>.json`. Uploads
+never overwrite, and a retry finds the object already there. Postgres stays the
+source of truth: without the settings below nothing is uploaded, and a Storage
+failure is logged (`evidence upload failed`) without failing the decision.
 
 One-time setup in the shared Supabase project:
 
@@ -247,19 +249,17 @@ SUPABASE_SERVICE_KEY=<legacy service_role key, eyJ...>
 C10_EVIDENCE_BUCKET=c10-evidence   # optional; this is the default
 ```
 
-Run the connectivity check from `backend/`:
+To check it end to end, run the walking skeleton (root README, "Walking-skeleton
+check") with `ULOP_TOKEN` set. Compose passes `backend/.env` to `api` and
+`c07-worker`, and they log one line per uploaded object:
 
 ```sh
-uv run python -m app.demo.c10_storage
+docker compose logs api c07-worker | grep "evidence stored at"
 ```
 
-It uploads the contract example's snapshot (synthetic data, fresh `snapshotId`) and
-reads it back. `OK: wrote and read back c10-evidence/c10/evidence/...` with exit code
-0 means success. `FAIL: ...` with exit code 1 gives the reason: missing settings,
-HTTP status from Storage (for example 404 for a missing bucket, 403 for a wrong
-key), or different content read back. Unit tests
-(`tests/test_c10_evidence_storage.py`) use a fake HTTP layer and never contact
-Supabase.
+The object then appears under **Storage → c10-evidence → c10/evidence/<decisionId>/**.
+Unit tests (`tests/test_c10_evidence_storage.py`) use a fake HTTP layer and never
+contact Supabase.
 
 ## C05 and C06 outbox publishers
 

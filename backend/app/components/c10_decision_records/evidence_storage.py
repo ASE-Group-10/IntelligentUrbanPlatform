@@ -1,11 +1,10 @@
-"""C10 evidence objects in Supabase Storage (#130, thin slice).
+"""C10 evidence objects in Supabase Storage (#130).
 
 Stores one EvidenceSnapshot as an immutable JSON object under the C10-owned
 prefix ``c10/evidence/<decisionId>/<snapshotId>.json`` and reads it back. Uploads
 never overwrite (``x-upsert: false``): decision-time evidence is immutable.
-
-shortcut: only the transport is wired; recordDecision still keeps evidence in
-Postgres. Move evidence to these objects when C10 needs large or binary blobs.
+recordDecision uploads every snapshot it records when this client is configured;
+Postgres stays the source of truth.
 """
 
 import json
@@ -26,6 +25,10 @@ type Opener = Callable[..., Any]
 
 def object_key(decision_id: UUID, snapshot_id: UUID) -> str:
     return f"{PREFIX}/{decision_id}/{snapshot_id}.json"
+
+
+class _DuplicateError(Exception):
+    """The object already exists."""
 
 
 class SupabaseEvidenceStorage:
@@ -57,12 +60,15 @@ class SupabaseEvidenceStorage:
         """Upload one snapshot; return its object key. Never overwrites."""
         key = object_key(decision_id, UUID(snapshot["snapshotId"]))
         body = json.dumps(snapshot, sort_keys=True).encode()
-        self._send(
-            "POST",
-            f"{self._base}/{self._bucket}/{quote(key)}",
-            body,
-            {"Content-Type": "application/json", "x-upsert": "false"},
-        )
+        try:
+            self._send(
+                "POST",
+                f"{self._base}/{self._bucket}/{quote(key)}",
+                body,
+                {"Content-Type": "application/json", "x-upsert": "false"},
+            )
+        except _DuplicateError:
+            pass  # a retry of the same decision: the immutable object is there
         return key
 
     def get_snapshot(self, key: str) -> dict[str, Any]:
@@ -82,6 +88,8 @@ class SupabaseEvidenceStorage:
         except urllib.error.HTTPError as exc:
             # The response body may echo the request, never the key, so it is safe.
             detail = exc.read().decode(errors="replace")[:200]
+            if method == "POST" and (exc.code == 409 or "Duplicate" in detail):
+                raise _DuplicateError from exc  # Storage may answer 400 with a 409 body
             raise StoreUnavailableError(
                 f"Supabase Storage {method} {exc.code}: {detail}"
             ) from exc
@@ -91,10 +99,10 @@ class SupabaseEvidenceStorage:
 
 def from_settings(settings) -> SupabaseEvidenceStorage | None:
     """The configured client, or ``None`` when storage is not configured."""
-    key = settings.supabase_service_key
+    key = getattr(settings, "supabase_service_key", None)
+    url = getattr(settings, "supabase_url", None)
     secret = key.get_secret_value() if key is not None else ""
-    if settings.supabase_url is None or not secret:  # an empty .env value is unset
+    if url is None or not secret:  # an empty .env value is unset
         return None
-    return SupabaseEvidenceStorage(
-        str(settings.supabase_url), secret, settings.c10_evidence_bucket
-    )
+    bucket = getattr(settings, "c10_evidence_bucket", "c10-evidence")
+    return SupabaseEvidenceStorage(str(url), secret, bucket)
