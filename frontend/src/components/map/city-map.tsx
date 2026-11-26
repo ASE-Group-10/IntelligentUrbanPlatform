@@ -1,4 +1,6 @@
 import { useTheme } from "@/lib/theme";
+import { setWorkerUrl } from "maplibre-gl";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import MapGL, {
@@ -9,6 +11,10 @@ import MapGL, {
 } from "react-map-gl/maplibre";
 
 import { config, DUBLIN } from "@/lib/config";
+
+// MapLibre locates its worker relative to its own module, which Vite does not
+// bundle in production builds. Point it at the emitted worker asset instead.
+setWorkerUrl(workerUrl);
 
 interface CityMapProps {
   /** Map layers and markers, e.g. City State segments or plan routes. */
