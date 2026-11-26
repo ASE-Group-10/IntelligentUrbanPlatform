@@ -20,6 +20,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY backend/app ./app
 COPY fixtures /srv/fixtures
+COPY contracts/components/c08-allocation/examples /srv/contracts/components/c08-allocation/examples
+COPY contracts/components/c05-planning/examples /srv/contracts/components/c05-planning/examples
 
 RUN useradd --create-home --uid 10001 app
 USER app

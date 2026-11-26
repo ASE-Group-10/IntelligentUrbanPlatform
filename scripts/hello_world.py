@@ -39,6 +39,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 API = os.environ.get("ULOP_API", "http://127.0.0.1:8000").rstrip("/")
@@ -47,7 +48,93 @@ SCENARIO_PATH = (
     Path(__file__).resolve().parents[1] / "fixtures" / "dublin-scenario.json"
 )
 WAIT_SECONDS = int(os.environ.get("ULOP_WAIT_SECONDS", "30"))
-WORKERS = ("api", "c05-publisher", "c06-publisher", "c07-worker", "c08-worker")
+WORKERS = (
+    "api",
+    "c04-publisher",
+    "c05-publisher",
+    "c06-publisher",
+    "c07-worker",
+    "c08-worker",
+    "c11-worker",
+    "c12-worker",
+)
+
+
+def check_analytics(hops, run_id, cid, served, queues):
+    """Only a matching saved, broker-confirmed HTTP trace may make 9/10 PASS."""
+    for n, prefix, route in (
+        (9, "c11.", ("POST", "/api/v1/analytics/kpis/query")),
+        (10, "c12.", ("GET", "/api/v1/simulation-runs")),
+    ):
+        wired = has_consumer(queues, prefix) and route in served
+        hops[n].set(
+            "WIRED" if wired else "MISSING",
+            f"{prefix} consumer and {route[0]} {route[1]} "
+            + ("are up" if wired else "are not both available"),
+        )
+    if any(hops[n].status != "WIRED" for n in (9, 10)):
+        return
+    if not TOKEN:
+        for n in (9, 10):
+            hops[n].notes.append("Set ULOP_TOKEN for authenticated trace verification.")
+        return
+    if urlparse(API).hostname not in {"127.0.0.1", "localhost"}:
+        for n in (9, 10):
+            hops[n].notes.append("Container trace verification is local Compose only.")
+        return
+    provider = os.environ.get("ULOP_ACTING_PROVIDER")
+    if not provider:
+        status, profile, _ = http(
+            "GET", "/api/v1/identity/me", auth=True, correlation_id=cid
+        )
+        provider = _acting_provider_for(profile) if status == 200 else None
+    if not provider:
+        for n in (9, 10):
+            hops[n].notes.append("No authorised acting provider was selected.")
+        return
+    try:
+        raw = compose(
+            "exec",
+            "-T",
+            "-e",
+            "ULOP_TOKEN",
+            "-e",
+            "ULOP_TEST_IDENTITY",
+            "-e",
+            "ULOP_LOCAL_TRACE=1",
+            "api",
+            "python",
+            "-m",
+            "app.demo.analytics_trace",
+            "verify",
+            "--run-id",
+            run_id,
+            "--correlation-id",
+            cid,
+            "--provider-id",
+            provider,
+        )
+        proof = json.loads(raw.strip().splitlines()[-1])
+        expected = (
+            proof["runId"] == run_id
+            and proof["correlationId"] == cid
+            and proof["providerId"] == provider
+            and proof["hops"] == {"9": "PASS", "10": "PASS"}
+            and proof["replay"]["status"] == "completed"
+            and bool(proof["replay"]["sourceEventIds"])
+            and proof["replay"]["cursor"] == len(proof["replay"]["sourceEventIds"])
+        )
+        if not expected:
+            raise ValueError("Trace proof did not match the selected run")
+    except (RuntimeError, ValueError, KeyError, IndexError) as error:
+        for n in (9, 10):
+            hops[n].notes.append(f"Trace not verified: {str(error)[-500:]}")
+        return
+    hops[9].set("PASS", "C04 outbox -> RabbitMQ -> scoped C11 HTTP source observations")
+    hops[10].set(
+        "PASS", "Same recorded C04 trace replayed over HTTP; live state unchanged"
+    )
+    hops[10].notes.append("C04-only incomplete capture; not full-platform recording.")
 
 
 @dataclass
@@ -583,6 +670,11 @@ def main(argv: list[str] | None = None) -> int:
         type=uuid4_arg,
         help="verify a recorded closure without injecting one (requires --plan-id)",
     )
+    parser.add_argument(
+        "--analytics-only",
+        action="store_true",
+        help="verify only hops 9/10 of an already captured local trace",
+    )
     args = parser.parse_args(argv)
     if args.closure_event_id and not args.plan_id:
         parser.error("--closure-event-id requires --plan-id")
@@ -606,6 +698,11 @@ def main(argv: list[str] | None = None) -> int:
             ]
         )
     }
+
+    if args.analytics_only:
+        print("Selected hops 9/10 only; this is not a full-platform PASS.")
+        check_analytics(hops, run_id, cid, routes(), consumers())
+        return report([hops[9], hops[10]])
 
     # Hop 0: the API answers and every worker container is running.
     status, health, _ = http("GET", "/health")
@@ -785,24 +882,7 @@ def main(argv: list[str] | None = None) -> int:
             submitted_delivery,
         )
 
-    # Hops 9–10: C11 and C12 consume events and serve their screens' routes.
-    for n, prefix, route, what in (
-        (9, "c11.", ("POST", "/api/v1/analytics/kpis/query"), "C11"),
-        (10, "c12.", ("GET", "/api/v1/simulation-runs"), "C12"),
-    ):
-        consumer, served_route = has_consumer(queues, prefix), route in served
-        if consumer and served_route:
-            hops[n].set("WIRED", f"{what} consumer and {route[0]} {route[1]} are up")
-        else:
-            missing = [
-                m
-                for m, ok in (
-                    (f"{prefix}* consumer", consumer),
-                    (f"{route[0]} {route[1]}", served_route),
-                )
-                if not ok
-            ]
-            hops[n].set("MISSING", f"{what}: no {' and no '.join(missing)}")
+    check_analytics(hops, run_id, cid, served, queues)
 
     return report(list(hops.values()))
 

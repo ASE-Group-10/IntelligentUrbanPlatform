@@ -16,7 +16,7 @@ Draft v0.1, owned by Qingyuan + Bangchen (#13).
 
 Called by **C05** before generating or replanning a plan, and by **C08** when
 evaluating agent proposals. It is the same operation as HTTP
-`POST /api/c09/knowledge/query`; request and response are the `C09PolicyQuery`
+`POST /api/v1/knowledge/query`; request and response are the `C09PolicyQuery`
 and `C09KnowledgeResult` schemas in `openapi.yaml`, with its examples.
 
 - Read-only; no idempotency key. Roles: `Service:C05`, `Service:C08`.

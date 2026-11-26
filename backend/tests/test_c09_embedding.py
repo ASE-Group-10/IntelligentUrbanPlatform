@@ -52,7 +52,7 @@ def test_free_text_ranks_the_matching_section_first():
     store = InMemoryKnowledgeStore({"dublin-D2"}, info=None)
     service = LogisticsKnowledge(store, clock=lambda: NOW)
     service.publish_knowledge(
-        _ctx("KnowledgeCurator"), PublishKnowledgeRequest.model_validate(data)
+        _ctx("curator"), PublishKnowledgeRequest.model_validate(data)
     )
 
     query = _example("query_knowledge.request.json")
@@ -70,7 +70,7 @@ def test_query_without_free_text_is_unranked():
     store = InMemoryKnowledgeStore({"dublin-D2"}, info=None)
     service = LogisticsKnowledge(store, clock=lambda: NOW)
     service.publish_knowledge(
-        _ctx("KnowledgeCurator"), PublishKnowledgeRequest.model_validate(data)
+        _ctx("curator"), PublishKnowledgeRequest.model_validate(data)
     )
     query = _example("query_knowledge.request.json")
     del query["freeText"]
