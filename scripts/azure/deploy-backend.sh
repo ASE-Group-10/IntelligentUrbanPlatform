@@ -34,8 +34,8 @@ IMAGE_REPO="${IMAGE_REPO:-ghcr.io/ase-group-10/intelligenturbanplatform-backend}
 IMAGE_TAG="${IMAGE_TAG:-}"
 EXPECTED_MIGRATIONS="${EXPECTED_MIGRATIONS:-}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8000/health}"
-SERVICES=(api c06-publisher c07-worker c08-worker)
-REQUIRED_QUEUES=(c07.city-state-updated c08.plan-ready)
+SERVICES=(api c04-publisher c05-publisher c06-publisher c07-worker c08-worker c11-worker c12-worker)
+REQUIRED_QUEUES=(c07.city-state-updated c08.plan-ready c11.delivery-observations c12.delivery-recordings)
 MANAGED_OVERRIDE_HEADER="# Managed by scripts/azure/deploy-backend.sh."
 
 if [[ "${EXPECTED_MIGRATIONS}" == "none" ]]; then
@@ -110,11 +110,19 @@ ${MANAGED_OVERRIDE_HEADER}
 services:
   api:
     image: ${image}
+  c04-publisher:
+    image: ${image}
+  c05-publisher:
+    image: ${image}
   c06-publisher:
     image: ${image}
   c07-worker:
     image: ${image}
   c08-worker:
+    image: ${image}
+  c11-worker:
+    image: ${image}
+  c12-worker:
     image: ${image}
 EOF
   then
