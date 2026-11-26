@@ -29,6 +29,71 @@ OTHER_EVENT = "dc5741bc-6885-4466-b3a7-d8be3a023cbb"
 CREATED = "evaluated: created, 1 replan request(s)"
 
 
+@pytest.mark.parametrize("consuming", [True, False])
+@pytest.mark.parametrize("served", [True, False])
+def test_analytics_reports_consumer_and_route_separately(
+    monkeypatch, consuming, served
+):
+    monkeypatch.setattr(hello_world, "TOKEN", None)
+    monkeypatch.setattr(hello_world, "API", "http://127.0.0.1:8000")
+    hops = {n: hello_world.Hop(n, str(n)) for n in (9, 10)}
+    paths = {
+        ("POST", "/api/v1/analytics/kpis/query"),
+        ("GET", "/api/v1/simulation-runs"),
+    }
+    queues = {
+        "c11.delivery-observations": int(consuming),
+        "c12.delivery-recordings": int(consuming),
+    }
+    hello_world.check_analytics(hops, PLAN, CID, paths if served else set(), queues)
+    for hop in hops.values():
+        assert hop.status == ("WIRED" if consuming and served else "MISSING")
+        assert f"consumer: {'active' if consuming else 'not detected'}" in hop.notes[0]
+        assert ("not detected in /openapi.json" in hop.notes[0]) == (not served)
+
+
+def test_remote_api_does_not_claim_to_inspect_remote_broker(monkeypatch):
+    monkeypatch.setattr(hello_world, "API", "https://example.com")
+    hops = {n: hello_world.Hop(n, str(n)) for n in (9, 10)}
+    hello_world.check_analytics(hops, PLAN, CID, set(), {})
+    assert all(
+        "does not verify the remote broker" in " ".join(h.notes) for h in hops.values()
+    )
+
+
+def test_consumer_inspection_failure_is_visible(monkeypatch, capsys):
+    def failed(*args, **kwargs):
+        raise RuntimeError("Compose failed")
+
+    monkeypatch.setattr(hello_world, "compose", failed)
+    assert hello_world.consumers() == {}
+    assert "Cannot inspect local RabbitMQ consumers" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("raw", ["", "[invalid", '[{"name": "missing-count"}]'])
+def test_invalid_consumer_output_is_visible(monkeypatch, capsys, raw):
+    monkeypatch.setattr(hello_world, "compose", lambda *args: raw)
+    assert hello_world.consumers() == {}
+    assert "invalid queue list" in capsys.readouterr().err
+
+
+def test_valid_consumer_output_keeps_counts(monkeypatch):
+    monkeypatch.setattr(
+        hello_world,
+        "compose",
+        lambda *args: (
+            'Listing queues...\n[{"name":"c11.delivery-observations","consumers":1}]'
+        ),
+    )
+    assert hello_world.consumers() == {"c11.delivery-observations": 1}
+
+
+def test_unavailable_openapi_is_visible(monkeypatch, capsys):
+    monkeypatch.setattr(hello_world, "http", lambda *args: (0, "connection failed", {}))
+    assert hello_world.routes() == set()
+    assert "Cannot inspect API routes" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("mismatch", ["runId", "correlationId", "providerId"])
 def test_analytics_cannot_pass_evidence_from_another_trace(monkeypatch, mismatch):
     monkeypatch.setattr(hello_world, "TOKEN", "synthetic-test-token")

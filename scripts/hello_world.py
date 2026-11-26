@@ -66,12 +66,27 @@ def check_analytics(hops, run_id, cid, served, queues):
         (9, "c11.", ("POST", "/api/v1/analytics/kpis/query")),
         (10, "c12.", ("GET", "/api/v1/simulation-runs")),
     ):
-        wired = has_consumer(queues, prefix) and route in served
+        consuming = has_consumer(queues, prefix)
+        served_route = route in served
+        wired = consuming and served_route
         hops[n].set(
             "WIRED" if wired else "MISSING",
-            f"{prefix} consumer and {route[0]} {route[1]} "
-            + ("are up" if wired else "are not both available"),
+            f"Local Compose RabbitMQ {prefix} consumer: "
+            + ("active" if consuming else "not detected")
+            + f"; API {route[0]} {route[1]}: "
+            + ("present" if served_route else "not detected in /openapi.json"),
         )
+        if not wired:
+            hops[n].notes.append(
+                "Check `docker compose ps -a` and the API/worker logs. "
+                "After updating local code, rebuild with "
+                "`docker compose up -d --build`."
+            )
+        if urlparse(API).hostname not in {"127.0.0.1", "localhost"}:
+            hops[n].notes.append(
+                "The API target is remote, but consumer checks use local Compose; "
+                "this does not verify the remote broker."
+            )
     if any(hops[n].status != "WIRED" for n in (9, 10)):
         return
     if not TOKEN:
@@ -200,6 +215,11 @@ def routes() -> set[tuple[str, str]]:
     """(METHOD, path) pairs the running API serves, from its /openapi.json."""
     status, spec, _ = http("GET", "/openapi.json")
     if status != 200 or not isinstance(spec, dict):
+        print(
+            f"Cannot inspect API routes: /openapi.json returned HTTP {status} "
+            "or an invalid document (HTTP 0 means the connection failed).",
+            file=sys.stderr,
+        )
         return set()
     return {
         (method.upper(), path)
@@ -210,22 +230,38 @@ def routes() -> set[tuple[str, str]]:
 
 def consumers() -> dict[str, int]:
     """RabbitMQ queue name → number of consumers."""
-    raw = compose(
-        "exec",
-        "-T",
-        "rabbitmq",
-        "rabbitmqctl",
-        "list_queues",
-        "name",
-        "consumers",
-        "--formatter",
-        "json",
-        check=False,
-    )
-    start = raw.find("[")
-    if start < 0:
+    try:
+        raw = compose(
+            "exec",
+            "-T",
+            "rabbitmq",
+            "rabbitmqctl",
+            "list_queues",
+            "name",
+            "consumers",
+            "--formatter",
+            "json",
+        )
+    except RuntimeError:
+        print(
+            "Cannot inspect local RabbitMQ consumers: Docker/Compose is unavailable "
+            "or `docker compose exec -T rabbitmq rabbitmqctl list_queues name "
+            "consumers --formatter json` failed. Run that command in the same "
+            "Compose project to see the cause.",
+            file=sys.stderr,
+        )
         return {}
-    return {q["name"]: q["consumers"] for q in json.loads(raw[start:])}
+    start = raw.find("[")
+    try:
+        if start < 0:
+            raise ValueError("No queue list")
+        return {q["name"]: q["consumers"] for q in json.loads(raw[start:])}
+    except (ValueError, TypeError, KeyError):
+        print(
+            "Cannot inspect local RabbitMQ consumers: invalid queue list.",
+            file=sys.stderr,
+        )
+        return {}
 
 
 def running_services() -> set[str]:
