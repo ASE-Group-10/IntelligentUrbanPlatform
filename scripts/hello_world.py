@@ -291,8 +291,11 @@ def saved_plan_evidence(trace: dict[str, str], closure_id: str | None) -> dict:
     return result
 
 
-def allocation_evidence(run_id: str, plan_id: str) -> tuple[bool, str, str]:
-    """Read C08's binding and latest commitment for this plan (IDs are UUIDs)."""
+def allocation_evidence(run_id: str, plan_id: str) -> tuple[bool, str, str, str]:
+    """Read C08's binding and latest commitment for this plan (IDs are UUIDs).
+
+    The commitment's event is the PlanReady C08 last applied to it.
+    """
     where = f"run_id = '{run_id}' AND plan_id = '{plan_id}'"
     out = compose(
         "exec",
@@ -307,18 +310,42 @@ def allocation_evidence(run_id: str, plan_id: str) -> tuple[bool, str, str]:
         "|",
         "-c",
         f"SELECT EXISTS (SELECT FROM c08_allocation.demo_plans WHERE {where}), "
-        "coalesce(a.plan_version::text, ''), coalesce(a.status, '') "
-        "FROM (SELECT 1) one LEFT JOIN LATERAL (SELECT plan_version, status "
+        "coalesce(a.plan_version::text, ''), coalesce(a.status, ''), "
+        "coalesce(a.event_id::text, '') "
+        "FROM (SELECT 1) one LEFT JOIN LATERAL (SELECT plan_version, status, event_id "
         f"FROM c08_allocation.allocations WHERE {where} "
         "ORDER BY plan_version DESC LIMIT 1) a ON true",
     ).strip()
-    bound, version, status = out.split("|")
-    return bound == "t", version, status
+    bound, version, status, event_id = out.split("|")
+    return bound == "t", version, status, event_id
 
 
-def judge_hop6(bound: bool, version: str, status: str) -> tuple[str, str]:
-    """PASS needs the driver's acceptance; a CLI allocation alone stays WIRED."""
+def judge_hop6(
+    bound: bool,
+    version: str,
+    status: str,
+    event_id: str,
+    expected: tuple[str, int] | None,
+) -> tuple[str, str]:
+    """PASS needs the driver's acceptance of this trace's verified PlanReady.
+
+    ``expected`` is the event ID and version of the latest PlanReady that
+    check_saved_plan verified for the requested trace. An acceptance from an
+    earlier run of the same plan, or of a superseded version, stays WIRED.
+    """
     if status == "accepted":
+        if expected is None:
+            return (
+                "WIRED",
+                f"C08 has an accepted commitment at v{version}, but no PlanReady "
+                "was verified for this trace",
+            )
+        if (event_id, version) != (expected[0], str(expected[1])):
+            return (
+                "WIRED",
+                f"C08's accepted commitment (v{version}, event {event_id or '?'}) "
+                f"does not match this trace's PlanReady v{expected[1]} {expected[0]}",
+            )
         return "PASS", f"C08 committed the van at v{version} and the driver accepted"
     if status in {"allocated", "offered"}:
         return (
@@ -354,7 +381,12 @@ def check_saved_plan(
     closure_id: str | None,
     published_revision: str | None,
     submitted_delivery: str | None = None,
-) -> None:
+) -> tuple[str, int] | None:
+    """Judge hops 4, 5 and 8 from C05's committed evidence.
+
+    Returns the event ID and version of the latest PlanReady verified for this
+    trace (the revision, else the confirmation) so hop 6 can match C08 to it.
+    """
     try:
         deadline = time.monotonic() + WAIT_SECONDS
         while True:
@@ -372,7 +404,7 @@ def check_saved_plan(
             hops[n].notes.append(f"Could not verify committed C05 evidence: {error}")
         if hops[8].status == "PASS":
             hops[8].set("WIRED")
-        return
+        return None
 
     generated = saved["generation"]
     if (
@@ -383,7 +415,7 @@ def check_saved_plan(
         hops[4].set(
             "MISSING", "The proposal does not identify the delivery just submitted."
         )
-        return
+        return None
     hops[4].set("WIRED" if generated["ok"] else "MISSING", phase_note(generated))
     if generated["ok"]:
         did = generated["deliveryId"]
@@ -450,13 +482,16 @@ def check_saved_plan(
 
     revision = saved["revision"]
     hops[8].notes.append(phase_note(revision))
-    if hops[8].status == "PASS" and not (
-        revision["ok"] and revision.get("eventId") == published_revision
-    ):
+    revised = revision["ok"] and revision.get("eventId") == published_revision
+    if hops[8].status == "PASS" and not revised:
         hops[8].set(
             "WIRED",
             "The observed event could not be matched to the committed C05 revision.",
         )
+    for phase, verified in ((revision, revised), (confirmed, confirmed["ok"])):
+        if verified and phase.get("eventId"):
+            return phase["eventId"], phase["version"]
+    return None
 
 
 # ---- the hops ---------------------------------------------------------------
@@ -818,7 +853,7 @@ def main(argv: list[str] | None = None) -> int:
         hops[8].notes.extend(notes8)
 
     if plan_id:
-        check_saved_plan(
+        plan_ready = check_saved_plan(
             hops,
             {
                 "scope": "simulation",
@@ -833,7 +868,9 @@ def main(argv: list[str] | None = None) -> int:
         # After hops 7–8, so C08 has had both PlanReady events.
         if hops[6].status == "WIRED":
             try:
-                status6, note6 = judge_hop6(*allocation_evidence(run_id, plan_id))
+                status6, note6 = judge_hop6(
+                    *allocation_evidence(run_id, plan_id), plan_ready
+                )
             except (RuntimeError, ValueError) as error:
                 status6, note6 = "WIRED", f"C08 allocation unreadable: {error}"
             hops[6].set(status6, note6)
