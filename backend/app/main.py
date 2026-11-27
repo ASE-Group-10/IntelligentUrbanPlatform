@@ -2,9 +2,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import psycopg
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +41,7 @@ from app.components.c09_logistics_knowledge.postgres_store import (
 )
 from app.components.c09_logistics_knowledge.service import LogisticsKnowledge
 from app.components.c10_decision_records.postgres_store import PostgresDecisionStore
+from app.components.c10_decision_records.router import router as decisions_router
 from app.components.c10_decision_records.service import DecisionRecords
 from app.components.c11_kpi_analytics.router import router as analytics_router
 from app.components.c12_simulation_replay.router import router as replay_router
@@ -102,11 +105,18 @@ def create_app(
             PostgresKnowledgeStore(conninfo, DEMO_ZONES),
             clock=service_clock,
         )
+        # C10 runs on its caller's connection; its HTTP reads open their own
+        app.state.decisions = DecisionRecords(
+            PostgresDecisionStore(), clock=service_clock
+        )
+        app.state.decision_connection = partial(
+            psycopg.connect, conninfo, connect_timeout=5
+        )
         app.state.dublin_scenario = load_scenario()
         app.state.planning = PlanningService(
             PostgresPlanStore(conninfo),
             app.state.knowledge,
-            DecisionRecords(PostgresDecisionStore(), clock=service_clock),
+            app.state.decisions,
             app.state.dublin_scenario,
             clock=service_clock,
         )
@@ -253,6 +263,7 @@ def create_app(
     app.include_router(analytics_router)
     app.include_router(replay_router)
     app.include_router(disruptions_router)
+    app.include_router(decisions_router)
     return app
 
 

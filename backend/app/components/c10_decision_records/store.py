@@ -12,14 +12,31 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from app.components.c10_decision_records.contracts import AuditOutcome, DecisionRecord
+from app.components.c10_decision_records.contracts import (
+    AuditOutcome,
+    DecisionRecord,
+    SubjectSelector,
+)
+from app.shared.c09_c10_common import RunMode
 
 type Connection = Any
 """The caller's open connection/transaction (a psycopg connection in production)."""
 
 
+def recorded_in(record: DecisionRecord, run_id: UUID | None) -> bool:
+    """Without ``run_id`` only live decisions match, so leaving it out cannot be
+    used to read a simulation run."""
+    if run_id is None:
+        return record.run_scope.mode is RunMode.LIVE
+    return (
+        record.run_scope.mode is RunMode.SIMULATION
+        and record.run_scope.run_id == run_id
+    )
+
+
 class StoreUnavailableError(Exception):
-    """Decision storage cannot be reached; callers report Unavailable."""
+    """Decision storage cannot be reached, or a stored record cannot be read;
+    callers report Unavailable."""
 
 
 @dataclass(frozen=True)
@@ -60,6 +77,15 @@ class DecisionStore(Protocol):
     ) -> StoredDecision | None:
         """The decision with this ID, including writes not yet committed on
         ``conn``."""
+        ...
+
+    def find_by_subject(
+        self, conn: Connection, selector: SubjectSelector
+    ) -> list[StoredDecision]:
+        """The decisions about this subject in the selector's run (see
+        ``recorded_in``) and, when it names one, version, in the order they were
+        recorded. Only those records are read, so one that cannot be read in
+        another run or version does not affect the result."""
         ...
 
     def insert_decision(self, conn: Connection, decision: StoredDecision) -> bool:
@@ -139,6 +165,18 @@ class InMemoryDecisionStore:
         self, conn: InMemoryTransaction, decision_id: UUID
     ) -> StoredDecision | None:
         return self._visible(conn).get(decision_id)
+
+    def find_by_subject(
+        self, conn: InMemoryTransaction, selector: SubjectSelector
+    ) -> list[StoredDecision]:
+        return [
+            stored
+            for stored in self._visible(conn).values()
+            if stored.record.subject.type is selector.subject_type
+            and stored.record.subject.id == selector.subject_id
+            and recorded_in(stored.record, selector.run_id)
+            and selector.subject_version in (None, stored.record.subject.version)
+        ]
 
     def insert_decision(
         self, conn: InMemoryTransaction, decision: StoredDecision

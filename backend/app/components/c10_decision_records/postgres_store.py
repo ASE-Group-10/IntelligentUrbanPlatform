@@ -14,13 +14,18 @@ from uuid import UUID
 
 import psycopg
 from psycopg.types.json import Jsonb
+from pydantic import ValidationError
 
-from app.components.c10_decision_records.contracts import DecisionRecord
+from app.components.c10_decision_records.contracts import (
+    DecisionRecord,
+    SubjectSelector,
+)
 from app.components.c10_decision_records.store import (
     StoredDecision,
     StoredOutcome,
     StoreUnavailableError,
 )
+from app.shared.c09_c10_common import RunMode
 
 _SELECT_DECISION = (
     "select record, request_hash, recorded_at from c10_decision_records.decisions"
@@ -29,9 +34,12 @@ _SELECT_DECISION = (
 
 def _stored(row: tuple) -> StoredDecision:
     record, request_hash, recorded_at = row
-    return StoredDecision(
-        DecisionRecord.model_validate(record), request_hash, recorded_at
-    )
+    try:
+        parsed = DecisionRecord.model_validate(record)
+    except ValidationError as error:
+        # for example a record written under an older contract version
+        raise StoreUnavailableError("a stored decision cannot be read") from error
+    return StoredDecision(parsed, request_hash, recorded_at)
 
 
 class PostgresDecisionStore:
@@ -52,6 +60,32 @@ class PostgresDecisionStore:
             conn, f"{_SELECT_DECISION} where decision_id = %s", (decision_id,)
         )
         return _stored(row) if row else None
+
+    def find_by_subject(
+        self, conn: psycopg.Connection, selector: SubjectSelector
+    ) -> list[StoredDecision]:
+        # Filter in SQL so records outside the run or version are never parsed.
+        # Same rule as ``recorded_in``: no run ID means live decisions only.
+        mode = RunMode.LIVE if selector.run_id is None else RunMode.SIMULATION
+        try:
+            rows = conn.execute(
+                f"{_SELECT_DECISION}"
+                " where subject_type = %s and subject_id = %s and run_mode = %s"
+                " and run_id is not distinct from %s"
+                " and (%s::integer is null or subject_version = %s)"
+                " order by seq",
+                (
+                    selector.subject_type.value,
+                    selector.subject_id,
+                    mode.value,
+                    selector.run_id,
+                    selector.subject_version,
+                    selector.subject_version,
+                ),
+            ).fetchall()
+        except psycopg.OperationalError as error:
+            raise StoreUnavailableError(f"decision store failed: {error}") from error
+        return [_stored(row) for row in rows]
 
     def insert_decision(
         self, conn: psycopg.Connection, decision: StoredDecision
