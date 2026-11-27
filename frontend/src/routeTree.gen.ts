@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DecisionsRouteImport } from './routes/decisions'
 import { Route as DeliveriesRouteImport } from './routes/deliveries'
 import { Route as DisruptionsRouteImport } from './routes/disruptions'
 import { Route as KpisRouteImport } from './routes/kpis'
@@ -19,6 +20,11 @@ import { Route as ResourcesRouteImport } from './routes/resources'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecisionsRoute = DecisionsRouteImport.update({
+  id: '/decisions',
+  path: '/decisions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DeliveriesRoute = DeliveriesRouteImport.update({
@@ -49,6 +55,7 @@ const ResourcesRoute = ResourcesRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/decisions': typeof DecisionsRoute
   '/deliveries': typeof DeliveriesRoute
   '/disruptions': typeof DisruptionsRoute
   '/kpis': typeof KpisRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/decisions': typeof DecisionsRoute
   '/deliveries': typeof DeliveriesRoute
   '/disruptions': typeof DisruptionsRoute
   '/kpis': typeof KpisRoute
@@ -66,6 +74,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/decisions': typeof DecisionsRoute
   '/deliveries': typeof DeliveriesRoute
   '/disruptions': typeof DisruptionsRoute
   '/kpis': typeof KpisRoute
@@ -75,12 +84,26 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/deliveries' | '/disruptions' | '/kpis' | '/plans' | '/resources'
+    | '/'
+    | '/decisions'
+    | '/deliveries'
+    | '/disruptions'
+    | '/kpis'
+    | '/plans'
+    | '/resources'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/deliveries' | '/disruptions' | '/kpis' | '/plans' | '/resources'
+  to:
+    | '/'
+    | '/decisions'
+    | '/deliveries'
+    | '/disruptions'
+    | '/kpis'
+    | '/plans'
+    | '/resources'
   id:
     | '__root__'
     | '/'
+    | '/decisions'
     | '/deliveries'
     | '/disruptions'
     | '/kpis'
@@ -90,6 +113,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DecisionsRoute: typeof DecisionsRoute
   DeliveriesRoute: typeof DeliveriesRoute
   DisruptionsRoute: typeof DisruptionsRoute
   KpisRoute: typeof KpisRoute
@@ -104,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decisions': {
+      id: '/decisions'
+      path: '/decisions'
+      fullPath: '/decisions'
+      preLoaderRoute: typeof DecisionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/deliveries': {
@@ -146,6 +177,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DecisionsRoute: DecisionsRoute,
   DeliveriesRoute: DeliveriesRoute,
   DisruptionsRoute: DisruptionsRoute,
   KpisRoute: KpisRoute,
