@@ -1,0 +1,144 @@
+asyncapi: 3.0.0
+info:
+  title: C05 Planning Events
+  version: 0.1.0
+  description: >-
+    C05 enqueues PlanReady in the transaction that confirms or revises a plan.
+    After commit the publisher sends the saved envelope to RabbitMQ. C07 calls
+    C05 requestReplan after consuming CityStateUpdated.
+  contact:
+    name: Ye + Zecheng
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    host: localhost
+    protocol: amqp
+    description: Local Compose broker.
+channels:
+  planReady:
+    address: ulop.events
+    description: >-
+      The durable topic exchange uses the PlanReady routing key. The c08.plan-ready
+      queue receives the event. The AMQP message_id is the envelope eventId.
+    messages:
+      planReady:
+        $ref: '#/components/messages/PlanReady'
+operations:
+  sendPlanReady:
+    action: send
+    channel:
+      $ref: '#/channels/planReady'
+    summary: Publish a committed confirmed plan or revision from the durable outbox.
+    messages:
+      - $ref: '#/channels/planReady/messages/planReady'
+    description: >-
+      Retries preserve eventId and planVersion. Consumers deduplicate by eventId and
+      reject stale plan versions. Simulation requires runId and remains isolated from
+      live execution.
+components:
+  messages:
+    PlanReady:
+      name: PlanReady
+      title: Saved plan ready for allocation
+      summary: C05 publishes the saved version and resource needs for C08.
+      correlationId:
+        location: $message.payload#/correlationId
+      payload:
+        allOf:
+          - $ref: ../c06-city-monitoring/events.yaml#/components/schemas/EventEnvelope
+          - type: object
+            properties:
+              eventType:
+                const: PlanReady
+              producer:
+                const: C05
+              schemaVersion:
+                const: 1
+              payload:
+                $ref: '#/components/schemas/PlanReadyPayload'
+      examples:
+        - name: closureRevision
+          payload:
+            eventId: 55555555-5555-4555-8555-555555555555
+            eventType: PlanReady
+            schemaVersion: 1
+            producer: C05
+            observedAt: '2026-11-20T08:15:00Z'
+            emittedAt: '2026-11-20T08:15:01Z'
+            correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+            affected:
+              planIds:
+                - 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+              resourceIds: []
+              segmentKeys:
+                - seg:4471024
+            entityVersions:
+              9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c: 4
+            scope: simulation
+            payload:
+              planId: 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+              planVersion: 4
+              requirements:
+                - deliveryId: 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+                  resourceKind: van
+                  capacity:
+                    amount: 10
+                    unit: kg
+              decisionId: e5f6a7b8-c9d0-4e1f-a2b3-c4d5e6f7a8b9
+            runId: c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b
+            causationId: 5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e
+  schemas:
+    PlanReadyPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - planId
+        - planVersion
+        - requirements
+        - decisionId
+      properties:
+        planId:
+          type: string
+          format: uuid
+          description: The plan ID also appears in affected.planIds.
+        planVersion:
+          type: integer
+          minimum: 1
+          description: Matches the entry in entityVersions keyed by the plan UUID.
+        requirements:
+          type: array
+          minItems: 1
+          description: >-
+            Complete resource requirements for unfinished deliveries in this saved plan
+            version. A route-only revision carries the same requirements when the needs
+            are unchanged. C08 checks whether existing commitments still satisfy them.
+          items:
+            $ref: '#/components/schemas/ResourceRequirement'
+        decisionId:
+          type: string
+          format: uuid
+    ResourceRequirement:
+      type: object
+      additionalProperties: false
+      required:
+        - deliveryId
+        - resourceKind
+        - capacity
+      properties:
+        deliveryId:
+          type: string
+          format: uuid
+        resourceKind:
+          type: string
+          enum: [van, cargo_bike, depot, warehouse, locker]
+        capacity:
+          type: object
+          additionalProperties: false
+          required: [amount, unit]
+          properties:
+            amount:
+              type: number
+              exclusiveMinimum: 0
+            unit:
+              type: string
+              enum: [kg, parcels, slots]

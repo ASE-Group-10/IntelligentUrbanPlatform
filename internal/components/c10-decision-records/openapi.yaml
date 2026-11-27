@@ -1,0 +1,1200 @@
+openapi: 3.1.0
+info:
+  title: C10 Decision Records and Explanation API
+  version: 0.1.0
+  summary: Immutable decision-time evidence and grounded explanations (UC10).
+  description: |-
+    Draft v0.1 contract for C10, owned by Qingyuan + Bangchen (#13).
+
+    This file holds the HTTP operations used by the browser (C01). In-process calls
+    (`recordDecision`, `recordOutcome`, and run-scoped explanation for C12) are in
+    `internal.md`, with examples in `examples/`.
+
+    Explanations use only evidence saved at decision time; they never query today's C09 corpus. Shared C09C10 types are defined in the C09 contract.
+
+    HTTP calls carry a Supabase JWT (`Authorization: Bearer`), an optional `X-Correlation-Id` header and, for platform admins and users with several providers, `X-Acting-Provider` (C02); C10 derives the AuthContext from them through C02. `401` means not signed in, `422` means a malformed request or a missing/malformed `X-Acting-Provider`.
+  contact:
+    name: C10 Decision Records and Explanation
+servers:
+- url: /
+  description: Relative URL for the deployed platform
+tags:
+- name: C10 Decision Records and Explanation
+  description: C10 decision records, evidence and explanations
+paths:
+  /api/v1/decisions/{decisionId}:
+    get:
+      operationId: getDecision
+      summary: Get a decision record
+      tags:
+      - C10 Decision Records and Explanation
+      security:
+      - C10BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
+      - name: decisionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: runId
+        in: query
+        required: false
+        description: Replay run (C12). If given, the decision must be recorded in this run,
+          otherwise NotFound.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The decision record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C10DecisionRecordView'
+              examples:
+                stored:
+                  $ref: '#/components/examples/C10GetDecisionResponse'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C10Forbidden'
+        '404':
+          $ref: '#/components/responses/C10NotFound'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
+        '503':
+          $ref: '#/components/responses/C10Unavailable'
+  /api/v1/decisions:
+    get:
+      operationId: findDecision
+      summary: Find the decision for a subject
+      description: Selects by subject. Without `subjectVersion`, more than one match is a
+        Conflict (`C10.DECISION_AMBIGUOUS`) listing the candidates.
+      tags:
+      - C10 Decision Records and Explanation
+      security:
+      - C10BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
+      - name: subjectType
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - Plan
+          - Allocation
+          - Negotiation
+      - name: subjectId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: subjectVersion
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - name: runId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The decision record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C10DecisionRecordView'
+              examples:
+                stored:
+                  $ref: '#/components/examples/C10GetDecisionResponse'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C10Forbidden'
+        '404':
+          $ref: '#/components/responses/C10NotFound'
+        '409':
+          $ref: '#/components/responses/C10Conflict'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
+        '503':
+          $ref: '#/components/responses/C10Unavailable'
+  /api/v1/explanations:
+    post:
+      operationId: explainDecision
+      summary: Explain a saved decision
+      description: 'Builds an explanation from the saved record only. Missing evidence gives
+        `completeness: Partial` with gaps (AF2). If the LLM does not answer within 20 s, a
+        StructuredFallback explanation is returned (AF3).'
+      tags:
+      - C10 Decision Records and Explanation
+      security:
+      - C10BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C10ExplainRequest'
+            examples:
+              byId:
+                $ref: '#/components/examples/C10ExplainDecisionRequest'
+              replay:
+                $ref: '#/components/examples/C10ExplainDecisionReplayRequest'
+      responses:
+        '200':
+          description: Complete or partial explanation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C10Explanation'
+              examples:
+                complete:
+                  $ref: '#/components/examples/C10ExplainDecisionOkResponse'
+                partial:
+                  $ref: '#/components/examples/C10ExplainDecisionPartialResponse'
+        '400':
+          $ref: '#/components/responses/C10Invalid'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C10Forbidden'
+        '404':
+          $ref: '#/components/responses/C10NotFound'
+        '409':
+          $ref: '#/components/responses/C10Conflict'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
+        '503':
+          $ref: '#/components/responses/C10Unavailable'
+  /api/v1/decisions/{decisionId}/evidence/{referenceId}:
+    get:
+      operationId: getDecisionEvidence
+      summary: Get one stored evidence passage or alternative
+      tags:
+      - C10 Decision Records and Explanation
+      security:
+      - C10BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
+      - name: decisionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: referenceId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: runId
+        in: query
+        required: false
+        description: Replay run (C12). If given, the decision must be recorded in this run,
+          otherwise NotFound.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The evidence as saved at decision time.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C10DecisionEvidence'
+              examples:
+                passage:
+                  $ref: '#/components/examples/C10GetDecisionEvidenceResponse'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C10Forbidden'
+        '404':
+          $ref: '#/components/responses/C10NotFound'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
+        '503':
+          $ref: '#/components/responses/C10Unavailable'
+components:
+  securitySchemes:
+    C10BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    C10Invalid:
+      description: The request is not valid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C10Forbidden:
+      description: The caller may not perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C10NotFound:
+      description: Not found, or the caller may not know it exists.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C10Conflict:
+      description: Idempotency key reuse, ambiguous selector or version conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C10Unavailable:
+      description: A dependency is temporarily unavailable; retry later.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+  schemas:
+    C10Alternative:
+      additionalProperties: false
+      properties:
+        optionId:
+          type: string
+        summary:
+          type: string
+        metrics:
+          anyOf:
+          - additionalProperties:
+              type: number
+            type: object
+          - type: 'null'
+          default: null
+        rejectedReason:
+          type: string
+        evidenceRefIds:
+          items:
+            format: uuid
+            type: string
+          type: array
+      required:
+      - optionId
+      - summary
+      - rejectedReason
+      - evidenceRefIds
+      type: object
+    C10AttemptOutcome:
+      description: Result of the planning/allocation attempt this record explains.
+      enum:
+      - Selected
+      - Infeasible
+      - DataUnavailable
+      - NoChange
+      - ReviewRequired
+      type: string
+    C10Citation:
+      additionalProperties: false
+      properties:
+        refId:
+          format: uuid
+          type: string
+        documentId:
+          type: string
+        documentTitle:
+          type: string
+        documentVersion:
+          minimum: 1
+          type: integer
+        sectionId:
+          type: string
+        excerpt:
+          type: string
+      required:
+      - refId
+      - documentId
+      - documentTitle
+      - documentVersion
+      - sectionId
+      - excerpt
+      type: object
+    C10Completeness:
+      enum:
+      - Complete
+      - Partial
+      type: string
+    C10DecisionEvidence:
+      additionalProperties: false
+      properties:
+        decisionId:
+          format: uuid
+          type: string
+        referenceId:
+          type: string
+        kind:
+          enum:
+          - Evidence
+          - Alternative
+          type: string
+        status:
+          $ref: '#/components/schemas/C10EvidenceStatus'
+        evidence:
+          anyOf:
+          - $ref: '#/components/schemas/C09Passage'
+          - type: 'null'
+        alternative:
+          anyOf:
+          - $ref: '#/components/schemas/C10Alternative'
+          - type: 'null'
+      required:
+      - decisionId
+      - referenceId
+      - kind
+      - status
+      - evidence
+      - alternative
+      type: object
+    C10DecisionIdSelector:
+      additionalProperties: false
+      description: |-
+        Select one decision by ID. C12 replay also sends its ``runId``; C10 then
+        answers NotFound (``C10.DECISION_NOT_FOUND``) unless the decision was
+        recorded in that run, so a replay can never read another run's decisions.
+      properties:
+        decisionId:
+          format: uuid
+          type: string
+        runId:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          default: null
+      required:
+      - decisionId
+      type: object
+    C10DecisionRecordView:
+      additionalProperties: false
+      description: |-
+        getDecision response: the record as stored plus when it was recorded and
+        the status of each evidence reference.
+      properties:
+        decisionId:
+          format: uuid
+          type: string
+        idempotencyKey:
+          minLength: 1
+          type: string
+        decisionType:
+          $ref: '#/components/schemas/C10DecisionType'
+        producer:
+          enum:
+          - C05
+          - C08
+          type: string
+        decidedBy:
+          type: string
+        subject:
+          $ref: '#/components/schemas/C10Subject'
+        attemptOutcome:
+          $ref: '#/components/schemas/C10AttemptOutcome'
+        relatedDecisionId:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+        inputVersions:
+          $ref: '#/components/schemas/C10InputVersions'
+        selectedOption:
+          anyOf:
+          - $ref: '#/components/schemas/C10SelectedOption'
+          - type: 'null'
+        consideredAlternatives:
+          items:
+            $ref: '#/components/schemas/C10Alternative'
+          type: array
+        reasons:
+          items:
+            $ref: '#/components/schemas/C10Reason'
+          minItems: 1
+          type: array
+        predictedEffects:
+          anyOf:
+          - $ref: '#/components/schemas/C10PredictedEffects'
+          - type: 'null'
+          default: null
+        evidenceSnapshots:
+          items:
+            $ref: '#/components/schemas/C09EvidenceSnapshot'
+          type: array
+        limitations:
+          items:
+            type: string
+          type: array
+        runScope:
+          $ref: '#/components/schemas/C09C10RunScope'
+        decidedAt:
+          format: date-time
+          type: string
+        recordedAt:
+          format: date-time
+          type: string
+        evidenceStatus:
+          items:
+            $ref: '#/components/schemas/C10EvidenceStatusEntry'
+          type: array
+      required:
+      - decisionId
+      - idempotencyKey
+      - decisionType
+      - producer
+      - decidedBy
+      - subject
+      - attemptOutcome
+      - relatedDecisionId
+      - inputVersions
+      - selectedOption
+      - consideredAlternatives
+      - reasons
+      - evidenceSnapshots
+      - limitations
+      - runScope
+      - decidedAt
+      - recordedAt
+      - evidenceStatus
+      type: object
+    C10DecisionType:
+      enum:
+      - PlanGenerated
+      - Replan
+      - Allocation
+      - Negotiation
+      type: string
+    C10Effect:
+      additionalProperties: false
+      properties:
+        metric:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+        kind:
+          $ref: '#/components/schemas/C10EffectKind'
+      required:
+      - metric
+      - value
+      - unit
+      - kind
+      type: object
+    C10EffectKind:
+      enum:
+      - Predicted
+      - Observed
+      type: string
+    C10EntityVersion:
+      additionalProperties: false
+      properties:
+        id:
+          format: uuid
+          type: string
+        version:
+          minimum: 1
+          type: integer
+      required:
+      - id
+      - version
+      type: object
+    C10EvidenceStatus:
+      enum:
+      - Stored
+      - Missing
+      type: string
+    C10EvidenceStatusEntry:
+      additionalProperties: false
+      properties:
+        refId:
+          format: uuid
+          type: string
+        status:
+          $ref: '#/components/schemas/C10EvidenceStatus'
+      required:
+      - refId
+      - status
+      type: object
+    C10ExplainRequest:
+      additionalProperties: false
+      properties:
+        selector:
+          anyOf:
+          - $ref: '#/components/schemas/C10DecisionIdSelector'
+          - $ref: '#/components/schemas/C10SubjectSelector'
+        language:
+          default: en
+          type: string
+      required:
+      - selector
+      type: object
+    C10ExplainedAlternative:
+      additionalProperties: false
+      properties:
+        optionId:
+          type: string
+        summary:
+          type: string
+        rejectedReason:
+          type: string
+        citationRefIds:
+          items:
+            format: uuid
+            type: string
+          type: array
+      required:
+      - optionId
+      - summary
+      - rejectedReason
+      - citationRefIds
+      type: object
+    C10Explanation:
+      additionalProperties: false
+      properties:
+        decisionId:
+          format: uuid
+          type: string
+        decisionType:
+          $ref: '#/components/schemas/C10DecisionType'
+        subject:
+          $ref: '#/components/schemas/C10Subject'
+        attemptOutcome:
+          $ref: '#/components/schemas/C10AttemptOutcome'
+        decidedAt:
+          format: date-time
+          type: string
+        runScope:
+          $ref: '#/components/schemas/C09C10RunScope'
+        corpusVersion:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        mode:
+          $ref: '#/components/schemas/C10ExplanationMode'
+        completeness:
+          $ref: '#/components/schemas/C10Completeness'
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+        keyFactors:
+          items:
+            $ref: '#/components/schemas/C10KeyFactor'
+          type: array
+        alternatives:
+          items:
+            $ref: '#/components/schemas/C10ExplainedAlternative'
+          type: array
+        citations:
+          items:
+            $ref: '#/components/schemas/C10Citation'
+          type: array
+        effects:
+          items:
+            $ref: '#/components/schemas/C10Effect'
+          type: array
+        gaps:
+          items:
+            $ref: '#/components/schemas/C10Gap'
+          type: array
+        limitations:
+          items:
+            type: string
+          type: array
+        generatedAt:
+          format: date-time
+          type: string
+        generator:
+          anyOf:
+          - $ref: '#/components/schemas/C10Generator'
+          - type: 'null'
+      required:
+      - decisionId
+      - decisionType
+      - subject
+      - attemptOutcome
+      - decidedAt
+      - runScope
+      - corpusVersion
+      - mode
+      - completeness
+      - summary
+      - keyFactors
+      - alternatives
+      - citations
+      - effects
+      - gaps
+      - limitations
+      - generatedAt
+      - generator
+      type: object
+    C10ExplanationMode:
+      enum:
+      - Generated
+      - StructuredFallback
+      type: string
+    C10Gap:
+      additionalProperties: false
+      properties:
+        kind:
+          $ref: '#/components/schemas/C10GapKind'
+        refId:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          default: null
+        message:
+          type: string
+      required:
+      - kind
+      - message
+      type: object
+    C10GapKind:
+      enum:
+      - EvidenceMissing
+      - InconsistentRecord
+      type: string
+    C10Generator:
+      additionalProperties: false
+      properties:
+        model:
+          type: string
+        promptVersion:
+          type: string
+      required:
+      - model
+      - promptVersion
+      type: object
+    C10InputVersions:
+      additionalProperties: false
+      properties:
+        deliveries:
+          items:
+            $ref: '#/components/schemas/C10EntityVersion'
+          type: array
+        resources:
+          items:
+            $ref: '#/components/schemas/C10EntityVersion'
+          type: array
+        citySnapshotVersion:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        corpusVersion:
+          anyOf:
+          - type: integer
+          - type: 'null'
+      required:
+      - deliveries
+      - resources
+      - citySnapshotVersion
+      - corpusVersion
+      type: object
+    C10KeyFactor:
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+        citationRefIds:
+          items:
+            format: uuid
+            type: string
+          type: array
+      required:
+      - text
+      - citationRefIds
+      type: object
+    C10PredictedEffects:
+      additionalProperties: false
+      properties:
+        etaMin:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+        distanceKm:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+        costEur:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+        co2Kg:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+      type: object
+    C10Reason:
+      additionalProperties: false
+      properties:
+        reasonId:
+          type: string
+        text:
+          type: string
+        evidenceRefIds:
+          items:
+            format: uuid
+            type: string
+          type: array
+      required:
+      - reasonId
+      - text
+      - evidenceRefIds
+      type: object
+    C10SelectedOption:
+      additionalProperties: false
+      properties:
+        optionId:
+          type: string
+        summary:
+          type: string
+        details:
+          additionalProperties: true
+          type: object
+      required:
+      - optionId
+      - summary
+      - details
+      type: object
+    C10Subject:
+      additionalProperties: false
+      description: |-
+        What the decision is about. ``version`` is null when no saved version
+        exists: always for ``PlanningAttempt``, never for a ``Selected`` outcome.
+      properties:
+        type:
+          $ref: '#/components/schemas/C10SubjectType'
+        id:
+          format: uuid
+          type: string
+        version:
+          anyOf:
+          - minimum: 1
+            type: integer
+          - type: 'null'
+      required:
+      - type
+      - id
+      - version
+      type: object
+    C10SubjectSelector:
+      additionalProperties: false
+      properties:
+        subjectType:
+          $ref: '#/components/schemas/C10SubjectType'
+        subjectId:
+          format: uuid
+          type: string
+        subjectVersion:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+        runId:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          default: null
+      required:
+      - subjectType
+      - subjectId
+      type: object
+    C10SubjectType:
+      enum:
+      - Plan
+      - Allocation
+      - Negotiation
+      - PlanningAttempt
+      type: string
+  examples:
+    C10ExplainDecisionRequest:
+      summary: Explain by decision ID (live)
+      value:
+        selector:
+          decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+          runId: null
+        language: en
+    C10ExplainDecisionReplayRequest:
+      summary: Explain a decision recorded in a C12 simulation run
+      value:
+        selector:
+          decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+          runId: 6f1e2d3c-4b5a-4968-8776-5544332211aa
+        language: en
+    C10ExplainDecisionOkResponse:
+      summary: Complete explanation
+      value:
+        decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+        decisionType: PlanGenerated
+        subject:
+          type: Plan
+          id: 9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a
+          version: 1
+        attemptOutcome: Selected
+        decidedAt: '2026-11-20T06:55:10Z'
+        runScope:
+          mode: Live
+          runId: null
+        corpusVersion: 7
+        mode: Generated
+        completeness: Complete
+        summary: The planner assigned the delivery to a van rather than the 5-axle HGV. The
+          HGV is banned from the city-centre cordon between 07:00 and 19:00, and the van can
+          unload on Grafton Street inside the 06:00-11:00 loading window. Among the feasible
+          options it had the lowest predicted cost.
+        keyFactors:
+        - text: 5-axle HGVs may not enter the city-centre cordon 07:00-19:00.
+          citationRefIds:
+          - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+        - text: Unloading 07:40-08:10 falls inside the Grafton Street loading window.
+          citationRefIds:
+          - a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+        - text: Lowest predicted cost among feasible options (EUR 41.50).
+          citationRefIds: []
+        alternatives:
+        - optionId: opt-2
+          summary: Direct delivery with 5-axle HGV
+          rejectedReason: Violates city-centre HGV ban 07:00-19:00 (hard constraint)
+          citationRefIds:
+          - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+        - optionId: opt-3
+          summary: Van delivery arriving 11:30
+          rejectedReason: Outside Grafton Street loading window 06:00-11:00
+          citationRefIds:
+          - a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+        citations:
+        - refId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+          documentId: dcc-hgv-cordon
+          documentTitle: City Centre HGV Restrictions (demo data)
+          documentVersion: 3
+          sectionId: '4.2'
+          excerpt: Heavy goods vehicles with five or more axles are not permitted to enter
+            the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+        - refId: a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+          documentId: dcc-loading-bays
+          documentTitle: City Centre Loading Bay Rules (demo data)
+          documentVersion: 1
+          sectionId: '2.1'
+          excerpt: Loading and unloading on Grafton Street is permitted between 06:00 and
+            11:00 only.
+        effects:
+        - metric: eta
+          value: 38
+          unit: min
+          kind: Predicted
+        - metric: cost
+          value: 41.5
+          unit: EUR
+          kind: Predicted
+        - metric: co2
+          value: 9.8
+          unit: kg
+          kind: Predicted
+        gaps: []
+        limitations: []
+        generatedAt: '2026-11-20T09:12:44Z'
+        generator:
+          model: llm-model-tbd
+          promptVersion: explain-v1
+    C10ExplainDecisionPartialResponse:
+      summary: Evidence missing, partial explanation
+      value:
+        decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+        decisionType: PlanGenerated
+        subject:
+          type: Plan
+          id: 9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a
+          version: 1
+        attemptOutcome: Selected
+        decidedAt: '2026-11-20T06:55:10Z'
+        runScope:
+          mode: Live
+          runId: null
+        corpusVersion: 7
+        mode: StructuredFallback
+        completeness: Partial
+        summary: null
+        keyFactors:
+        - text: HGV option excluded by the city-centre cordon ban
+          citationRefIds:
+          - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+        - text: Unloading scheduled inside the permitted loading window
+          citationRefIds: []
+        - text: Lowest predicted cost among feasible options
+          citationRefIds: []
+        alternatives:
+        - optionId: opt-2
+          summary: Direct delivery with 5-axle HGV
+          rejectedReason: Violates city-centre HGV ban 07:00-19:00 (hard constraint)
+          citationRefIds:
+          - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+        - optionId: opt-3
+          summary: Van delivery arriving 11:30
+          rejectedReason: Outside Grafton Street loading window 06:00-11:00
+          citationRefIds: []
+        citations:
+        - refId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+          documentId: dcc-hgv-cordon
+          documentTitle: City Centre HGV Restrictions (demo data)
+          documentVersion: 3
+          sectionId: '4.2'
+          excerpt: Heavy goods vehicles with five or more axles are not permitted to enter
+            the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+        effects:
+        - metric: eta
+          value: 38
+          unit: min
+          kind: Predicted
+        - metric: cost
+          value: 41.5
+          unit: EUR
+          kind: Predicted
+        - metric: co2
+          value: 9.8
+          unit: kg
+          kind: Predicted
+        gaps:
+        - kind: EvidenceMissing
+          refId: a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+          message: Evidence item referenced by reason r2 is not available in C10 storage.
+        limitations:
+        - Explanation generator unavailable; showing recorded facts only.
+        generatedAt: '2026-11-20T09:12:44Z'
+        generator: null
+    C10GetDecisionEvidenceResponse:
+      summary: Stored evidence passage
+      value:
+        decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+        referenceId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+        kind: Evidence
+        status: Stored
+        evidence:
+          passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+          content: Heavy goods vehicles with five or more axles are not permitted to enter
+            the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+          documentId: dcc-hgv-cordon
+          documentTitle: City Centre HGV Restrictions (demo data)
+          documentVersion: 3
+          sectionId: '4.2'
+          validFrom: '2026-01-01T00:00:00Z'
+          validTo: null
+          applicability:
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            vehicleClasses:
+            - truck
+            activities: []
+          score: 0.87
+          constraints:
+          - constraintId: dcc-hgv-cordon:v3:4.2:c1
+            kind: VehicleBan
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            segmentKeys: []
+            vehicleClasses:
+            - truck
+            timeOfDay:
+              from: 07:00
+              to: '19:00'
+            daysOfWeek: []
+            value: null
+            exemption: Valid HGV permit
+        alternative: null
+    C10ErrorDecisionAmbiguous:
+      summary: Subject matches several decisions
+      value:
+        error:
+          code: C10.DECISION_AMBIGUOUS
+          message: More than one decision matches this subject; specify subjectVersion or decisionId.
+          correlation_id: 4c0ffee0-1234-4abc-9def-001122334455
+          details:
+            candidates:
+            - decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+              subjectVersion: 1
+            - decisionId: b1a2c3d4-e5f6-4789-8abc-def012345678
+              subjectVersion: 2
+    C10GetDecisionResponse:
+      summary: Stored plan decision with evidence status
+      value:
+        decisionId: d7c6b5a4-9384-4756-a1b2-c3d4e5f60708
+        idempotencyKey: c05:plan:9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a:v1
+        decisionType: PlanGenerated
+        producer: C05
+        decidedBy: service:c05-planner
+        subject:
+          type: Plan
+          id: 9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a
+          version: 1
+        attemptOutcome: Selected
+        relatedDecisionId: null
+        inputVersions:
+          deliveries:
+          - id: 0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d
+            version: 2
+          resources:
+          - id: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f
+            version: 5
+          - id: 6f5e4d3c-2b1a-4098-8765-43210fedcba9
+            version: 3
+          citySnapshotVersion: 1042
+          corpusVersion: 7
+        selectedOption:
+          optionId: opt-1
+          summary: Van delivery via N11, unloading on Grafton Street 07:40-08:10
+          details:
+            resourceId: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f
+            plannedArrival: '2026-11-20T07:40:00Z'
+        consideredAlternatives:
+        - optionId: opt-2
+          summary: Direct delivery with 5-axle HGV
+          metrics:
+            etaMin: 32
+            costEur: 58
+            co2Kg: 21.4
+          rejectedReason: Violates city-centre HGV ban 07:00-19:00 (hard constraint)
+          evidenceRefIds:
+          - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+        - optionId: opt-3
+          summary: Van delivery arriving 11:30
+          metrics:
+            etaMin: 36
+            costEur: 39
+            co2Kg: 9.1
+          rejectedReason: Outside Grafton Street loading window 06:00-11:00
+          evidenceRefIds:
+          - a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+        reasons:
+        - reasonId: r1
+          text: HGV option excluded by the city-centre cordon ban
+          evidenceRefIds:
+          - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+        - reasonId: r2
+          text: Unloading scheduled inside the permitted loading window
+          evidenceRefIds:
+          - a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+        - reasonId: r3
+          text: Lowest predicted cost among feasible options
+          evidenceRefIds: []
+        predictedEffects:
+          etaMin: 38
+          distanceKm: 14.2
+          costEur: 41.5
+          co2Kg: 9.8
+        evidenceSnapshots:
+        - ruleCoverage: Complete
+          snapshotId: e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a05
+          query:
+            area:
+              zoneIds:
+              - dublin-D2
+            timeWindow:
+              start: '2026-11-20T07:30:00Z'
+              end: '2026-11-20T09:00:00Z'
+            vehicleClass: truck
+            activity: Delivery
+            freeText: city-centre delivery to a Grafton Street retailer
+            maxPassages: 5
+          retrievalStatus: Ok
+          items:
+          - passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+            content: Heavy goods vehicles with five or more axles are not permitted to enter
+              the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+            documentId: dcc-hgv-cordon
+            documentTitle: City Centre HGV Restrictions (demo data)
+            documentVersion: 3
+            sectionId: '4.2'
+            validFrom: '2026-01-01T00:00:00Z'
+            validTo: null
+            applicability:
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              vehicleClasses:
+              - truck
+              activities: []
+            score: 0.87
+            constraints:
+            - constraintId: dcc-hgv-cordon:v3:4.2:c1
+              kind: VehicleBan
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              segmentKeys: []
+              vehicleClasses:
+              - truck
+              timeOfDay:
+                from: 07:00
+                to: '19:00'
+              daysOfWeek: []
+              value: null
+              exemption: Valid HGV permit
+          - passageId: a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+            content: Loading and unloading on Grafton Street is permitted between 06:00 and
+              11:00 only.
+            documentId: dcc-loading-bays
+            documentTitle: City Centre Loading Bay Rules (demo data)
+            documentVersion: 1
+            sectionId: '2.1'
+            validFrom: '2026-03-01T00:00:00Z'
+            validTo: null
+            applicability:
+              zoneIds:
+              - dublin-D2
+              vehicleClasses: []
+              activities:
+              - Delivery
+              - Loading
+            score: 0.74
+            constraints:
+            - constraintId: dcc-loading-bays:v1:2.1:c1
+              kind: LoadingWindow
+              zoneIds:
+              - dublin-D2
+              segmentKeys:
+              - seg:5508812
+              vehicleClasses: []
+              timeOfDay:
+                from: 06:00
+                to: '11:00'
+              daysOfWeek: []
+              value: null
+              exemption: null
+          conflicts: []
+          limitations: []
+          corpusVersion: 7
+          indexVersion: idx-7
+          embeddingModel: embedding-model-tbd
+          retrievedAt: '2026-11-20T06:55:02Z'
+        limitations: []
+        runScope:
+          mode: Live
+          runId: null
+        decidedAt: '2026-11-20T06:55:10Z'
+        recordedAt: '2026-11-20T06:55:04Z'
+        evidenceStatus:
+        - refId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+          status: Stored
+        - refId: a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+          status: Stored

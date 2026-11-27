@@ -1,0 +1,2311 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../../c04-delivery-management/internal/">
+      
+      
+        <link rel="next" href="../../c06-city-monitoring/internal/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>C05 Planning and Replanning - Intelligent Urban Platform — Internal Contracts</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#c05-planning-and-replanning" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-header__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent Urban Platform — Internal Contracts
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              C05 Planning and Replanning
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-nav__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent Urban Platform — Internal Contracts
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Components
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Components
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 identity access
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C02 identity access
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c02-identity-access/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 Identity and Access: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 delivery management
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C04 delivery management
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c04-delivery-management/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 Delivery Management: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C05 planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 Planning and Replanning
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 Planning and Replanning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generateplandelivery-runscope-correlationid-key-resultplan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        generatePlan(delivery, runScope, correlationId, key) → Result\&lt;Plan>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="generatePlan(delivery, runScope, correlationId, key) → Result\&lt;Plan&gt;">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-hop-4-from-the-saved-delivery-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run hop 4 from the saved delivery example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#confirm-a-generated-proposal-hop-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confirm a generated proposal (hop 5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#read-a-confirmed-delivery-route-for-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read a confirmed delivery route for allocation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#findaffectedworkchangescope-resultaffectedwork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        findAffectedWork(changeScope) → Result\&lt;AffectedWork>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requestreplancontext-planid-trigger-key-resultreplanoutcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome&gt;">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-the-dublin-replan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the Dublin replan
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#planning-and-persistence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planning and persistence rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example sequence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agreed-with-c07-59-20-nov-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agreed with C07 (#59, 20 Nov 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-coordination-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open coordination points
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 city monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C06 city monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c06-city-monitoring/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 City Monitoring: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 disruption detection
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C07 disruption detection
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c07-disruption-detection/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 Disruption Detection: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 allocation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C08 allocation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c08-allocation/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 Allocation and Resource Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 logistics knowledge
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C09 logistics knowledge
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c09-logistics-knowledge/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 Logistics Knowledge: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 decision records
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C10 decision records
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c10-decision-records/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 Decision Records and Explanation: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_9" id="__nav_2_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 kpi analytics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C11 kpi analytics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c11-kpi-analytics/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 KPI Analytics: internal interfaces (UC11)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_10" id="__nav_2_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 simulation replay
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C12 simulation replay
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c12-simulation-replay/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 Simulation and Replay: internal interfaces (UC12)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generateplandelivery-runscope-correlationid-key-resultplan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        generatePlan(delivery, runScope, correlationId, key) → Result\&lt;Plan>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="generatePlan(delivery, runScope, correlationId, key) → Result\&lt;Plan&gt;">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-hop-4-from-the-saved-delivery-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run hop 4 from the saved delivery example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#confirm-a-generated-proposal-hop-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confirm a generated proposal (hop 5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#read-a-confirmed-delivery-route-for-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read a confirmed delivery route for allocation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#findaffectedworkchangescope-resultaffectedwork" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        findAffectedWork(changeScope) → Result\&lt;AffectedWork>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requestreplancontext-planid-trigger-key-resultreplanoutcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome&gt;">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-the-dublin-replan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the Dublin replan
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#planning-and-persistence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planning and persistence rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example sequence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agreed-with-c07-59-20-nov-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agreed with C07 (#59, 20 Nov 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-coordination-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open coordination points
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="c05-planning-and-replanning">C05 Planning and Replanning<a class="headerlink" href="#c05-planning-and-replanning" title="Permanent link">&para;</a></h1>
+<p>UC03 and UC07 contracts (#32), with the Dublin walking-skeleton implementation
+tracked in <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/118">#118</a>.
+Pair Ye + Zecheng. Bruno accepted external review of #118 and requested Alejandro
+for the shared C01/C07 and integration changes. <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/118#issuecomment-7134488845">Review discussion</a>.</p>
+<p>C05 owns proposals, confirmed plans and revisions. C08 owns actual allocation
+and operational commitments. Planning reads those facts when checking feasibility.</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<p>Use camelCase JSON, UUID v4 identifiers, positive integer versions and UTC
+RFC 3339 timestamps. Reuse the shared <code>Result&lt;T&gt;</code> from
+<code>backend/app/shared/result.py</code>. A successful internal call returns <code>Ok(value)</code>;
+a failure returns <code>Failure(kind, message)</code>. JSON examples show the success value.
+<code>PlanningPort</code> returns this <code>Result</code> from both operations and raises no exceptions.</p>
+<p>The adopted C07 models remain in
+<code>backend/app/components/c07_disruption_detection/contracts.py</code> for compatibility.
+<code>ChangeScope</code>, <code>AffectedWork</code>, <code>ReplanRequest</code> and <code>ReplanOutcome</code> are the current
+typed models. <code>PlanningPort</code> in the adjacent <code>planning.py</code> is the current caller
+interface. The agreements with C07 that shaped them are in
+<a href="#agreed-with-c07-59-20-nov-2026">Agreed with C07</a>.</p>
+<h2 id="provided-interfaces">Provided interfaces<a class="headerlink" href="#provided-interfaces" title="Permanent link">&para;</a></h2>
+<h3 id="generateplandelivery-runscope-correlationid-key-resultplan">generatePlan(delivery, runScope, correlationId, key) → Result\&lt;Plan&gt;<a class="headerlink" href="#generateplandelivery-runscope-correlationid-key-resultplan" title="Permanent link">&para;</a></h3>
+<p>For hop 4 of <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/72">#72</a>,
+C04 commits a Dublin simulation delivery before its planning gateway projects the
+saved row into <code>SavedDelivery</code> and calls <code>app.state.planning.generate_plan</code> in
+process. C04 owns its delivery row and the authorised read of that row. A
+successful simulation handoff returns <code>X-Plan-Id</code>, <code>X-Plan-Version</code> and the original
+<code>X-Correlation-ID</code> alongside the delivery response. On the Deliveries page,
+<strong>Review plan</strong> opens that plan in the same run. The saved fields follow the
+<a href="../../c04-delivery-management/internal/">C04 delivery contract</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>What C04 supplies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>delivery</code></td>
+<td>A <code>SavedDelivery</code> constructed from the committed <a href="../../c04-delivery-management/examples/delivery-submitted.json">C04 delivery</a>. C05 reads <code>deliveryId</code>, <code>version</code>, <code>status</code>, <code>progress.status</code>, <code>cargo.weightKg</code>, <code>constraints.vehicleKinds</code> and <code>timeWindow</code>.</td>
+</tr>
+<tr>
+<td><code>run_scope</code></td>
+<td>A <code>PlanScope</code> with <code>scope="simulation"</code> and the delivery's UUIDv4 <code>runId</code>.</td>
+</tr>
+<tr>
+<td><code>correlation_id</code></td>
+<td>The UUIDv4 from the original delivery request, forwarded through C05 to C09 and C10 and retained for <code>PlanReady</code>.</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>C04 uses <code>c04:{deliveryId}:v{version}</code> when submitting or replaying a delivery. The saved-example importer uses <code>c04:generate:{deliveryId}:v{version}</code>. Both keys stay stable across retries and must be nonblank and at most 200 characters.</td>
+</tr>
+</tbody>
+</table>
+<p>The Dublin proposal uses the Eden Quay segment and one van with the saved cargo
+weight. Supply the version as a JSON integer, the weight as a JSON number and
+the delivery window bounds as RFC 3339 UTC strings (for example, <code>2026-11-20T09:00:00Z</code>).
+The delivery and its progress must both be pending, and its constraints
+must allow a van. Departure is the later of the scenario start and the delivery
+window start. The six-minute route must finish within that window. C05 queries
+C09 for van delivery in Dublin D1/D2 during the saved window and passes the
+returned evidence snapshot unchanged to C10. C09 reads the shared live policy
+corpus and logs the same correlation ID. C10 records the simulation run and
+the corpus version used for this decision. C10's <code>PlanGenerated</code> decision,
+the C05 proposal and the generation receipt share one PostgreSQL transaction.
+A write failure rolls all three back. The first <code>PlanReady</code> outbox entry belongs
+to confirmation in hop 5.</p>
+<p><code>Ok(Plan)</code> returns the committed <code>planId</code>, <code>version=1</code>,
+<code>status="awaiting_confirmation"</code> and <code>decisionId</code>. Retrying the same projected
+delivery with the same caller, run and key returns that original version.
+Different projected facts under the same key give <code>Conflict</code>. A signed-in
+operator with access to the run can read the current version with
+<code>GET /api/v1/plans/{planId}?scope=simulation&amp;runId={runId}</code>.</p>
+<h4 id="run-hop-4-from-the-saved-delivery-example">Run hop 4 from the saved delivery example<a class="headerlink" href="#run-hop-4-from-the-saved-delivery-example" title="Permanent link">&para;</a></h4>
+<p>From the repository root, use the local Compose stack and its migrated database.
+The last command imports the saved example with its original delivery ID and
+dates into C04's simulation store. It commits the delivery, then calls C05.
+For a wall-clock closure and detour, use the <a href="#run-the-dublin-replan">full walkthrough</a>
+with <code>--fresh</code>.</p>
+<pre><code class="language-sh">docker compose up -d --build
+docker compose exec -T api python -m app.components.c09_logistics_knowledge.demo_corpus
+docker compose exec -T api python -m app.demo.c05 &lt; contracts/components/c04-delivery-management/examples/delivery-submitted.json
+</code></pre>
+<p>In PowerShell, use the following form for the last command.</p>
+<pre><code class="language-powershell">Get-Content -Raw contracts/components/c04-delivery-management/examples/delivery-submitted.json | docker compose exec -T api python -m app.demo.c05
+</code></pre>
+<p>The CLI prints the committed plan as JSON. Repeating it with the same inputs
+returns the same plan and decision IDs. The defaults for <code>--run-id</code> and
+<code>--correlation-id</code> come from the <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/blob/develop/fixtures/dublin-scenario.json">Dublin fixture</a>.
+Pass the delivery's original values when replaying another trace. The end-to-end
+check starts at C04's submit handler and requires evidence of its call to C05.</p>
+<h3 id="confirm-a-generated-proposal-hop-5">Confirm a generated proposal (hop 5)<a class="headerlink" href="#confirm-a-generated-proposal-hop-5" title="Permanent link">&para;</a></h3>
+<p>Sign in as an operator, submit a Dublin simulation delivery and select <strong>Review
+plan</strong>. The saved-example CLI also prints a <code>/plans?…</code> link. The Plans page
+loads the proposal for that run and displays <strong>Confirm plan</strong> above the vehicle
+assignments. The URL carries <code>planId</code>, <code>scope</code>, <code>runId</code> and the original
+<code>correlationId</code>. The shell sends the selected <code>X-Acting-Provider</code> and the delivery's
+<code>X-Correlation-ID</code> on the read and confirmation. The page shows the saved plan ID
+and version, including after a revision. Vehicle allocation follows asynchronously.</p>
+<p>For a delivery submitted through C04, reading and confirming its proposal
+requires an operator acting for the provider that owns the delivery. A different
+acting provider receives HTTP 404 on a read, confirmation or confirmation retry,
+including within the same shared run. Imported Dublin
+examples carry fixture provenance and are shared with operators authorised
+for that run. The local fixture confirmation CLI accepts only those imports.</p>
+<p>The action sends <code>POST /api/v1/plans/{planId}/confirmation</code> with the saved
+version in <code>expectedVersion</code>, the same <code>runScope</code>, and a stable
+<code>Idempotency-Key</code>. C05 calls C04's <code>markRequestsPlanned</code> on the same PostgreSQL
+connection. C04 checks each delivery version and records the link and its C10
+audit under the C05 service identity. C05 records <code>C05.confirmPlan</code> with the
+operator principal and request correlation ID from C02. Both audits, the next
+confirmed version with its original decision ID, the receipt and the first
+<code>PlanReady</code> outbox entry commit together. A retry of the same successful
+command returns its receipt without another success audit or event. A
+conflicting version requires a fresh read. If C05 rejects an authenticated
+confirmation, it records the outcome in a separate transaction after any
+business rollback.</p>
+<p>The <code>c05-publisher</code> worker sends the committed envelope to the topic exchange
+with routing key <code>PlanReady</code>. It marks the row published after RabbitMQ
+confirms receipt. If that mark is lost, the worker sends the same event ID
+again. Concurrent publishers can process different plans or runs. For one
+plan in one run, the confirmation event must have a committed publication
+mark before a worker can claim the revision event.
+The integration test receives the message and checks it against the
+saved row and the C08 event contract. Run it from <code>backend/</code> with
+<code>TEST_DATABASE_URL</code> pointing to a dedicated test database and
+<code>TEST_RABBITMQ_URL</code> pointing to the test broker.</p>
+<pre><code class="language-sh">uv run pytest tests/test_c05_confirm_plan.py tests/test_c05_outbox_publisher.py
+</code></pre>
+<h3 id="read-a-confirmed-delivery-route-for-allocation">Read a confirmed delivery route for allocation<a class="headerlink" href="#read-a-confirmed-delivery-route-for-allocation" title="Permanent link">&para;</a></h3>
+<p>C08 can use two in-process functions from
+<code>app.components.c05_planning.allocation</code>. Both take a SQLAlchemy connection
+and the <code>RunScopeSelector</code> built from the received <code>PlanReady</code> envelope's
+<code>scope</code> and <code>runId</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get_delivery_route(conn, run_scope, plan_id, plan_version, delivery_id)</code></td>
+<td><code>Ok(ConfirmedDeliveryRoute)</code> contains the saved <code>plan</code>, its single matching <code>route</code> and the same version's offset-aware <code>planned_departure_at</code>. Pass the plan ID and version from the event payload and the delivery ID from its requirement.</td>
+</tr>
+<tr>
+<td><code>check_current_version(conn, run_scope, plan_id, plan_version)</code></td>
+<td><code>Ok(None)</code> when that version is the current confirmed plan. A different head or an unconfirmed head gives <code>Conflict</code>. An unknown plan in that scope gives <code>NotFound</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The first read also works for an older confirmed version. A proposal, unknown
+version, different run or delivery with no matching route gives <code>NotFound</code>.
+Multiple matching routes give <code>Invalid</code>. The returned plan includes the
+decision ID and resource requirements for checking the envelope.</p>
+<p>For an allocation, call the current-version check immediately before saving
+the commitment, on the same connection inside <code>with engine.begin() as conn:</code>.
+Use PostgreSQL <code>READ COMMITTED</code>. On success, C05 holds a shared plan lock
+until that transaction ends. Confirmation and future revision writers must
+take the matching exclusive lock with <code>store.lock_plan</code> before advancing the
+version. A failed check must prevent the allocation from being committed.
+With DBAPI autocommit, a different isolation level or no active transaction,
+the check returns <code>Unavailable</code>. Let database exceptions leave the transaction
+so the worker can retry after rollback with the event still unprocessed.</p>
+<p>With a dedicated PostgreSQL database and RabbitMQ broker configured as above,
+run the following from <code>backend/</code>. The broker test reads the Dublin route using
+the identifiers from the delivered message. The lookup tests add a later
+confirmed version to check historical reads and concurrent allocation checks.</p>
+<pre><code class="language-sh">uv run pytest tests/test_c05_confirm_plan.py tests/test_c05_allocation_lookup.py
+</code></pre>
+<h3 id="findaffectedworkchangescope-resultaffectedwork">findAffectedWork(changeScope) → Result\&lt;AffectedWork&gt;<a class="headerlink" href="#findaffectedworkchangescope-resultaffectedwork" title="Permanent link">&para;</a></h3>
+<p>C07 asks C05 which unfinished work a change touches. C05 owns plans, so it
+decides what "affected" means for a route; C07 only says where and what
+changed. For the slice, C07 sends one call per changed segment.</p>
+<p>Examples <a href="../examples/find-affected-work-request.json">request</a> and
+<a href="../examples/find-affected-work-response.json">response</a>.</p>
+<p><strong>Request: changeScope</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>segmentKeys</code></td>
+<td>array of string</td>
+<td>one of</td>
+<td>Segments whose condition changed</td>
+</tr>
+<tr>
+<td><code>resourceIds</code></td>
+<td>array of UUID</td>
+<td>one of</td>
+<td>Resources whose availability changed or failed</td>
+</tr>
+<tr>
+<td><code>planIds</code></td>
+<td>array of UUID</td>
+<td>one of</td>
+<td>Plans named directly (for example by <code>OperationalDisruption</code>)</td>
+</tr>
+<tr>
+<td><code>from</code> / <code>to</code></td>
+<td>timestamp</td>
+<td>no</td>
+<td>Include routes overlapping <code>[from, to)</code>. Omitting <code>from</code> uses the C05 clock at discovery. Omitting <code>to</code> leaves the window open-ended.</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>live</code> or <code>simulation</code>, copied from the event that triggered the detection</td>
+</tr>
+<tr>
+<td><code>runId</code></td>
+<td>UUID</td>
+<td>when simulation</td>
+<td>Simulation run; must be absent when <code>scope</code> is <code>live</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response: AffectedWork</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>items</code></td>
+<td>array</td>
+<td>yes</td>
+<td>Empty when nothing is affected</td>
+</tr>
+<tr>
+<td><code>items[].planId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Plan touching the scope</td>
+</tr>
+<tr>
+<td><code>items[].planVersion</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Current version C05 checked against</td>
+</tr>
+<tr>
+<td><code>items[].deliveryIds</code></td>
+<td>array of UUID</td>
+<td>yes</td>
+<td>Unfinished deliveries on the affected part; completed ones excluded</td>
+</tr>
+<tr>
+<td><code>items[].matchedSegmentKeys</code></td>
+<td>array of string</td>
+<td>no</td>
+<td>Which of the requested segments the route uses</td>
+</tr>
+<tr>
+<td><code>items[].matchedResourceIds</code></td>
+<td>array of UUID</td>
+<td>no</td>
+<td>Which requested resources the plan relies on</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Failures:</strong> <code>Invalid</code>, <code>Unavailable</code> (C07 then reports disruption status
+<code>unknown</code>).</p>
+<h3 id="requestreplancontext-planid-trigger-key-resultreplanoutcome">requestReplan(context, planId, trigger, key) → Result\&lt;ReplanOutcome&gt;<a class="headerlink" href="#requestreplancontext-planid-trigger-key-resultreplanoutcome" title="Permanent link">&para;</a></h3>
+<p>C07 sends one <code>requestReplan</code> per affected plan. The call is synchronous: C05
+answers with a final outcome straight away.</p>
+<p>Examples <a href="../examples/request-replan.json">request</a>,
+<a href="../examples/replan-saved.json">saved outcome</a> and
+<a href="../examples/replan-conflict.json">conflict failure</a>.</p>
+<p><strong>Request</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context</code></td>
+<td>AuthContext</td>
+<td>yes</td>
+<td>Service identity <code>C07</code>, plus <code>correlationId</code></td>
+</tr>
+<tr>
+<td><code>planId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Plan to revise</td>
+</tr>
+<tr>
+<td><code>trigger.disruptionId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Disruption record behind the request</td>
+</tr>
+<tr>
+<td><code>trigger.disruptionVersion</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Version of that record</td>
+</tr>
+<tr>
+<td><code>trigger.basedOnPlanVersion</code></td>
+<td>integer</td>
+<td>yes</td>
+<td>Plan version returned by <code>findAffectedWork</code></td>
+</tr>
+<tr>
+<td><code>trigger.reason</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>road_closed</code> / <code>congestion</code> / <code>resource_unavailable</code> / <code>operational_failure</code> / <code>weather</code></td>
+</tr>
+<tr>
+<td><code>trigger.citySnapshotVersion</code></td>
+<td>integer</td>
+<td>no</td>
+<td>Snapshot the disruption was judged on</td>
+</tr>
+<tr>
+<td><code>trigger.sourceEventId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Event that started the chain</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>live</code> or <code>simulation</code>, copied from the event that triggered the detection</td>
+</tr>
+<tr>
+<td><code>runId</code></td>
+<td>UUID</td>
+<td>when simulation</td>
+<td>Simulation run; must be absent when <code>scope</code> is <code>live</code></td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Idempotency key = <code>planId:basedOnPlanVersion:disruptionId:disruptionVersion</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response: ReplanOutcome</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>enum</td>
+<td>yes</td>
+<td><code>NoChange</code> / <code>ReviewRequired</code> / <code>PlanSaved</code></td>
+</tr>
+<tr>
+<td><code>newPlanVersion</code></td>
+<td>integer</td>
+<td>when saved</td>
+<td>Version of the saved revision</td>
+</tr>
+<tr>
+<td><code>decisionId</code></td>
+<td>UUID</td>
+<td>when saved</td>
+<td>C10 decision record</td>
+</tr>
+<tr>
+<td><code>reason</code></td>
+<td>string</td>
+<td>when <code>ReviewRequired</code></td>
+<td>Why no feasible revision was saved, for the operator</td>
+</tr>
+</tbody>
+</table>
+<p>Example <a href="../examples/replan-review-required.json">review required</a>.
+An infeasible revision is not a failure: it is <code>Ok</code> with status <code>ReviewRequired</code>
+and a <code>reason</code>.</p>
+<p><strong>Failures:</strong> <code>Invalid</code>, <code>NotFound</code>, <code>Conflict</code> and <code>Unavailable</code>. C07 treats any
+<code>Conflict</code> as a stale plan; see <a href="#agreed-with-c07-59-20-nov-2026">Agreed with C07</a>.</p>
+<p>The idempotency key is what stops the C08 → C07 → C05 loop. The same key always
+returns the first outcome again. Because the key includes <code>basedOnPlanVersion</code>, C05
+also returns the saved result when that disruption version already produced a
+revision for that plan and run, even if a retry carries a newer <code>basedOnPlanVersion</code>.</p>
+<h4 id="run-the-dublin-replan">Run the Dublin replan<a class="headerlink" href="#run-the-dublin-replan" title="Permanent link">&para;</a></h4>
+<p>The C07 worker uses its existing <code>PlanningPort</code> in-process. Discovery starts
+from the current confirmed plans in the event's partition and reads progress
+through C04. The revision locks the plan, checks its base version and rereads
+the linked deliveries. It queries C06 for the latest conditions on the current
+route and the detour. A selected detour uses the delivery's current van and
+capacity requirements, the C09 policy evidence and the saved delivery window.
+After evaluating the route, C05 asks C06 to hold that snapshot version through
+commit. If city conditions changed meanwhile, C05 returns <code>Unavailable</code> so
+C07 can retry against current facts. A stale plan version returns <code>Conflict</code>
+for C07's one rediscovery attempt.
+Once C05 holds that version, it rechecks departure, road validity and the
+delivery deadline at decision time. If the detour no longer fits, it records
+<code>ReviewRequired</code> and keeps the current plan.
+The fixed route covers one unfinished Dublin delivery. An explicit open report
+for Abbey Street Lower must cover the full eight-minute trip. A reported delay
+or a speed too low for the 1,600 m detour requires operator review. C08 owns
+the vehicle and driver commitment.</p>
+<p>The revision, C10 decision with its evidence, request receipt and revised
+<code>PlanReady</code> commit together. The event's <code>causationId</code> is the triggering
+<code>CityStateUpdated.eventId</code>. C07 receives <code>PlanSaved</code> after commit. Replaying
+the same saved disruption version can recover that result without advancing
+the plan or publishing a third event. <code>NoChange</code> and <code>ReviewRequired</code> record
+the reason and retain the current plan.</p>
+<p>From <code>backend/</code>, point <code>TEST_DATABASE_URL</code> at a dedicated test database and
+<code>TEST_RABBITMQ_URL</code> at the test broker, then run:</p>
+<pre><code class="language-sh">uv run pytest -q tests/test_c05_replanning.py
+</code></pre>
+<p>The test confirms a generated delivery, injects the closure from the shared
+Dublin fixture, and follows the C06 outbox through RabbitMQ and the C07
+consumer to the revised C05 event. It uses a clock on the fixture's date and
+reads both saved routes through the C08 lookup.</p>
+<p>For a wall-clock run, start Compose and seed the shared C09 policy corpus.
+Run these commands at the repository root.</p>
+<pre><code class="language-sh">docker compose up -d --build
+docker compose exec -T api python -m app.components.c09_logistics_knowledge.demo_corpus
+</code></pre>
+<p><strong>From C01 and C04.</strong> Sign in to the <a href="../../../frontend/README.md#sign-in-to-resources">frontend</a>
+as an operator, choose the acting provider, open <strong>Deliveries</strong>, select <strong>Dublin
+simulation</strong> and submit the Dublin preset with a current delivery window. Click
+<strong>Review plan</strong>. The URL identifies the proposal (<code>planId</code>), simulation (<code>runId</code>)
+and original submission trace (<code>correlationId</code>). Use these three values below
+as <code>plan</code>, <code>run</code> and <code>trace</code> for confirmation and the closure.</p>
+<p>With a signed-in operator's <code>ULOP_TOKEN</code>, the checker can also submit through
+C04 over HTTP. Running <code>scripts/hello-world.sh --run-id &lt;run-uuid&gt;
+--correlation-id &lt;trace-uuid&gt;</code> without a plan ID starts one new delivery with
+a three-hour window starting in 30 minutes. It prints the Plans link and the
+arguments for resuming after confirmation. This first invocation leaves the
+road open for the operator and driver.</p>
+<p><strong>From the saved delivery example.</strong> For the local fixture walkthrough, generate
+a fresh example with the following commands in a POSIX shell.</p>
+<pre><code class="language-sh">run=$(python -c 'import json; print(json.load(open(&quot;fixtures/dublin-scenario.json&quot;))[&quot;runId&quot;])')
+trace=$(python -c 'from uuid import uuid4; print(uuid4())')
+proposal=$(docker compose exec -T api python -m app.demo.c05 --fresh --run-id &quot;$run&quot; --correlation-id &quot;$trace&quot; \
+  &lt; contracts/components/c04-delivery-management/examples/delivery-submitted.json)
+plan=$(printf '%s' &quot;$proposal&quot; | python -c 'import json, sys; print(json.load(sys.stdin)[&quot;planId&quot;])')
+</code></pre>
+<p>Each <code>--fresh</code> invocation creates a new pending delivery ID and generation
+key. Submission and progress timestamps use the current UTC time. The window
+opens 30 minutes later and keeps the example's original duration. The plan,
+its decision and its Plans link retain the supplied run and trace.</p>
+<p>C08 only allocates plans with a vehicle binding. Without one, it acknowledges
+<code>PlanReady</code> as <code>outside configured demo</code>. Bind a van and driver to the proposal
+<strong>before</strong> confirmation. The one-shot <code>demo-bind</code> service creates a local
+fixture provider, driver and C03 van once, then binds them through C08:</p>
+<pre><code class="language-sh">docker compose run --rm demo-bind &quot;$plan&quot; --run-id &quot;$run&quot;
+</code></pre>
+<p>The fixture driver can't sign in. To accept the offer in Plans, bind real C02
+users and a registered van with <code>app.demo.c08 --c05-plan</code> instead (see
+<a href="../../../backend/README.md#use-a-generated-c05-plan">backend/README.md</a>).
+Choose one way to confirm the new proposal.</p>
+<ul>
+<li><strong>C01 browser check.</strong> Select <strong>Confirm plan</strong> on the linked proposal.
+  For a saved example, open the printed <code>/plans?…</code> link after signing in and
+  selecting the operator's acting provider. The same plan should display v2.</li>
+<li><strong>Local Compose check without hosted sign-in.</strong> Run the one-shot demo
+  service with the plan, run and trace from generation.</li>
+</ul>
+<p><code>sh
+  docker compose run --rm demo-confirm "$plan" --run-id "$run" --correlation-id "$trace"</code></p>
+<p>The command calls C05 with a synthetic operator and prints the committed
+  v2 plan. A retry returns the original confirmation. The checker reports
+  hop 5 as <code>WIRED</code> and identifies the CLI fixture and the C08 broker receipt.
+  Use a fresh proposal and the browser path for the C01 HTTP acceptance check.</p>
+<p>For the C08 commitment check, have the driver accept the offer before
+injecting the closure.</p>
+<p>Run the following during the 30-minute lead time. The checker injects a
+fresh Eden Quay closure into the same run with the delivery's trace. C07
+can then find the unfinished route and request the v3 revision.</p>
+<pre><code class="language-sh">scripts/hello-world.sh --run-id &quot;$run&quot; --correlation-id &quot;$trace&quot; --plan-id &quot;$plan&quot;
+</code></pre>
+<p>PowerShell uses the same sequence. After starting Compose and loading the
+corpus, generate the proposal with these commands.</p>
+<pre><code class="language-powershell">$run = (Get-Content -Raw fixtures/dublin-scenario.json | ConvertFrom-Json).runId
+$trace = [guid]::NewGuid().ToString()
+$proposal = Get-Content -Raw contracts/components/c04-delivery-management/examples/delivery-submitted.json |
+  docker compose exec -T api python -m app.demo.c05 --fresh --run-id $run --correlation-id $trace
+$plan = ($proposal | ConvertFrom-Json).planId
+</code></pre>
+<p>Bind with <code>docker compose run --rm demo-bind $plan --run-id $run</code>, then
+confirm through Plans or run
+<code>docker compose run --rm demo-confirm $plan --run-id $run --correlation-id $trace</code>.
+Then run <code>python scripts/hello_world.py --run-id $run --correlation-id $trace --plan-id $plan</code>.</p>
+<p>The report follows the plan through the following records.</p>
+<table>
+<thead>
+<tr>
+<th>Hop</th>
+<th>Evidence for this delivery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3–4</td>
+<td>C04's <code>DeliverySubmitted</code> outbox record and retained API logs identify the original submission and the actual in-process handoff for this delivery and plan. The C05 generation receipt and C10 decision identify the saved proposal and its C09 evidence. The checker reports <code>PASS</code> for the complete handoff and <code>WIRED</code> for generation from a saved example.</td>
+</tr>
+<tr>
+<td>5</td>
+<td>The operator confirmation receipt, linked C04 delivery, confirmed version and published outbox envelope identify the first <code>PlanReady</code>. The checker looks back in the C08 worker logs for acknowledgement of that exact event.</td>
+</tr>
+<tr>
+<td>6</td>
+<td>C08's binding and latest allocation for this plan and run. The checker reports <code>PASS</code> only after the driver accepts. An allocated or offered van stays <code>WIRED</code>, and a missing binding says to run <code>demo-bind</code>.</td>
+</tr>
+<tr>
+<td>8</td>
+<td>C07 must record <code>PlanSaved</code> for this plan and its confirmed base version under the triggering closure. The C10 replan decision, revised plan and second outbox envelope identify the detour. C05 publisher and C08 worker logs must match the revised event in the same run and trace.</td>
+</tr>
+</tbody>
+</table>
+<p>To review the same delivery again, pass the C06 closure event ID from the
+first run. This mode reads the saved records and retained worker logs. A
+missing subscriber log leaves receipt unverified, even if PostgreSQL has a
+publication timestamp.</p>
+<pre><code class="language-sh">printf 'C06 closure event UUID: '
+read -r closure
+scripts/hello-world.sh --run-id &quot;$run&quot; --correlation-id &quot;$trace&quot; --plan-id &quot;$plan&quot; --closure-event-id &quot;$closure&quot;
+</code></pre>
+<p>The report distinguishes broker receipt from an accepted vehicle assignment.
+Checking the driver's commitment requires C08's allocation and offer records.
+The overall command exits with status 1 while any of the team's hops still
+has incomplete evidence.</p>
+<h2 id="required-interfaces">Required interfaces<a class="headerlink" href="#required-interfaces" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Operation</th>
+<th>Use by C05</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C02</td>
+<td><code>authorize(context, action, scope)</code></td>
+<td>Authorise generation, confirmation and reads within the permitted scope</td>
+</tr>
+<tr>
+<td>C03</td>
+<td><code>listEligibleResources(scope)</code></td>
+<td>Read resource capabilities, observed availability and quality</td>
+</tr>
+<tr>
+<td>C04</td>
+<td><code>getRequests(context, runScope, requestIds)</code></td>
+<td>Read requirements, versions and progress in the authorised run</td>
+</tr>
+<tr>
+<td>C04</td>
+<td><code>markRequestsPlanned(context, runScope, requestIds, planId, expectedVersions, key)</code></td>
+<td>Link deliveries when confirming a plan</td>
+</tr>
+<tr>
+<td>C06</td>
+<td><code>getCitySnapshot(scope, freshnessPolicy)</code></td>
+<td>Read versioned and quality-labelled city conditions; definition in <a href="../../c06-city-monitoring/internal/">C06</a></td>
+</tr>
+<tr>
+<td>C09</td>
+<td><code>queryKnowledge(context, policyQuery)</code></td>
+<td>Obtain applicable policy evidence and provenance</td>
+</tr>
+<tr>
+<td>C10</td>
+<td><code>recordDecision(conn, ctx, record)</code></td>
+<td>Save actual input versions, alternatives, reasons and exact evidence on the C05 transaction's connection</td>
+</tr>
+<tr>
+<td>C10</td>
+<td><code>recordOutcome(conn, ctx, outcome)</code></td>
+<td>Record the signed-in operator's confirmation outcome using the request context</td>
+</tr>
+</tbody>
+</table>
+<p>C02/C03/C04/C09/C10 provider definitions remain authoritative as their contracts
+are published. Required operations listed here do not define their fields.</p>
+<p>The <a href="../../c02-identity-access/internal/">C02 service identity contract</a> also
+specifies a backend-issued caller context for workers such as C07. C02 tracks
+worker identities as follow-up in <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/issues/56">#56</a>. The current
+C04 generation and C07 replan ports take the run and trace. Adding a trusted
+caller context to those ports and covering their protected service writes
+with C10 requires coordination with C02 and the calling components. C05's
+producer identity on an outgoing decision identifies the decision author.</p>
+<h2 id="planning-and-persistence-rules">Planning and persistence rules<a class="headerlink" href="#planning-and-persistence-rules" title="Permanent link">&para;</a></h2>
+<p>The C01 read and confirmation operations are in <code>openapi.yaml</code>. The API uses
+the shell's bearer token and provider context, enforces run access and returns
+<code>error { code, message, correlationId }</code> on these operations. Internal C07 calls
+use the typed <code>Result</code> contract.
+An initial proposal awaits operator confirmation. Confirmation checks its expected version, links its
+deliveries and queues <code>PlanReady</code> atomically with the confirmed state and decision
+references. A saved revision atomically records its expected-version update,
+C10-owned decision/evidence and <code>PlanReady</code> outbox entry.</p>
+<p>C10 evidence contains the exact passages and source/version/provenance used at
+decision time. Evidence is retained after the C09 corpus changes. An outbox
+publisher retries the saved event ID without rerunning planning. Failure to commit
+any authoritative state, evidence or outbox entry rolls back the operation.</p>
+<p>For UC07, <code>trigger.citySnapshotVersion</code> records the City State that triggered
+the request when C07 provides it. C05 reads current conditions in the same run
+and records the version it actually uses for the decision.</p>
+<p>The <code>requirements</code> list in the <code>PlanReady</code> payload describes all resource needs for
+unfinished deliveries in that plan version. C08 checks which existing
+commitments still satisfy those needs using the
+<a href="#read-a-confirmed-delivery-route-for-allocation">confirmed delivery route and departure</a>.</p>
+<p>For the <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950">C05 → C08 handoff</a>, the scoped lookup takes the event's
+<code>planId</code>, <code>planVersion</code> and run scope, plus the unfinished <code>deliveryId</code>.
+It returns the matching route and its <code>plannedDepartureAt</code> together from
+that confirmed version. The result identifies the scope, plan and version.
+<code>plannedDepartureAt</code> is an RFC 3339 timestamp with an explicit offset
+(<code>Z</code> or <code>±HH:MM</code>). For example, the Dublin v4 lookup returns the route via
+<code>seg:4471024</code>, its 480-second duration and <code>2026-11-20T08:14:00Z</code>.
+C08 uses this instant when checking the vehicle's local operating hours and
+rechecks the version before committing. A superseded version cannot advance
+the commitment. The Dublin fixture supplies the scenario start time for this
+demo lookup. C05 supplies the route's persisted departure in the integrated
+lookup.</p>
+<p>For mutating HTTP calls, a retry with the same caller, operation, run scope, key
+and request returns the first committed response. Reusing that key with a
+different request gives <code>Conflict</code>. Concurrent writes use expected-version checks.
+A lost response after commit is recovered by retrying the same request and key.</p>
+<h2 id="example-sequence">Example sequence<a class="headerlink" href="#example-sequence" title="Permanent link">&para;</a></h2>
+<p>The <a href="../examples/plan-proposal.json">proposal</a> at version 2 is confirmed with
+<a href="../examples/confirm-plan-request.json">expectedVersion 2</a>, giving the
+<a href="../examples/confirmed-plan.json">confirmed plan</a> at version 3. The earlier version
+1 is outside this excerpt. After C06 records snapshot 42, C07 requests a replan
+based on version 3. The <a href="../examples/replan-saved.json">saved outcome</a> refers to
+<a href="../examples/revised-plan.json">revision 4</a>, which avoids <code>seg:4471023</code>.
+Versions 3 and 4 have the same van capacity requirement. The
+<a href="../examples/plan-ready-revision-event.json">PlanReady event</a> carries that requirement
+with version 4 and its decision ID. It retains the closure correlation ID and
+simulation run ID and has its own event ID.
+These are contract examples. A fresh walking-skeleton delivery starts at v1,
+confirms at v2 and takes the detour at v3.</p>
+<h2 id="agreed-with-c07-59-20-nov-2026">Agreed with C07 (#59, 20 Nov 2026)<a class="headerlink" href="#agreed-with-c07-59-20-nov-2026" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Run scope.</strong> <code>ChangeScope</code> and <code>ReplanRequest</code> carry <code>scope</code> (<code>live</code> or
+   <code>simulation</code>) and <code>runId</code>, copied from the event that triggers the detection.
+   <code>runId</code> is required for <code>simulation</code> and must be absent for <code>live</code>, the same
+   rule as <code>EventEnvelope</code>. A simulation resolves only its run's plans, inputs and
+   receipts; an unspecified run is never treated as live.</li>
+<li><strong>Idempotency key.</strong> <code>planId:basedOnPlanVersion:disruptionId:disruptionVersion</code>.
+   The key does not include the run scope; C05 scopes its receipts by run.</li>
+<li><strong>Conflict.</strong> C07 treats any <code>Conflict</code> from <code>requestReplan</code> as a stale plan and
+   retries once; if C05 needs to report key reuse differently, it should use a
+   distinct failure. The retry is: call <code>findAffectedWork</code> once more (all the
+   disruption's <code>segmentKeys</code>, same <code>scope</code> and <code>runId</code>), then send one new
+   <code>requestReplan</code> with the <code>planVersion</code> C05 now reports, which gives a new key.
+   C07 does not retry if the plan is no longer affected, or if C05 reports the same
+   <code>planVersion</code> as before (the key would be identical). A second failure leaves
+   the replan not made. C05, for its part, returns the saved result when that
+   disruption version already produced a revision for that plan and run.</li>
+<li><strong>ReplanOutcome.</strong> It gains <code>reason</code> (text, optional), required when <code>status</code> is
+   <code>ReviewRequired</code>. <code>Infeasible</code> is no longer a failure. The remaining failures are
+   <code>Invalid</code>, <code>NotFound</code>, <code>Conflict</code> and <code>Unavailable</code>.</li>
+<li><strong>PlanSaved.</strong> C05 returns the committed revision's <code>newPlanVersion</code> and
+   <code>decisionId</code> after saving the revision and its <code>PlanReady</code> outbox entry
+   together. C05 owns the publication state. C07 owns recording the returned
+   version for the Disruptions view.</li>
+<li><strong>Port.</strong> <code>PlanningPort</code> returns a typed <code>Result</code> (<code>app.shared.result</code>: <code>Ok</code> or
+   <code>Failure</code>) from both calls, instead of raising exceptions.</li>
+<li><strong>Unavailable and retry.</strong> C07 marks the detection result as <code>retryable</code> only
+   when delivering the event again can change the outcome:</li>
+<li>If C05 answers <code>Unavailable</code> to <code>findAffectedWork</code>, C07 reports <code>unknown</code> and
+     does not mark the event as processed, so the event is not lost.</li>
+<li>If a <code>requestReplan</code> is not made because C05 answered <code>Unavailable</code>
+     (including the rediscovery after a <code>Conflict</code>), C07 keeps the disruption with
+     that plan as not requested and the result is <code>retryable</code>. When the event
+     arrives again, C07 sends only the plans still pending, with the same key, so
+     C05 deduplicates on it. A pending plan whose version has moved on still
+     follows the <code>Conflict</code> rule of point 3.</li>
+<li>Causes a redelivery would not change do not set <code>retryable</code>: <code>NotFound</code>, a
+     plan that is no longer affected, a repeated <code>Conflict</code> or one with the same
+     <code>planVersion</code>, and <code>Invalid</code>. Those plans stay not requested, so the event is
+     not retried forever.</li>
+</ol>
+<h2 id="open-coordination-points">Open coordination points<a class="headerlink" href="#open-coordination-points" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The integrated C04 handoff uses the authoritative delivery table introduced
+  in <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/123">#123</a>.
+  The confirmed delivery and its planning receipt are written through C04
+  on C05's transaction. The accepted proposal remains accessible from <strong>Review plan</strong>.</li>
+<li>The <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/114#issuecomment-7110207950">C08 version lookup agreed in #114</a>
+  is connected in <a href="https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/122">PR #122</a>.
+  That change depends on #119 and rechecks the version inside the allocation
+  transaction. On #119 alone, the C08 worker still uses its demo plan reader.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": [], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

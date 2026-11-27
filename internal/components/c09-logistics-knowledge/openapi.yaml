@@ -1,0 +1,1234 @@
+openapi: 3.1.0
+info:
+  title: C09 Logistics Knowledge API
+  version: 0.1.0
+  summary: Curated logistics policy corpus, retrieval and provenance (UC09).
+  description: |-
+    Draft v0.1 contract for C09, owned by Qingyuan + Bangchen (#13).
+
+    JSON is camelCase; timestamps are UTC ISO 8601 with `Z`; recurring rule times (`timeOfDay`) are Europe/Dublin local `HH:MM`. Unknown fields are rejected.
+
+    Shared C09/C10 types (prefix `C09C10`) are defined here and referenced by the C10 contract.
+
+    This file holds the HTTP operations used by the browser (C01). The in-process
+    `queryKnowledge` call from C05/C08 is described in `internal.md`.
+
+    HTTP calls carry a Supabase JWT (`Authorization: Bearer`), an optional `X-Correlation-Id` header and, for platform admins and users with several providers, `X-Acting-Provider` (C02); C09 derives the AuthContext from them through C02. `401` means not signed in, `422` means a malformed request or a missing/malformed `X-Acting-Provider`.
+  contact:
+    name: C09 Logistics Knowledge
+servers:
+- url: /
+  description: Relative URL for the deployed platform
+tags:
+- name: C09 Logistics Knowledge
+  description: C09 policy corpus and knowledge retrieval
+paths:
+  /api/v1/knowledge/query:
+    post:
+      operationId: queryKnowledge
+      summary: Query applicable policy evidence
+      description: |-
+        Read-only; no idempotency key. Returns passages of the active corpus that apply to the area, time window, vehicle class and activity, ranked by similarity to `freeText`, plus an EvidenceSnapshot that callers pass unchanged to C10 recordDecision. Same request on the same corpusVersion gives the same order.
+
+        **Hard rules are not ranked away.** Every applicable passage that carries constraints is always returned and checked for conflicts; `maxPassages` only limits the rule-free passages. `ruleCoverage` is `Complete` when all applicable hard rules are present; `Incomplete` (explained in `limitations`) means the planner must not rely on them: UC03 returns DataUnavailable and UC07 ReviewRequired without saving a revision.
+
+        **Rule scope.** A constraint applies to route legs and stops inside its `zoneIds`; when `segmentKeys` is non-empty, only on those C06 segments (`seg:<osm_way_id>`). C05 matches them against the segments of the route and stops, so a detour off those segments is not bound by the rule.
+
+        Callers time out after 5 s and treat that as Unavailable. Roles: Service:C05, Service:C08, and the C02 provider role `operator` (or platform `admin`).
+      tags:
+      - C09 Logistics Knowledge
+      security:
+      - C09BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C09PolicyQuery'
+            examples:
+              hgvDelivery:
+                $ref: '#/components/examples/C09QueryKnowledgeRequest'
+      responses:
+        '200':
+          description: Status Ok, LowConfidence, Conflict or NoApplicable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C09KnowledgeResult'
+              examples:
+                ok:
+                  $ref: '#/components/examples/C09QueryKnowledgeOkResponse'
+                lowConfidence:
+                  $ref: '#/components/examples/C09QueryKnowledgeLowConfidenceResponse'
+                conflict:
+                  $ref: '#/components/examples/C09QueryKnowledgeConflictResponse'
+        '400':
+          $ref: '#/components/responses/C09Invalid'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C09Forbidden'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
+        '503':
+          $ref: '#/components/responses/C09Unavailable'
+  /api/v1/knowledge/documents:
+    post:
+      operationId: publishKnowledge
+      summary: Publish a curated policy document
+      description: 'C02 provider role `curator` (or platform `admin`) only. Each Markdown heading with text becomes one passage
+        (`sectionId`). Publishing an existing `documentId` creates a new document version
+        and corpus version and supersedes the old one. The same idempotencyKey with the same
+        body returns the original result with `duplicate: true` (200); with a different body
+        it is a Conflict (`C09.IDEMPOTENCY_MISMATCH`). If indexing fails nothing changes and
+        the previous corpus stays searchable.'
+      tags:
+      - C09 Logistics Knowledge
+      security:
+      - C09BearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/C02ActingProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C09PublishKnowledgeRequest'
+            examples:
+              cordon:
+                $ref: '#/components/examples/C09PublishKnowledgeRequest'
+      responses:
+        '201':
+          description: New document version activated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C09KnowledgePublication'
+              examples:
+                activated:
+                  $ref: '#/components/examples/C09PublishKnowledgeResponse'
+        '200':
+          description: Duplicate request; the original publication is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C09KnowledgePublication'
+        '400':
+          $ref: '#/components/responses/C09Invalid'
+        '401':
+          $ref: '#/components/responses/C09C10Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C09Forbidden'
+        '409':
+          $ref: '#/components/responses/C09Conflict'
+        '422':
+          $ref: '#/components/responses/C09C10ValidationFailed'
+        '503':
+          $ref: '#/components/responses/C09Unavailable'
+components:
+  securitySchemes:
+    C09BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    C09Invalid:
+      description: The request is not valid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C09Forbidden:
+      description: The caller may not perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C09Conflict:
+      description: Idempotency key reuse, ambiguous selector or version conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C09Unavailable:
+      description: A dependency is temporarily unavailable; retry later.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+    C09C10Unauthenticated:
+      description: Token missing, invalid or expired (C02 `UNAUTHENTICATED`). Sign in again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+          examples:
+            unauthenticated:
+              $ref: '#/components/examples/C09C10ErrorUnauthenticated'
+    C09C10ValidationFailed:
+      description: |-
+        `VALIDATION_FAILED`: the body, path or query does not match the schema
+        (`fields` lists each problem), or `X-Acting-Provider` is required or malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C09C10ErrorBody'
+          examples:
+            invalidField:
+              $ref: '#/components/examples/C09C10ErrorValidationFailed'
+  schemas:
+    C09Applicability:
+      additionalProperties: false
+      properties:
+        zoneIds:
+          items:
+            type: string
+          type: array
+        vehicleClasses:
+          items:
+            $ref: '#/components/schemas/C09C10VehicleClass'
+          type: array
+        activities:
+          items:
+            $ref: '#/components/schemas/C09C10Activity'
+          type: array
+      required:
+      - zoneIds
+      - vehicleClasses
+      - activities
+      type: object
+    C09Area:
+      additionalProperties: false
+      properties:
+        zoneIds:
+          items:
+            type: string
+          minItems: 1
+          type: array
+      required:
+      - zoneIds
+      type: object
+    C09C10Activity:
+      enum:
+      - Pickup
+      - Delivery
+      - Transit
+      - Loading
+      type: string
+    C09C10ErrorBody:
+      description: |-
+        The team-wide error body from C02 (`{"error": {"code", "message", "correlation_id"}}`),
+        so C01 needs one error handler. The HTTP status gives the failure kind; `code`
+        is a C02 code (`UNAUTHENTICATED`, `FORBIDDEN`, `VALIDATION_FAILED`,
+        `IDENTITY_UNAVAILABLE`) or a specific C09/C10 reason (`C09.INDEX_UNAVAILABLE`).
+        `details` and `fields` are optional extra keys.
+      additionalProperties: false
+      properties:
+        error:
+          additionalProperties: false
+          properties:
+            code:
+              pattern: ^(C\d{2}\.)?[A-Z][A-Z_]*$
+              type: string
+            message:
+              type: string
+            correlation_id:
+              description: Same field name as C02 and C03.
+              format: uuid
+              type: string
+            details:
+              anyOf:
+              - additionalProperties: true
+                type: object
+              - type: 'null'
+              default: null
+            fields:
+              description: On `422 VALIDATION_FAILED`, one entry per invalid field.
+              items:
+                additionalProperties: false
+                properties:
+                  path:
+                    type: string
+                  message:
+                    type: string
+                  code:
+                    type: string
+                required:
+                - path
+                - message
+                - code
+                type: object
+              type: array
+          required:
+          - code
+          - message
+          - correlation_id
+          type: object
+      required:
+      - error
+      type: object
+    C09C10Outcome:
+      enum:
+      - Ok
+      - Invalid
+      - Forbidden
+      - NotFound
+      - Conflict
+      - Unavailable
+      - Infeasible
+      - Partial
+      - Unconfirmed
+      type: string
+    C09C10RunMode:
+      enum:
+      - Live
+      - Simulation
+      type: string
+    C09C10RunScope:
+      additionalProperties: false
+      properties:
+        mode:
+          $ref: '#/components/schemas/C09C10RunMode'
+        runId:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+      required:
+      - mode
+      - runId
+      type: object
+    C09C10TimeWindow:
+      additionalProperties: false
+      properties:
+        start:
+          format: date-time
+          type: string
+        end:
+          format: date-time
+          type: string
+      required:
+      - start
+      - end
+      type: object
+    C09C10VehicleClass:
+      description: Team-agreed vehicle types, shared with C04 (#68).
+      enum:
+      - van
+      - truck
+      - cargo_bike
+      type: string
+    C09Constraint:
+      additionalProperties: false
+      description: |-
+        A hard rule the planner applies (C05 #21 review, point 1).
+
+        Scope: the rule applies to a route leg or stop inside ``zoneIds``; when
+        ``segmentKeys`` is non-empty, only on those C06 segments (empty = the whole
+        zones). Fields required per kind: VehicleBan needs ``value`` null;
+        LoadingWindow needs ``timeOfDay`` and ``value`` null; MaxGrossWeight needs
+        ``value`` = ``{"maxKg": <positive number>}``.
+      properties:
+        constraintId:
+          type: string
+        kind:
+          $ref: '#/components/schemas/C09ConstraintKind'
+        zoneIds:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        segmentKeys:
+          items:
+            pattern: ^seg:[1-9][0-9]*$
+            type: string
+          type: array
+        vehicleClasses:
+          items:
+            $ref: '#/components/schemas/C09C10VehicleClass'
+          type: array
+        timeOfDay:
+          anyOf:
+          - $ref: '#/components/schemas/C09TimeOfDay'
+          - type: 'null'
+        daysOfWeek:
+          items:
+            $ref: '#/components/schemas/C09Weekday'
+          type: array
+        value:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+        exemption:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - constraintId
+      - kind
+      - zoneIds
+      - segmentKeys
+      - vehicleClasses
+      - timeOfDay
+      - daysOfWeek
+      - value
+      - exemption
+      type: object
+    C09ConstraintKind:
+      enum:
+      - VehicleBan
+      - LoadingWindow
+      - MaxGrossWeight
+      type: string
+    C09DocumentMetadata:
+      additionalProperties: false
+      properties:
+        documentId:
+          pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+          type: string
+        issuer:
+          type: string
+        applicability:
+          $ref: '#/components/schemas/C09Applicability'
+        validFrom:
+          format: date-time
+          type: string
+        validTo:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+        constraintsBySection:
+          anyOf:
+          - additionalProperties:
+              items:
+                $ref: '#/components/schemas/C09Constraint'
+              type: array
+            type: object
+          - type: 'null'
+          default: null
+      required:
+      - documentId
+      - issuer
+      - applicability
+      - validFrom
+      - validTo
+      type: object
+    C09EvidenceSnapshot:
+      additionalProperties: false
+      properties:
+        ruleCoverage:
+          $ref: '#/components/schemas/C09RuleCoverage'
+        conflicts:
+          items:
+            $ref: '#/components/schemas/C09KnowledgeConflict'
+          type: array
+        limitations:
+          items:
+            type: string
+          type: array
+        corpusVersion:
+          minimum: 1
+          type: integer
+        indexVersion:
+          type: string
+        embeddingModel:
+          type: string
+        retrievedAt:
+          format: date-time
+          type: string
+        snapshotId:
+          format: uuid
+          type: string
+        query:
+          $ref: '#/components/schemas/C09PolicyQuery'
+        retrievalStatus:
+          $ref: '#/components/schemas/C09RetrievalStatus'
+        items:
+          items:
+            $ref: '#/components/schemas/C09Passage'
+          type: array
+      required:
+      - ruleCoverage
+      - conflicts
+      - limitations
+      - corpusVersion
+      - indexVersion
+      - embeddingModel
+      - retrievedAt
+      - snapshotId
+      - query
+      - retrievalStatus
+      - items
+      type: object
+    C09KnowledgeConflict:
+      additionalProperties: false
+      properties:
+        conflictId:
+          format: uuid
+          type: string
+        passageIds:
+          items:
+            format: uuid
+            type: string
+          minItems: 2
+          type: array
+        reason:
+          type: string
+      required:
+      - conflictId
+      - passageIds
+      - reason
+      type: object
+    C09KnowledgeDocument:
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        format:
+          const: markdown
+          type: string
+        content:
+          minLength: 1
+          type: string
+      required:
+      - title
+      - format
+      - content
+      type: object
+    C09KnowledgePublication:
+      additionalProperties: false
+      properties:
+        documentId:
+          type: string
+        documentVersion:
+          minimum: 1
+          type: integer
+        corpusVersion:
+          minimum: 1
+          type: integer
+        indexVersion:
+          type: string
+        chunkCount:
+          minimum: 1
+          type: integer
+        activatedAt:
+          format: date-time
+          type: string
+        duplicate:
+          type: boolean
+      required:
+      - documentId
+      - documentVersion
+      - corpusVersion
+      - indexVersion
+      - chunkCount
+      - activatedAt
+      - duplicate
+      type: object
+    C09KnowledgeResult:
+      additionalProperties: false
+      properties:
+        ruleCoverage:
+          $ref: '#/components/schemas/C09RuleCoverage'
+        conflicts:
+          items:
+            $ref: '#/components/schemas/C09KnowledgeConflict'
+          type: array
+        limitations:
+          items:
+            type: string
+          type: array
+        corpusVersion:
+          minimum: 1
+          type: integer
+        indexVersion:
+          type: string
+        embeddingModel:
+          type: string
+        retrievedAt:
+          format: date-time
+          type: string
+        status:
+          $ref: '#/components/schemas/C09RetrievalStatus'
+        passages:
+          items:
+            $ref: '#/components/schemas/C09Passage'
+          type: array
+        evidenceSnapshot:
+          $ref: '#/components/schemas/C09EvidenceSnapshot'
+      required:
+      - ruleCoverage
+      - conflicts
+      - limitations
+      - corpusVersion
+      - indexVersion
+      - embeddingModel
+      - retrievedAt
+      - status
+      - passages
+      - evidenceSnapshot
+      type: object
+    C09Passage:
+      additionalProperties: false
+      properties:
+        passageId:
+          format: uuid
+          type: string
+        content:
+          minLength: 1
+          type: string
+        documentId:
+          type: string
+        documentTitle:
+          type: string
+        documentVersion:
+          minimum: 1
+          type: integer
+        sectionId:
+          type: string
+        validFrom:
+          format: date-time
+          type: string
+        validTo:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+        applicability:
+          $ref: '#/components/schemas/C09Applicability'
+        score:
+          maximum: 1
+          minimum: 0
+          type: number
+        constraints:
+          items:
+            $ref: '#/components/schemas/C09Constraint'
+          type: array
+      required:
+      - passageId
+      - content
+      - documentId
+      - documentTitle
+      - documentVersion
+      - sectionId
+      - validFrom
+      - validTo
+      - applicability
+      - score
+      - constraints
+      type: object
+    C09PolicyQuery:
+      additionalProperties: false
+      properties:
+        area:
+          $ref: '#/components/schemas/C09Area'
+        timeWindow:
+          $ref: '#/components/schemas/C09C10TimeWindow'
+        vehicleClass:
+          $ref: '#/components/schemas/C09C10VehicleClass'
+        activity:
+          $ref: '#/components/schemas/C09C10Activity'
+        freeText:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          default: null
+        maxPassages:
+          default: 5
+          maximum: 20
+          minimum: 1
+          type: integer
+      required:
+      - area
+      - timeWindow
+      - vehicleClass
+      - activity
+      type: object
+    C09PublishKnowledgeRequest:
+      additionalProperties: false
+      properties:
+        document:
+          $ref: '#/components/schemas/C09KnowledgeDocument'
+        metadata:
+          $ref: '#/components/schemas/C09DocumentMetadata'
+        idempotencyKey:
+          minLength: 1
+          type: string
+      required:
+      - document
+      - metadata
+      - idempotencyKey
+      type: object
+    C09RetrievalStatus:
+      enum:
+      - Ok
+      - LowConfidence
+      - Conflict
+      - NoApplicable
+      type: string
+    C09RuleCoverage:
+      description: |-
+        Whether every applicable hard rule (passage with constraints) is returned.
+
+        ``maxPassages`` never cuts a passage that carries constraints; it only limits
+        the rule-free passages. ``Incomplete`` means C09 could not return them all;
+        C05 must then not rely on the rules (UC03 DataUnavailable, UC07
+        ReviewRequired).
+      enum:
+      - Complete
+      - Incomplete
+      type: string
+    C09TimeOfDay:
+      additionalProperties: false
+      properties:
+        from:
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          type: string
+        to:
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          type: string
+      required:
+      - from
+      - to
+      type: object
+    C09Weekday:
+      enum:
+      - Mon
+      - Tue
+      - Wed
+      - Thu
+      - Fri
+      - Sat
+      - Sun
+      type: string
+  examples:
+    C09QueryKnowledgeRequest:
+      summary: Truck delivery into Dublin 2
+      value:
+        area:
+          zoneIds:
+          - dublin-D2
+        timeWindow:
+          start: '2026-11-20T07:30:00Z'
+          end: '2026-11-20T09:00:00Z'
+        vehicleClass: truck
+        activity: Delivery
+        freeText: city-centre delivery to a Grafton Street retailer
+        maxPassages: 5
+    C09QueryKnowledgeOkResponse:
+      summary: Applicable evidence found
+      value:
+        ruleCoverage: Complete
+        status: Ok
+        passages:
+        - passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+          content: Heavy goods vehicles with five or more axles are not permitted to enter
+            the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+          documentId: dcc-hgv-cordon
+          documentTitle: City Centre HGV Restrictions (demo data)
+          documentVersion: 3
+          sectionId: '4.2'
+          validFrom: '2026-01-01T00:00:00Z'
+          validTo: null
+          applicability:
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            vehicleClasses:
+            - truck
+            activities: []
+          score: 0.87
+          constraints:
+          - constraintId: dcc-hgv-cordon:v3:4.2:c1
+            kind: VehicleBan
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            segmentKeys: []
+            vehicleClasses:
+            - truck
+            timeOfDay:
+              from: 07:00
+              to: '19:00'
+            daysOfWeek: []
+            value: null
+            exemption: Valid HGV permit
+        - passageId: a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+          content: Loading and unloading on Grafton Street is permitted between 06:00 and
+            11:00 only.
+          documentId: dcc-loading-bays
+          documentTitle: City Centre Loading Bay Rules (demo data)
+          documentVersion: 1
+          sectionId: '2.1'
+          validFrom: '2026-03-01T00:00:00Z'
+          validTo: null
+          applicability:
+            zoneIds:
+            - dublin-D2
+            vehicleClasses: []
+            activities:
+            - Delivery
+            - Loading
+          score: 0.74
+          constraints:
+          - constraintId: dcc-loading-bays:v1:2.1:c1
+            kind: LoadingWindow
+            zoneIds:
+            - dublin-D2
+            segmentKeys:
+            - seg:5508812
+            vehicleClasses: []
+            timeOfDay:
+              from: 06:00
+              to: '11:00'
+            daysOfWeek: []
+            value: null
+            exemption: null
+        conflicts: []
+        limitations: []
+        corpusVersion: 7
+        indexVersion: idx-7
+        embeddingModel: embedding-model-tbd
+        retrievedAt: '2026-11-20T06:55:02Z'
+        evidenceSnapshot:
+          ruleCoverage: Complete
+          snapshotId: e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a05
+          query:
+            area:
+              zoneIds:
+              - dublin-D2
+            timeWindow:
+              start: '2026-11-20T07:30:00Z'
+              end: '2026-11-20T09:00:00Z'
+            vehicleClass: truck
+            activity: Delivery
+            freeText: city-centre delivery to a Grafton Street retailer
+            maxPassages: 5
+          retrievalStatus: Ok
+          items:
+          - passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+            content: Heavy goods vehicles with five or more axles are not permitted to enter
+              the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+            documentId: dcc-hgv-cordon
+            documentTitle: City Centre HGV Restrictions (demo data)
+            documentVersion: 3
+            sectionId: '4.2'
+            validFrom: '2026-01-01T00:00:00Z'
+            validTo: null
+            applicability:
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              vehicleClasses:
+              - truck
+              activities: []
+            score: 0.87
+            constraints:
+            - constraintId: dcc-hgv-cordon:v3:4.2:c1
+              kind: VehicleBan
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              segmentKeys: []
+              vehicleClasses:
+              - truck
+              timeOfDay:
+                from: 07:00
+                to: '19:00'
+              daysOfWeek: []
+              value: null
+              exemption: Valid HGV permit
+          - passageId: a3d94e70-2c1f-4b8e-8d55-6e0b7c4f2a02
+            content: Loading and unloading on Grafton Street is permitted between 06:00 and
+              11:00 only.
+            documentId: dcc-loading-bays
+            documentTitle: City Centre Loading Bay Rules (demo data)
+            documentVersion: 1
+            sectionId: '2.1'
+            validFrom: '2026-03-01T00:00:00Z'
+            validTo: null
+            applicability:
+              zoneIds:
+              - dublin-D2
+              vehicleClasses: []
+              activities:
+              - Delivery
+              - Loading
+            score: 0.74
+            constraints:
+            - constraintId: dcc-loading-bays:v1:2.1:c1
+              kind: LoadingWindow
+              zoneIds:
+              - dublin-D2
+              segmentKeys:
+              - seg:5508812
+              vehicleClasses: []
+              timeOfDay:
+                from: 06:00
+                to: '11:00'
+              daysOfWeek: []
+              value: null
+              exemption: null
+          conflicts: []
+          limitations: []
+          corpusVersion: 7
+          indexVersion: idx-7
+          embeddingModel: embedding-model-tbd
+          retrievedAt: '2026-11-20T06:55:02Z'
+    C09QueryKnowledgeLowConfidenceResponse:
+      summary: Best match below threshold
+      value:
+        ruleCoverage: Complete
+        status: LowConfidence
+        passages:
+        - passageId: 7e215c90-4d3b-4a6f-b0c8-91d2e3f4a503
+          content: Loading and unloading on Grafton Street is permitted between 06:00 and
+            11:00 only.
+          documentId: dcc-loading-bays
+          documentTitle: City Centre Loading Bay Rules (demo data)
+          documentVersion: 1
+          sectionId: '2.1'
+          validFrom: '2026-03-01T00:00:00Z'
+          validTo: null
+          applicability:
+            zoneIds:
+            - dublin-D2
+            vehicleClasses: []
+            activities:
+            - Delivery
+            - Loading
+          score: 0.41
+          constraints:
+          - constraintId: dcc-loading-bays:v1:2.1:c1
+            kind: LoadingWindow
+            zoneIds:
+            - dublin-D2
+            segmentKeys:
+            - seg:5508812
+            vehicleClasses: []
+            timeOfDay:
+              from: 06:00
+              to: '11:00'
+            daysOfWeek: []
+            value: null
+            exemption: null
+        conflicts: []
+        limitations:
+        - Top score 0.41 is below the confidence threshold 0.60.
+        corpusVersion: 7
+        indexVersion: idx-7
+        embeddingModel: embedding-model-tbd
+        retrievedAt: '2026-11-20T06:55:02Z'
+        evidenceSnapshot:
+          ruleCoverage: Complete
+          snapshotId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c06
+          query:
+            area:
+              zoneIds:
+              - dublin-D2
+            timeWindow:
+              start: '2026-11-20T07:30:00Z'
+              end: '2026-11-20T09:00:00Z'
+            vehicleClass: truck
+            activity: Delivery
+            freeText: city-centre delivery to a Grafton Street retailer
+            maxPassages: 5
+          retrievalStatus: LowConfidence
+          items:
+          - passageId: 7e215c90-4d3b-4a6f-b0c8-91d2e3f4a503
+            content: Loading and unloading on Grafton Street is permitted between 06:00 and
+              11:00 only.
+            documentId: dcc-loading-bays
+            documentTitle: City Centre Loading Bay Rules (demo data)
+            documentVersion: 1
+            sectionId: '2.1'
+            validFrom: '2026-03-01T00:00:00Z'
+            validTo: null
+            applicability:
+              zoneIds:
+              - dublin-D2
+              vehicleClasses: []
+              activities:
+              - Delivery
+              - Loading
+            score: 0.41
+            constraints:
+            - constraintId: dcc-loading-bays:v1:2.1:c1
+              kind: LoadingWindow
+              zoneIds:
+              - dublin-D2
+              segmentKeys:
+              - seg:5508812
+              vehicleClasses: []
+              timeOfDay:
+                from: 06:00
+                to: '11:00'
+              daysOfWeek: []
+              value: null
+              exemption: null
+          conflicts: []
+          limitations:
+          - Top score 0.41 is below the confidence threshold 0.60.
+          corpusVersion: 7
+          indexVersion: idx-7
+          embeddingModel: embedding-model-tbd
+          retrievedAt: '2026-11-20T06:55:02Z'
+    C09QueryKnowledgeConflictResponse:
+      summary: Two sources contradict
+      value:
+        ruleCoverage: Complete
+        status: Conflict
+        passages:
+        - passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+          content: Heavy goods vehicles with five or more axles are not permitted to enter
+            the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+          documentId: dcc-hgv-cordon
+          documentTitle: City Centre HGV Restrictions (demo data)
+          documentVersion: 3
+          sectionId: '4.2'
+          validFrom: '2026-01-01T00:00:00Z'
+          validTo: null
+          applicability:
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            vehicleClasses:
+            - truck
+            activities: []
+          score: 0.87
+          constraints:
+          - constraintId: dcc-hgv-cordon:v3:4.2:c1
+            kind: VehicleBan
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            segmentKeys: []
+            vehicleClasses:
+            - truck
+            timeOfDay:
+              from: 07:00
+              to: '19:00'
+            daysOfWeek: []
+            value: null
+            exemption: Valid HGV permit
+        - passageId: c84f0a12-6b7e-4d19-8a3c-2f5e6d7c8b04
+          content: Heavy goods vehicles with five or more axles may not enter the city-centre
+            cordon between 07:00 and 10:30.
+          documentId: dcc-hgv-cordon-amendment
+          documentTitle: City Centre HGV Restrictions - Amendment (demo data)
+          documentVersion: 1
+          sectionId: '1.1'
+          validFrom: '2026-01-01T00:00:00Z'
+          validTo: null
+          applicability:
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            vehicleClasses:
+            - truck
+            activities: []
+          score: 0.83
+          constraints:
+          - constraintId: dcc-hgv-cordon-amendment:v1:1.1:c1
+            kind: VehicleBan
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            segmentKeys: []
+            vehicleClasses:
+            - truck
+            timeOfDay:
+              from: 07:00
+              to: '10:30'
+            daysOfWeek: []
+            value: null
+            exemption: null
+        conflicts:
+        - conflictId: f0e1d2c3-b4a5-4968-8776-655443322110
+          passageIds:
+          - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+          - c84f0a12-6b7e-4d19-8a3c-2f5e6d7c8b04
+          reason: Both apply to truck in dublin-D2 on 2026-11-20 but the ban windows differ
+            (07:00-19:00 vs 07:00-10:30).
+        limitations:
+        - Conflicting sources; curator has been notified.
+        corpusVersion: 7
+        indexVersion: idx-7
+        embeddingModel: embedding-model-tbd
+        retrievedAt: '2026-11-20T06:55:02Z'
+        evidenceSnapshot:
+          ruleCoverage: Complete
+          snapshotId: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d07
+          query:
+            area:
+              zoneIds:
+              - dublin-D2
+            timeWindow:
+              start: '2026-11-20T07:30:00Z'
+              end: '2026-11-20T09:00:00Z'
+            vehicleClass: truck
+            activity: Delivery
+            freeText: city-centre delivery to a Grafton Street retailer
+            maxPassages: 5
+          retrievalStatus: Conflict
+          items:
+          - passageId: 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+            content: Heavy goods vehicles with five or more axles are not permitted to enter
+              the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+            documentId: dcc-hgv-cordon
+            documentTitle: City Centre HGV Restrictions (demo data)
+            documentVersion: 3
+            sectionId: '4.2'
+            validFrom: '2026-01-01T00:00:00Z'
+            validTo: null
+            applicability:
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              vehicleClasses:
+              - truck
+              activities: []
+            score: 0.87
+            constraints:
+            - constraintId: dcc-hgv-cordon:v3:4.2:c1
+              kind: VehicleBan
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              segmentKeys: []
+              vehicleClasses:
+              - truck
+              timeOfDay:
+                from: 07:00
+                to: '19:00'
+              daysOfWeek: []
+              value: null
+              exemption: Valid HGV permit
+          - passageId: c84f0a12-6b7e-4d19-8a3c-2f5e6d7c8b04
+            content: Heavy goods vehicles with five or more axles may not enter the city-centre
+              cordon between 07:00 and 10:30.
+            documentId: dcc-hgv-cordon-amendment
+            documentTitle: City Centre HGV Restrictions - Amendment (demo data)
+            documentVersion: 1
+            sectionId: '1.1'
+            validFrom: '2026-01-01T00:00:00Z'
+            validTo: null
+            applicability:
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              vehicleClasses:
+              - truck
+              activities: []
+            score: 0.83
+            constraints:
+            - constraintId: dcc-hgv-cordon-amendment:v1:1.1:c1
+              kind: VehicleBan
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              segmentKeys: []
+              vehicleClasses:
+              - truck
+              timeOfDay:
+                from: 07:00
+                to: '10:30'
+              daysOfWeek: []
+              value: null
+              exemption: null
+          conflicts:
+          - conflictId: f0e1d2c3-b4a5-4968-8776-655443322110
+            passageIds:
+            - 5b0c2f1e-8a4d-4c2b-9e61-3f7d2a9c1b01
+            - c84f0a12-6b7e-4d19-8a3c-2f5e6d7c8b04
+            reason: Both apply to truck in dublin-D2 on 2026-11-20 but the ban windows differ
+              (07:00-19:00 vs 07:00-10:30).
+          limitations:
+          - Conflicting sources; curator has been notified.
+          corpusVersion: 7
+          indexVersion: idx-7
+          embeddingModel: embedding-model-tbd
+          retrievedAt: '2026-11-20T06:55:02Z'
+    C09PublishKnowledgeRequest:
+      summary: Curator publishes a document
+      value:
+        document:
+          title: City Centre HGV Restrictions (demo data)
+          format: markdown
+          content: |-
+            # 4 HGV restrictions
+
+            ## 4.2 City-centre cordon
+
+            Heavy goods vehicles with five or more axles are not permitted to enter the city-centre cordon between 07:00 and 19:00 unless a valid permit is held.
+        metadata:
+          documentId: dcc-hgv-cordon
+          issuer: City authority (demo data)
+          applicability:
+            zoneIds:
+            - dublin-D1
+            - dublin-D2
+            vehicleClasses:
+            - truck
+            activities: []
+          validFrom: '2026-01-01T00:00:00Z'
+          validTo: null
+          constraintsBySection:
+            '4.2':
+            - constraintId: dcc-hgv-cordon:v3:4.2:c1
+              kind: VehicleBan
+              zoneIds:
+              - dublin-D1
+              - dublin-D2
+              segmentKeys: []
+              vehicleClasses:
+              - truck
+              timeOfDay:
+                from: 07:00
+                to: '19:00'
+              daysOfWeek: []
+              value: null
+              exemption: Valid HGV permit
+        idempotencyKey: publish:dcc-hgv-cordon:v3
+    C09PublishKnowledgeResponse:
+      summary: Document version activated
+      value:
+        documentId: dcc-hgv-cordon
+        documentVersion: 3
+        corpusVersion: 7
+        indexVersion: idx-7
+        chunkCount: 12
+        activatedAt: '2026-11-18T14:02:11Z'
+        duplicate: false
+    C09C10ErrorUnauthenticated:
+      summary: No valid token (C02 code)
+      value:
+        error:
+          code: UNAUTHENTICATED
+          message: Sign in to continue.
+          correlation_id: 6f1d2c3b-4a5e-4f60-8b7a-9c0d1e2f3a4b
+    C09C10ErrorValidationFailed:
+      summary: Request body fails schema validation (C02 code with fields)
+      value:
+        error:
+          code: VALIDATION_FAILED
+          message: Correct the highlighted fields.
+          correlation_id: 6f1d2c3b-4a5e-4f60-8b7a-9c0d1e2f3a4b
+          fields:
+          - path: body.timeWindow
+            message: 'Value error, timeWindow.end must be after start'
+            code: value_error
+    C09ErrorUnavailable:
+      summary: Vector index unreachable
+      value:
+        error:
+          code: C09.INDEX_UNAVAILABLE
+          message: Vector index is not reachable; retry later.
+          correlation_id: 4c0ffee0-1234-4abc-9def-001122334455
+          details:
+            retryAfterSec: 30

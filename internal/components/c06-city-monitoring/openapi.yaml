@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: C06 City Monitoring API
+  version: 1.1.0
+  summary: Read current and past City State for the map and other clients.
+  description: |
+    Synchronous HTTP contract for C06 City Monitoring (UC05).
+
+    C06 owns City State. Other backend components read it in-process through
+    `getCitySnapshot` (see `internal.md`); this API exposes the same read to C01
+    and other HTTP clients. Field names and values match the `SegmentCondition`
+    published in `CityStateUpdated` (`events.yaml`).
+
+    Simulation runs keep their own City State: pass `runId` to read a run, and
+    leave it out to read live state. A run's state is never mixed with live
+    state.
+  contact:
+    name: C06 City Monitoring
+servers:
+  - url: /
+    description: Relative URL for the deployed platform
+tags:
+  - name: C06 City Monitoring
+    description: C06 City State, road conditions and their quality
+paths:
+  /api/v1/city-state/snapshot:
+    get:
+      operationId: getCitySnapshot
+      summary: Get a City State snapshot
+      description: |
+        Returns the condition of the requested road segments at the current
+        City State version, or at an earlier version with `atVersion`.
+
+        Segments without a recorded condition are left out: an absent segment
+        is open with good quality. In a current snapshot, a value older than
+        `maxAgeSeconds` is returned with quality `degraded` and its sources
+        are listed in `staleSources`. Past versions are returned as recorded.
+
+        Area (bounding box) queries are not offered yet because segments have
+        no geometry in C06; query by segment keys.
+      tags: [C06 City Monitoring]
+      security:
+        - c06BearerAuth: []
+      parameters:
+        - name: segmentKeys
+          in: query
+          required: true
+          description: Comma-separated segment keys to read.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 200
+            items:
+              $ref: '#/components/schemas/C06SegmentKey'
+          example: [seg:4471023]
+        - name: maxAgeSeconds
+          in: query
+          required: false
+          description: Values older than this are returned as `degraded`.
+          schema:
+            type: integer
+            minimum: 1
+            default: 900
+        - name: atVersion
+          in: query
+          required: false
+          description: Read City State as it was at this version (C10, C12).
+          schema:
+            type: integer
+            minimum: 1
+        - name: runId
+          in: query
+          required: false
+          description: Simulation run to read. Leave out to read live City State.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: City State snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C06CitySnapshot'
+              example:
+                snapshotVersion: 42
+                generatedAt: '2026-11-20T08:14:35Z'
+                segments:
+                  - segmentKey: seg:4471023
+                    status: closed
+                    speedKmh: null
+                    delaySeconds: null
+                    cause: roadworks
+                    validUntil: '2026-11-20T18:00:00Z'
+                    observedAt: '2026-11-20T08:14:30Z'
+                    quality: good
+                    sources: [sim-traffic]
+                staleSources: []
+                overallQuality: good
+        '400':
+          $ref: '#/components/responses/C06Invalid'
+        '401':
+          $ref: '#/components/responses/C06Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C06Forbidden'
+        '404':
+          $ref: '#/components/responses/C06NotFound'
+        '503':
+          $ref: '#/components/responses/C06Unavailable'
+components:
+  securitySchemes:
+    c06BearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token issued through C02 Identity and Access.
+  responses:
+    C06Invalid:
+      description: Missing or malformed segment keys or parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C06ErrorResponse'
+    C06Unauthenticated:
+      description: Authentication missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C06ErrorResponse'
+    C06Forbidden:
+      description: The caller may not read this City State or simulation run.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C06ErrorResponse'
+    C06NotFound:
+      description: '`atVersion` is newer than the current City State version.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C06ErrorResponse'
+    C06Unavailable:
+      description: No City State recorded for this scope yet, or the store is down.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C06ErrorResponse'
+  schemas:
+    C06SegmentKey:
+      type: string
+      pattern: '^seg:[1-9][0-9]*$'
+      description: Road segment key `seg:<OpenStreetMap way ID>`.
+    C06Quality:
+      type: string
+      enum: [good, degraded, unknown]
+    C06SegmentCondition:
+      type: object
+      description: Condition of one road segment. Same shape as in `events.yaml`.
+      additionalProperties: false
+      required: [segmentKey, status, observedAt, quality, sources]
+      properties:
+        segmentKey:
+          $ref: '#/components/schemas/C06SegmentKey'
+        status:
+          type: string
+          enum: [open, slow, closed]
+        speedKmh:
+          type: [number, 'null']
+          minimum: 0
+          description: Current average speed in km/h. Null when closed or unknown.
+        delaySeconds:
+          type: [integer, 'null']
+          minimum: 0
+          description: Extra travel time in seconds compared with free flow.
+        cause:
+          type: [string, 'null']
+          enum: [traffic, roadworks, event, weather, incident, manual, null]
+        validUntil:
+          type: [string, 'null']
+          format: date-time
+          description: Expected end, for example a manual report's expiry.
+        observedAt:
+          type: string
+          format: date-time
+          description: Time of the latest observation used.
+        quality:
+          $ref: '#/components/schemas/C06Quality'
+        sources:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        conflict:
+          type: [boolean, 'null']
+          description: Not in the thin slice. True when sources disagree (UC05 AF3).
+    C06CitySnapshot:
+      type: object
+      additionalProperties: false
+      required: [snapshotVersion, generatedAt, segments, staleSources, overallQuality]
+      properties:
+        snapshotVersion:
+          type: integer
+          minimum: 1
+          description: City State version this snapshot shows.
+        generatedAt:
+          type: string
+          format: date-time
+          description: When the snapshot was assembled (UTC).
+        segments:
+          type: array
+          description: Requested segments that have a recorded condition.
+          items:
+            $ref: '#/components/schemas/C06SegmentCondition'
+        staleSources:
+          type: array
+          description: Sources whose values were older than `maxAgeSeconds`.
+          items:
+            type: string
+        overallQuality:
+          $ref: '#/components/schemas/C06Quality'
+    C06ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              enum: [Invalid, Forbidden, NotFound, Unavailable, UNAUTHENTICATED, IDENTITY_UNAVAILABLE]
+              description: |
+                The shared `Result` failure kind. Sign-in failures (`401`) and a
+                C02 outage (`503`) keep C02's codes, since C02 checks the token.
+            message:
+              type: string
+            correlation_id:
+              type: string
+              format: uuid
+              description: Same field name as C02 and C03, so C01 has one error handler.

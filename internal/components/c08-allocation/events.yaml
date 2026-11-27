@@ -1,0 +1,149 @@
+asyncapi: 3.0.0
+info:
+  title: C08 Allocation and Resource Agents Events
+  version: 1.0.0
+  description: |
+    C08 consumes saved plan versions from C05 and publishes operational failures
+    for C07. C05 owns the PlanReady message and payload.
+    C08 also observes C03 availability changes during UC04 vehicle assignment.
+defaultContentType: application/json
+channels:
+  allocationEvents:
+    address: ulop.events
+    description: Proposed topic exchange. Use the event type as the routing key.
+    messages:
+      planReady:
+        $ref: '../c05-planning/events.yaml#/components/messages/PlanReady'
+      resourceAvailabilityChanged:
+        $ref: '../c03-resource-management/events.yaml#/components/messages/ResourceAvailabilityChanged'
+      operationalDisruption:
+        $ref: '#/components/messages/OperationalDisruption'
+operations:
+  receivePlanReady:
+    action: receive
+    channel:
+      $ref: '#/channels/allocationEvents'
+    messages:
+      - $ref: '#/channels/allocationEvents/messages/planReady'
+  receiveResourceAvailabilityChanged:
+    action: receive
+    description: Check whether the affected resource is the selected vehicle in a pending UC04 assignment.
+    channel:
+      $ref: '#/channels/allocationEvents'
+    messages:
+      - $ref: '#/channels/allocationEvents/messages/resourceAvailabilityChanged'
+  sendOperationalDisruption:
+    action: send
+    channel:
+      $ref: '#/channels/allocationEvents'
+    messages:
+      - $ref: '#/channels/allocationEvents/messages/operationalDisruption'
+components:
+  messages:
+    OperationalDisruption:
+      name: OperationalDisruption
+      summary: C08 reports an execution failure and the actual committed state.
+      examples:
+        - name: operational-disruption-event
+          payload:
+            eventId: 7047b467-6f1c-481b-9d75-20a3f0b77b4e
+            eventType: OperationalDisruption
+            schemaVersion: 1
+            producer: C08
+            observedAt: '2026-11-20T08:15:00Z'
+            emittedAt: '2026-11-20T08:15:01Z'
+            correlationId: a7d9e2f4-3c1b-4b8a-9e6f-0d1c2b3a4f5e
+            affected:
+              planIds:
+                - 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+              resourceIds:
+                - 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+              segmentKeys: []
+            entityVersions:
+              9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c: 3
+            scope: live
+            payload:
+              failureId: f0e1d2c3-b4a5-4968-8776-655443322110
+              failureKind: resource_lost
+              planId: 9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c
+              planVersion: 3
+              deliveryIds:
+                - 7c6b5a49-3827-4165-a0f9-e8d7c6b5a493
+              resourceIds:
+                - 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+              committedState:
+                stillCommitted: []
+                released:
+                  - 2b3c4d5e-6f70-4819-9a0b-1c2d3e4f5a6b
+              decisionId: c004a177-1f83-42af-8ed6-feef1906c6a9
+              detail: Vehicle reported breakdown before pickup
+            causationId: 5b1e0c1a-8f0e-4a7e-9d6c-1f2a3b4c5d6e
+      payload:
+        allOf:
+          - $ref: '../c06-city-monitoring/events.yaml#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType:
+                const: OperationalDisruption
+              producer:
+                const: C08
+              schemaVersion:
+                const: 1
+              payload:
+                $ref: '#/components/schemas/OperationalDisruptionPayload'
+  schemas:
+    OperationalDisruptionPayload:
+      type: object
+      description: Python model `OperationalDisruptionPayload` in `backend/app/components/c08_allocation/events.py`.
+      additionalProperties: false
+      required: [failureId, failureKind, planId, planVersion, deliveryIds, resourceIds, committedState]
+      properties:
+        failureId:
+          type: string
+          format: uuid
+          description: C08's stored failed-outcome record. C07 deduplicates on it.
+        failureKind:
+          type: string
+          enum: [commit_conflict, capacity_exceeded, resource_lost, driver_unavailable, agent_timeout]
+        planId:
+          type: string
+          format: uuid
+          description: Plan whose execution failed.
+        planVersion:
+          type: integer
+          minimum: 1
+          description: Version C08 was executing.
+        deliveryIds:
+          type: array
+          description: Deliveries left without a valid commitment.
+          items:
+            type: string
+            format: uuid
+        resourceIds:
+          type: array
+          description: Resources involved in the failure.
+          items:
+            type: string
+            format: uuid
+        committedState:
+          type: object
+          additionalProperties: false
+          required: [stillCommitted, released]
+          properties:
+            stillCommitted:
+              type: array
+              items:
+                type: string
+                format: uuid
+            released:
+              type: array
+              items:
+                type: string
+                format: uuid
+        decisionId:
+          type: [string, 'null']
+          format: uuid
+          description: C10 record of the failed attempt.
+        detail:
+          type: [string, 'null']
+          description: Human-readable reason for logs and the UI.

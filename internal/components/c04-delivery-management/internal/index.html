@@ -1,0 +1,1838 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../../c02-identity-access/internal/">
+      
+      
+        <link rel="next" href="../../c05-planning/internal/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>C04 Delivery Management: internal interfaces - Intelligent Urban Platform — Internal Contracts</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#c04-delivery-management-internal-interfaces" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-header__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent Urban Platform — Internal Contracts
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              C04 Delivery Management: internal interfaces
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Intelligent Urban Platform — Internal Contracts" class="md-nav__button md-logo" aria-label="Intelligent Urban Platform — Internal Contracts" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent Urban Platform — Internal Contracts
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Components
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Components
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 identity access
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C02 identity access
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c02-identity-access/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C02 Identity and Access: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 delivery management
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C04 delivery management
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 Delivery Management: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C04 Delivery Management: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-parameters-authcontext-and-runscopeselector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared parameters: AuthContext and RunScopeSelector
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Shared parameters: AuthContext and RunScopeSelector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-scope-isolation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run-scope isolation rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getrequestscontext-runscope-requestids-resultdeliveryrequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        getRequests(context, runScope, requestIds) → Result\&lt;DeliveryRequest[]>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markrequestsplannedcontext-runscope-requestids-planid-expectedversions-key-resultreceipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markRequestsPlanned(context, runScope, requestIds, planId, expectedVersions, key) → Result\&lt;Receipt>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#updateprogresscontext-runscope-deliveryid-progress-key-resultdeliveryrequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        updateProgress(context, runScope, deliveryId, progress, key) → Result\&lt;DeliveryRequest>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Required interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#c10-outcome-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C10 outcome recording
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ownership-and-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ownership and ordering
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C05 planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c05-planning/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C05 Planning and Replanning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 city monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C06 city monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c06-city-monitoring/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C06 City Monitoring: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_5" id="__nav_2_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 disruption detection
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C07 disruption detection
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c07-disruption-detection/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C07 Disruption Detection: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 allocation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C08 allocation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c08-allocation/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C08 Allocation and Resource Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 logistics knowledge
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C09 logistics knowledge
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c09-logistics-knowledge/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C09 Logistics Knowledge: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 decision records
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C10 decision records
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c10-decision-records/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C10 Decision Records and Explanation: internal interfaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_9" id="__nav_2_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 kpi analytics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C11 kpi analytics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c11-kpi-analytics/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C11 KPI Analytics: internal interfaces (UC11)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_10" id="__nav_2_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 simulation replay
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C12 simulation replay
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../c12-simulation-replay/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C12 Simulation and Replay: internal interfaces (UC12)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-parameters-authcontext-and-runscopeselector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared parameters: AuthContext and RunScopeSelector
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Shared parameters: AuthContext and RunScopeSelector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-scope-isolation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run-scope isolation rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provided-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provided interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provided interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getrequestscontext-runscope-requestids-resultdeliveryrequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        getRequests(context, runScope, requestIds) → Result\&lt;DeliveryRequest[]>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markrequestsplannedcontext-runscope-requestids-planid-expectedversions-key-resultreceipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        markRequestsPlanned(context, runScope, requestIds, planId, expectedVersions, key) → Result\&lt;Receipt>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#updateprogresscontext-runscope-deliveryid-progress-key-resultdeliveryrequest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        updateProgress(context, runScope, deliveryId, progress, key) → Result\&lt;DeliveryRequest>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#required-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required interfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Required interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#c10-outcome-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C10 outcome recording
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ownership-and-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ownership and ordering
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="c04-delivery-management-internal-interfaces">C04 Delivery Management: internal interfaces<a class="headerlink" href="#c04-delivery-management-internal-interfaces" title="Permanent link">&para;</a></h1>
+<p>C04 validates and owns delivery requests, their constraints, and authoritative
+progress. A stored request is not a feasible plan, an allocation, or a dispatch
+instruction. HTTP operations are defined in <a href="../openapi.yaml">openapi.yaml</a>, and
+outbound messages are defined in <a href="../events.yaml">events.yaml</a>.</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<p>Use camelCase JSON, UUID v4 identifiers, positive integer versions, and UTC
+RFC 3339 timestamps. Mutating operations use an idempotency key and expected
+versions. State changes and their outbox entries commit atomically. Consumers
+deduplicate by event ID and reject stale delivery versions.</p>
+<h2 id="shared-parameters-authcontext-and-runscopeselector">Shared parameters: <code>AuthContext</code> and <code>RunScopeSelector</code><a class="headerlink" href="#shared-parameters-authcontext-and-runscopeselector" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><code>AuthContext</code></strong> is owned by C02 (see
+  <a href="../../c02-identity-access/internal/">C02 internal.md</a>). A caller-supplied
+  provider ID, delivery ID, or <code>runId</code> is a selector, never permission; C04
+  checks every call against <code>context</code>.</li>
+<li><strong><code>RunScopeSelector</code></strong> follows the shared <code>RunScope</code> contract in
+  <code>backend/app/shared/contracts.py</code> (<code>EventMetadata</code>) and
+  <a href="../../c12-simulation-replay/internal/">C12 internal.md</a>:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scope</code></td>
+<td>enum (<code>live</code>, <code>simulation</code>)</td>
+<td>yes</td>
+<td>Distinguishes live operations from an isolated simulation run</td>
+</tr>
+<tr>
+<td><code>runId</code></td>
+<td>UUID or null</td>
+<td>conditional</td>
+<td>Required UUID v4 when <code>scope</code> is <code>simulation</code>; must be <code>null</code>/absent when <code>scope</code> is <code>live</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="run-scope-isolation-rules">Run-scope isolation rules<a class="headerlink" href="#run-scope-isolation-rules" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Strict validation:</strong> Passing <code>scope: "live"</code> with a non-null <code>runId</code>, or
+   passing <code>scope: "simulation"</code> without a valid UUID v4 <code>runId</code>, fails
+   immediately with <code>Invalid</code> (<code>C04.INVALID_RUN_SCOPE</code>). An unspecified
+   simulation run is never silently treated as <code>live</code>.</li>
+<li><strong>Authorisation:</strong> C04 verifies with C02 that <code>context</code> is authorised for
+   the requested <code>runScope</code> (including the specific <code>runId</code> for simulation
+   calls). Unauthorised callers receive <code>Forbidden</code> without revealing whether
+   records exist.</li>
+<li><strong>Partitioned storage, idempotency, and versions:</strong> Every delivery request
+   is permanently bound to the <code>(scope, runId)</code> in which it was created.
+   Reads, mutations, expected-version checks, idempotency keys, and outbox
+   events are strictly partitioned by <code>(scope, runId)</code>. Emitted events carry
+   the same <code>scope</code> and <code>runId</code> in their <code>EventEnvelope</code>.</li>
+<li><strong>Cross-run and cross-scope rejection:</strong> If any <code>deliveryId</code> passed to
+   <code>getRequests</code>, <code>markRequestsPlanned</code>, or <code>updateProgress</code> belongs to a
+   different <code>runId</code> or to the opposite <code>scope</code> (<code>live</code> vs <code>simulation</code>), C04
+   rejects the entire call with <code>NotFound</code> (<code>C04.DELIVERY_NOT_FOUND</code>) and
+   commits <strong>no changes</strong> (no partial links, no progress updates, no outbox
+   entries). Returning <code>NotFound</code> avoids leaking whether an entity exists in
+   another run or in live state.</li>
+<li><strong>Isolated simulation writers vs. C12 replay:</strong> Isolated simulation
+   services (for example C05 planning or simulated status adapters running
+   inside a simulation run) may call <code>getRequests</code>, <code>markRequestsPlanned</code>, and
+   <code>updateProgress</code> with <code>scope: "simulation"</code> and their authorised <code>runId</code>.
+   <strong>C12 replay playback is strictly read-only</strong> over saved simulation
+   outcomes and C10 saved evidence; replay must never call
+   <code>markRequestsPlanned</code>, <code>updateProgress</code>, or any mutating C04 operation, and
+   must never read or change live requests.</li>
+</ol>
+<p>Examples: <a href="../examples/simulation-get-requests.json">simulation <code>getRequests</code></a> and
+<a href="../examples/simulation-cross-run-failure.json">cross-run failure</a>.</p>
+<h2 id="provided-interfaces">Provided interfaces<a class="headerlink" href="#provided-interfaces" title="Permanent link">&para;</a></h2>
+<h3 id="getrequestscontext-runscope-requestids-resultdeliveryrequest">getRequests(context, runScope, requestIds) → Result\&lt;DeliveryRequest[]&gt;<a class="headerlink" href="#getrequestscontext-runscope-requestids-resultdeliveryrequest" title="Permanent link">&para;</a></h3>
+<p>C05 reads the authoritative request facts before generating or revising a plan
+(including UC07 replanning). The response includes the current version and
+progress, but never a selected vehicle, route, allocation, or execution
+guarantee.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context</code></td>
+<td>AuthContext</td>
+<td>yes</td>
+<td>Caller identity, roles, provider scope, and correlation ID</td>
+</tr>
+<tr>
+<td><code>runScope</code></td>
+<td>RunScopeSelector</td>
+<td>yes</td>
+<td>Target <code>scope</code> (<code>live</code> or <code>simulation</code>) and conditional <code>runId</code></td>
+</tr>
+<tr>
+<td><code>requestIds</code></td>
+<td>array of UUID</td>
+<td>yes</td>
+<td>Delivery requests to read; must contain at least one ID</td>
+</tr>
+</tbody>
+</table>
+<p>Each returned <code>DeliveryRequest</code> contains the fields in the <code>C04Delivery</code>
+schema, including <code>deliveryId</code>, <code>version</code>, <code>pickup</code>, <code>destination</code>, <code>cargo</code>,
+<code>timeWindow</code>, <code>constraints</code> (<code>vehicleKinds</code>: <code>van</code>, <code>truck</code>, <code>cargo_bike</code>),
+<code>status</code>, and <code>progress</code>.</p>
+<p>For the simulation slice, C05 calls
+<code>app.components.c04_delivery_management.planning.get_requests</code> on its own
+transaction connection. The optional <code>linked_to_plan</code> selector checks that
+all IDs exist in the run, then returns the deliveries still linked to that
+plan. C04 holds shared row locks through the caller's transaction so progress
+or linkage cannot change between the revision check and commit.</p>
+<p><strong>Failures:</strong> <code>Invalid</code> (including <code>C04.INVALID_RUN_SCOPE</code>), <code>Forbidden</code>,
+<code>NotFound</code> (<code>C04.DELIVERY_NOT_FOUND</code> when any requested ID does not exist in
+the given <code>runScope</code>, including cross-run or live/simulation mismatches),
+<code>Unavailable</code>.</p>
+<h3 id="markrequestsplannedcontext-runscope-requestids-planid-expectedversions-key-resultreceipt">markRequestsPlanned(context, runScope, requestIds, planId, expectedVersions, key) → Result\&lt;Receipt&gt;<a class="headerlink" href="#markrequestsplannedcontext-runscope-requestids-planid-expectedversions-key-resultreceipt" title="Permanent link">&para;</a></h3>
+<p>C05 calls this operation in the same logical confirmation transaction as its
+plan state and <code>PlanReady</code> outbox entry. It links requests to a saved plan
+within the given <code>runScope</code>; it does not allocate resources or mark deliveries
+as in progress.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context</code></td>
+<td>AuthContext</td>
+<td>yes</td>
+<td>Authorised C05 service identity</td>
+</tr>
+<tr>
+<td><code>runScope</code></td>
+<td>RunScopeSelector</td>
+<td>yes</td>
+<td>Target <code>scope</code> (<code>live</code> or <code>simulation</code>) and conditional <code>runId</code></td>
+</tr>
+<tr>
+<td><code>requestIds</code></td>
+<td>array of UUID</td>
+<td>yes</td>
+<td>Requests included in the confirmed plan</td>
+</tr>
+<tr>
+<td><code>planId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>C05 plan that owns the link</td>
+</tr>
+<tr>
+<td><code>expectedVersions</code></td>
+<td>map UUID → integer</td>
+<td>yes</td>
+<td>Version checked for every request</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Idempotency key scoped to caller, operation, and <code>runScope</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response: Receipt</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>requestIds</code></td>
+<td>array of UUID</td>
+<td>yes</td>
+<td>Requests linked by this receipt</td>
+</tr>
+<tr>
+<td><code>planId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Confirmed plan reference</td>
+</tr>
+<tr>
+<td><code>versions</code></td>
+<td>map UUID → integer</td>
+<td>yes</td>
+<td>Versions after the link</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Failures:</strong> <code>Invalid</code> (<code>C04.INVALID_RUN_SCOPE</code> or malformed fields),
+<code>Forbidden</code>, <code>NotFound</code> (<code>C04.DELIVERY_NOT_FOUND</code> if any request is missing or
+belongs to another <code>runScope</code>; no partial links are committed), <code>Conflict</code>,
+<code>Unavailable</code>. <code>Conflict</code> means a request version or status changed; no partial
+links are committed. Retrying the same scoped key and request returns the
+first receipt.</p>
+<h3 id="updateprogresscontext-runscope-deliveryid-progress-key-resultdeliveryrequest">updateProgress(context, runScope, deliveryId, progress, key) → Result\&lt;DeliveryRequest&gt;<a class="headerlink" href="#updateprogresscontext-runscope-deliveryid-progress-key-resultdeliveryrequest" title="Permanent link">&para;</a></h3>
+<p>The authorised provider/status adapter (or isolated simulation status adapter)
+uses this operation to record actual progress within <code>runScope</code>. It emits
+<code>DeliveryProgressChanged</code> with the same <code>scope</code> and <code>runId</code>; it does not change
+planning or allocation state.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context</code></td>
+<td>AuthContext</td>
+<td>yes</td>
+<td>Authorised provider or simulation status adapter identity</td>
+</tr>
+<tr>
+<td><code>runScope</code></td>
+<td>RunScopeSelector</td>
+<td>yes</td>
+<td>Target <code>scope</code> (<code>live</code> or <code>simulation</code>) and conditional <code>runId</code></td>
+</tr>
+<tr>
+<td><code>deliveryId</code></td>
+<td>UUID</td>
+<td>yes</td>
+<td>Delivery whose progress changed</td>
+</tr>
+<tr>
+<td><code>progress</code></td>
+<td>C04Progress</td>
+<td>yes</td>
+<td>Authoritative progress status and business occurrence time (<code>updatedAt</code>)</td>
+</tr>
+<tr>
+<td><code>key</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Idempotency key scoped to caller, operation, and <code>runScope</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>progress.updatedAt</code> is the actual business occurrence time (UTC RFC 3339) when
+the progress transition happened (e.g., actual delivery time when
+<code>status == "delivered"</code>), not database commit time or event <code>emittedAt</code>.</p>
+<p><strong>Failures:</strong> <code>Invalid</code> (<code>C04.INVALID_RUN_SCOPE</code> or invalid transition),
+<code>Forbidden</code>, <code>NotFound</code> (<code>C04.DELIVERY_NOT_FOUND</code> if missing or in another
+<code>runScope</code>; no changes committed), <code>Conflict</code>, <code>Unavailable</code>.</p>
+<h2 id="required-interfaces">Required interfaces<a class="headerlink" href="#required-interfaces" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Operation</th>
+<th>Use by C04</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C02</td>
+<td><code>authorize(context, action, scope)</code></td>
+<td>Authorise submit, read, update, and provider progress operations (see <a href="../../c02-identity-access/internal/">C02 internal.md</a>)</td>
+</tr>
+<tr>
+<td>Mapping adapter</td>
+<td><code>validateLocations(pickup, destination)</code></td>
+<td>Confirm both locations before storing a request</td>
+</tr>
+<tr>
+<td>C10</td>
+<td><code>recordOutcome(conn, ctx, outcome) → Result&lt;AuditId&gt;</code></td>
+<td>Record the result of protected commands and progress changes (see <a href="../../c10-decision-records/internal/">C10 internal.md</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>The provider owns the definitions of these required operations; C04 does not
+copy their schemas here.</p>
+<h3 id="c10-outcome-recording">C10 outcome recording<a class="headerlink" href="#c10-outcome-recording" title="Permanent link">&para;</a></h3>
+<p>C04 invokes C10's <code>recordOutcome(conn, ctx, outcome) → Result&lt;AuditId&gt;</code>
+in-process following <a href="../../c10-decision-records/internal/">C10 internal.md</a>:</p>
+<ul>
+<li><strong>Transactional behaviour:</strong> For committed mutations, <code>recordOutcome</code> runs
+  inside C04's database transaction on the caller's <code>conn</code> and never commits on
+  its own (if C04 rolls back, the audit record rolls back too). Rejected
+  operations (<code>Invalid</code>, <code>Forbidden</code>, <code>NotFound</code>, <code>Conflict</code>, <code>Unavailable</code>)
+  are recorded in their own short transaction.</li>
+<li><strong>Context propagation:</strong> <code>principalId</code> and <code>correlationId</code> are taken from
+  <code>ctx</code> (<code>AuthContext</code>).</li>
+<li><strong>Operation naming:</strong> <code>outcome.operation</code> uses the <code>C04.&lt;operation&gt;</code> format.</li>
+<li><strong>Recorded C04 operations:</strong></li>
+<li><code>C04.submitDeliveryRequest</code> (HTTP <code>POST /api/v1/deliveries</code>)</li>
+<li><code>C04.updateDeliveryRequest</code> (HTTP <code>POST /api/v1/deliveries/{deliveryId}</code>)</li>
+<li><code>C04.markRequestsPlanned</code> (internal plan confirmation link from C05)</li>
+<li><code>C04.updateProgress</code> (internal progress update from provider/simulation adapter)</li>
+</ul>
+<h2 id="ownership-and-ordering">Ownership and ordering<a class="headerlink" href="#ownership-and-ordering" title="Permanent link">&para;</a></h2>
+<ul>
+<li>C04 owns request identity, locations, cargo, constraints, request status, and
+  progress. C05 owns plan state; C08 owns allocation and execution commitments.</li>
+<li><code>pending</code> requests may be edited. Once linked to a confirmed plan, request
+  facts are immutable through the update operation.</li>
+<li>A retry with the same caller, <code>runScope</code>, operation, key, and body returns
+  the original committed result. Reusing a key with a different body returns
+  <code>Conflict</code>.</li>
+<li>Events retain their <code>eventId</code> on transport retry. Consumers use
+  <code>entityVersions[deliveryId]</code> and <code>deliveryVersion</code> to ignore stale updates.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": [], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

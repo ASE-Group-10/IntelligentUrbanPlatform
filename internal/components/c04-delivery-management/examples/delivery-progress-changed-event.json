@@ -1,0 +1,64 @@
+{
+  "eventId": "9e8d7c6b-5a49-4b8c-9d0e-1f2a3b4c5d6e",
+  "eventType": "DeliveryProgressChanged",
+  "schemaVersion": 1,
+  "producer": "C04",
+  "observedAt": "2026-11-20T10:42:00Z",
+  "emittedAt": "2026-11-20T10:42:02Z",
+  "correlationId": "b8e0f3a5-4d2c-4c9b-8f7a-1e2d3c4b5a6f",
+  "causationId": null,
+  "affected": {
+    "planIds": [
+      "9e2c4b6a-1d3f-4e5a-8b7c-6d5e4f3a2b1c"
+    ],
+    "resourceIds": [],
+    "segmentKeys": []
+  },
+  "entityVersions": {
+    "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493": 3
+  },
+  "scope": "live",
+  "runId": null,
+  "payload": {
+    "deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493",
+    "deliveryVersion": 3,
+    "providerId": "11111111-1111-4111-8111-111111111111",
+    "status": "delivered",
+    "delivery": {
+      "deliveryId": "7c6b5a49-3827-4165-a0f9-e8d7c6b5a493",
+      "version": 3,
+      "status": "delivered",
+      "pickup": {
+        "address": "Dublin Port",
+        "latitude": 53.3478,
+        "longitude": -6.2297
+      },
+      "destination": {
+        "address": "Trinity College Dublin",
+        "latitude": 53.3438,
+        "longitude": -6.2546
+      },
+      "cargo": {
+        "description": "Office supplies",
+        "weightKg": 4.5,
+        "parcelCount": 2
+      },
+      "timeWindow": {
+        "start": "2026-11-20T09:00:00Z",
+        "end": "2026-11-20T12:00:00Z"
+      },
+      "constraints": {
+        "vehicleKinds": ["van", "cargo_bike"],
+        "fragile": false
+      },
+      "plannedAt": "2026-11-20T08:15:00Z",
+      "progress": {
+        "status": "delivered",
+        "updatedAt": "2026-11-20T10:42:00Z",
+        "note": "Signed at Trinity College Dublin loading bay"
+      },
+      "createdAt": "2026-11-19T22:00:00Z",
+      "updatedAt": "2026-11-20T10:42:02Z"
+    }
+  }
+}

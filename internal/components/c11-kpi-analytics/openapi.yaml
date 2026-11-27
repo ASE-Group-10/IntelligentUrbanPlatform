@@ -1,0 +1,943 @@
+openapi: 3.1.0
+info:
+  title: C11 KPI Analytics HTTP API
+  version: 1.0.0
+  summary: C01-facing kpi analytics contract proposal.
+  description: 'Proposal for Julian and Oscar review under #48; current runtime exposes read-only endpoints with definition unconfigured-v1 (no agreed formulas;
+    values remain unavailable). Bearer identity is resolved by C02. Client provider/run/resource IDs are requested
+    filters, not authorisation. Every operation enforces roles, provider scope and session ownership
+    server-side. Success responses contain the domain value directly; Failure kinds map to HTTP error
+    responses. All examples are synthetic. Errors/auth details and transport-only paging/idempotency
+    conventions require consumer approval. Cross-field shape conditions use standard JSON Schema if/then/else
+    validation. Numeric comparisons across fields/requests and lifecycle transitions still require
+    service validation.'
+  contact:
+    name: Jolin + Qingyuan
+servers:
+- url: /
+  description: Relative platform API URL
+tags:
+- name: C11 KPI Analytics
+  description: HTTP operations used by C01; internal/event operations stay separate.
+security:
+- c11BearerAuth: []
+paths:
+  /api/v1/analytics/kpis/query:
+    post:
+      operationId: c11QueryKPIs
+      tags:
+      - C11 KPI Analytics
+      summary: Query scoped KPIs
+      description: Read-only query using a structured scope body. POST avoids flattening period/provider/resource
+        scope into query parameters; it never changes plans, allocations or commitments. Check provider/area/resource
+        access and keep live/simulation separate. Unknown metricDefinitionVersion is Invalid, never
+        silently replaced. Partial/missing indicators return 200 with explicit null/coverage/reason.
+        On refresh failure retain original values/lastUpdated and return 200 stale + failure; with
+        no prior usable result return 503. Metric formulas, units, populations, rates and freshness
+        policies require producer/consumer agreement.
+      responses:
+        '200':
+          description: Current, partial or stale KPI set; inspect status and each indicator.
+          headers:
+            Cache-Control:
+              description: Do not share/cache authorised results.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C11KPISet'
+              examples:
+                partial:
+                  summary: Synthetic review example; not runtime evidence
+                  value:
+                    schemaVersion: 1
+                    scope:
+                      period:
+                        start: '2026-11-17T10:00:00Z'
+                        end: '2026-11-17T11:00:00Z'
+                      providerId: 22222222-2222-4222-8222-222222222222
+                      scope: simulation
+                      runId: 11111111-1111-4111-8111-111111111111
+                    metricDefinitionVersion: fixture-v1-not-approved
+                    indicators:
+                    - metricId: delivery-time
+                      value: 600
+                      unit: s
+                      status: available
+                      coverage:
+                        eligible: 1
+                        observed: 1
+                        excluded: 0
+                      lastUpdated: '2026-11-17T10:10:00Z'
+                      estimated: false
+                    - metricId: cost
+                      value: null
+                      unit: EUR
+                      status: unavailable
+                      coverage:
+                        eligible: 1
+                        observed: 0
+                        excluded: 0
+                      lastUpdated: null
+                      estimated: false
+                      reason: Cost rates not configured
+                    status: partial
+                    generatedAt: '2026-11-17T10:11:00Z'
+                stale:
+                  summary: Synthetic review example; not runtime evidence
+                  value:
+                    schemaVersion: 1
+                    scope:
+                      period:
+                        start: '2026-11-17T10:00:00Z'
+                        end: '2026-11-17T11:00:00Z'
+                      providerId: 22222222-2222-4222-8222-222222222222
+                      scope: simulation
+                      runId: 11111111-1111-4111-8111-111111111111
+                    metricDefinitionVersion: fixture-v1-not-approved
+                    indicators:
+                    - metricId: delivery-time
+                      value: 600
+                      unit: s
+                      status: available
+                      coverage:
+                        eligible: 1
+                        observed: 1
+                        excluded: 0
+                      lastUpdated: '2026-11-17T10:10:00Z'
+                      estimated: false
+                    - metricId: cost
+                      value: null
+                      unit: EUR
+                      status: unavailable
+                      coverage:
+                        eligible: 1
+                        observed: 0
+                        excluded: 0
+                      lastUpdated: null
+                      estimated: false
+                      reason: Cost rates not configured
+                    status: stale
+                    failure: Operational source unavailable; last successful values retained
+                    generatedAt: '2026-11-17T10:11:00Z'
+        '401':
+          $ref: '#/components/responses/C11Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C11Forbidden'
+        '422':
+          $ref: '#/components/responses/C11Invalid'
+        '503':
+          $ref: '#/components/responses/C11Unavailable'
+      security:
+      - c11BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C11KPIQuery'
+            examples:
+              synthetic:
+                summary: Synthetic review example; not runtime evidence
+                value:
+                  scope:
+                    period:
+                      start: '2026-11-17T10:00:00Z'
+                      end: '2026-11-17T11:00:00Z'
+                    providerId: 22222222-2222-4222-8222-222222222222
+                    scope: simulation
+                    runId: 11111111-1111-4111-8111-111111111111
+                  metricDefinitionVersion: fixture-v1-not-approved
+  /api/v1/analytics/kpis/{metricId}/breakdown:
+    post:
+      operationId: c11GetKPIBreakdown
+      tags:
+      - C11 KPI Analytics
+      summary: Read a KPI breakdown
+      description: Read-only drill-down using exactly the same authorised scope and metricDefinitionVersion
+        as the summary. limit and cursor are transport-only additions; they do not change KPIQuery.
+        The cursor is opaque, integrity-protected and bound to principal, metric and every filter/version.
+        A cursor cannot widen access; changed filters with an existing cursor are Invalid. nextCursor
+        null/absent means the final page. Detailed record fields are still proposals; expose only
+        scoped allowlisted information. No cross-provider records or operational writes. Each response
+        contains at most the requested limit records (default 20; hard cap 100) and at most 1000 unique
+        sourceEventIds for those records only. The server must enforce the request-relative record
+        limit. If complete provenance for a single aggregate cannot fit, return 422 Invalid asking
+        the caller to narrow the scope; never truncate IDs or return an oversized page. Continue other
+        bounded pages using nextCursor.
+      responses:
+        '200':
+          description: A bounded page of supporting records and source event IDs.
+          headers:
+            Cache-Control:
+              description: Do not share/cache authorised results.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/C11Breakdown'
+              examples:
+                synthetic:
+                  summary: Synthetic review example; not runtime evidence
+                  value:
+                    scope:
+                      period:
+                        start: '2026-11-17T10:00:00Z'
+                        end: '2026-11-17T11:00:00Z'
+                      providerId: 22222222-2222-4222-8222-222222222222
+                      scope: simulation
+                      runId: 11111111-1111-4111-8111-111111111111
+                    metricDefinitionVersion: fixture-v1-not-approved
+                    metricId: delivery-time
+                    records:
+                    - synthetic: true
+                      durationSeconds: 600
+                    sourceEventIds:
+                    - 44444444-4444-4444-8444-444444444444
+                    nextCursor: null
+        '401':
+          $ref: '#/components/responses/C11Unauthenticated'
+        '403':
+          $ref: '#/components/responses/C11Forbidden'
+        '404':
+          $ref: '#/components/responses/C11NotFound'
+        '422':
+          $ref: '#/components/responses/C11Invalid'
+        '503':
+          $ref: '#/components/responses/C11Unavailable'
+      security:
+      - c11BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/C11KPIQuery'
+            examples:
+              synthetic:
+                summary: Synthetic review example; not runtime evidence
+                value:
+                  scope:
+                    period:
+                      start: '2026-11-17T10:00:00Z'
+                      end: '2026-11-17T11:00:00Z'
+                    providerId: 22222222-2222-4222-8222-222222222222
+                    scope: simulation
+                    runId: 11111111-1111-4111-8111-111111111111
+                  metricDefinitionVersion: fixture-v1-not-approved
+      parameters:
+      - name: metricId
+        in: path
+        required: true
+        description: Metric key returned by queryKPIs; response metricId must match.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: limit
+        in: query
+        required: false
+        description: Maximum page size; the server may return fewer items.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: cursor
+        in: query
+        required: false
+        description: Opaque continuation cursor bound to the authenticated principal and unchanged
+          filters; never an access grant.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+components:
+  securitySchemes:
+    c11BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: C02-issued token
+      description: C02 verifies identity and supplies server-side roles/provider permissions. Never
+        accept roles or identity from a request body.
+  schemas:
+    C11AnalysisScope:
+      additionalProperties: false
+      description: Requested scope; C02 must authorise it, never trust client provider IDs.
+      properties:
+        period:
+          $ref: '#/components/schemas/C11TimeRange'
+        providerId:
+          format: uuid
+          title: Providerid
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        areaId:
+          anyOf:
+          - maxLength: 200
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Areaid
+        resourceIds:
+          items:
+            format: uuid
+            type: string
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          title: Resourceids
+          type: array
+        scope:
+          enum:
+          - live
+          - simulation
+          title: Scope
+          type: string
+        runId:
+          anyOf:
+          - format: uuid
+            type: string
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          - type: 'null'
+          default: null
+          title: Runid
+      required:
+      - period
+      - providerId
+      - scope
+      title: C11AnalysisScope
+      type: object
+      oneOf:
+      - type: object
+        properties:
+          period:
+            $ref: '#/components/schemas/C11TimeRange'
+          providerId:
+            format: uuid
+            title: Providerid
+            type: string
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          areaId:
+            anyOf:
+            - maxLength: 200
+              minLength: 1
+              type: string
+            - type: 'null'
+            default: null
+            title: Areaid
+          resourceIds:
+            items:
+              format: uuid
+              type: string
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+            title: Resourceids
+            type: array
+          scope:
+            const: simulation
+          runId:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        required:
+        - scope
+        - runId
+      - type: object
+        properties:
+          period:
+            $ref: '#/components/schemas/C11TimeRange'
+          providerId:
+            format: uuid
+            title: Providerid
+            type: string
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          areaId:
+            anyOf:
+            - maxLength: 200
+              minLength: 1
+              type: string
+            - type: 'null'
+            default: null
+            title: Areaid
+          resourceIds:
+            items:
+              format: uuid
+              type: string
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+            title: Resourceids
+            type: array
+          scope:
+            const: live
+          runId:
+            type: 'null'
+        required:
+        - scope
+      allOf:
+      - if:
+          properties:
+            period: {}
+            providerId: {}
+            areaId: {}
+            resourceIds: {}
+            scope:
+              const: simulation
+            runId: {}
+          required:
+          - scope
+        then:
+          required:
+          - runId
+          properties:
+            period: {}
+            providerId: {}
+            areaId: {}
+            resourceIds: {}
+            scope: {}
+            runId:
+              type: string
+              format: uuid
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        else:
+          properties:
+            period: {}
+            providerId: {}
+            areaId: {}
+            resourceIds: {}
+            scope: {}
+            runId:
+              type: 'null'
+    C11TimeRange:
+      additionalProperties: false
+      description: Half-open [start, end); server must check start < end. JSON Schema does not compare
+        these two field values.
+      properties:
+        start:
+          format: date-time
+          title: Start
+          type: string
+          pattern: Z$
+          description: UTC ISO 8601 timestamp with Z suffix.
+        end:
+          format: date-time
+          title: End
+          type: string
+          pattern: Z$
+          description: UTC ISO 8601 timestamp with Z suffix.
+      required:
+      - start
+      - end
+      title: C11TimeRange
+      type: object
+    C11KPIQuery:
+      additionalProperties: false
+      properties:
+        scope:
+          $ref: '#/components/schemas/C11AnalysisScope'
+        metricDefinitionVersion:
+          maxLength: 200
+          minLength: 1
+          title: Metricdefinitionversion
+          type: string
+      required:
+      - scope
+      - metricDefinitionVersion
+      title: C11KPIQuery
+      type: object
+      x-python-model: app.components.c11_kpi_analytics.contracts.KPIQuery
+    C11Coverage:
+      additionalProperties: false
+      description: Counts use the versioned population definition; server checks observed <= eligible,
+        and available requires observed == eligible.
+      properties:
+        eligible:
+          minimum: 0
+          title: Eligible
+          type: integer
+        observed:
+          minimum: 0
+          title: Observed
+          type: integer
+        excluded:
+          default: 0
+          minimum: 0
+          title: Excluded
+          type: integer
+      required:
+      - eligible
+      - observed
+      title: C11Coverage
+      type: object
+    C11Indicator:
+      additionalProperties: false
+      properties:
+        metricId:
+          maxLength: 200
+          minLength: 1
+          title: Metricid
+          type: string
+        value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Value
+        unit:
+          maxLength: 200
+          minLength: 1
+          title: Unit
+          type: string
+        status:
+          enum:
+          - available
+          - partial
+          - unavailable
+          title: Status
+          type: string
+        coverage:
+          $ref: '#/components/schemas/C11Coverage'
+        lastUpdated:
+          anyOf:
+          - format: date-time
+            type: string
+            pattern: Z$
+            description: UTC ISO 8601 timestamp with Z suffix.
+          - type: 'null'
+          title: Lastupdated
+        estimated:
+          title: Estimated
+          type: boolean
+        estimationBasis:
+          anyOf:
+          - maxLength: 200
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Estimationbasis
+        reason:
+          anyOf:
+          - maxLength: 200
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Reason
+      required:
+      - metricId
+      - value
+      - unit
+      - status
+      - coverage
+      - lastUpdated
+      - estimated
+      title: C11Indicator
+      type: object
+      allOf:
+      - if:
+          properties:
+            metricId: {}
+            value: {}
+            unit: {}
+            status:
+              const: unavailable
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis: {}
+            reason: {}
+          required:
+          - status
+        then:
+          required:
+          - reason
+          properties:
+            metricId: {}
+            value:
+              type: 'null'
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis: {}
+            reason:
+              type: string
+              minLength: 1
+              maxLength: 200
+        else:
+          properties:
+            metricId: {}
+            value:
+              type: number
+            unit: {}
+            status: {}
+            coverage:
+              properties:
+                eligible: {}
+                observed:
+                  minimum: 1
+                excluded: {}
+            lastUpdated:
+              type: string
+              format: date-time
+              pattern: Z$
+            estimated: {}
+            estimationBasis: {}
+            reason: {}
+      - if:
+          properties:
+            metricId: {}
+            value: {}
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
+            estimated:
+              const: true
+            estimationBasis: {}
+            reason: {}
+          required:
+          - estimated
+        then:
+          required:
+          - estimationBasis
+          properties:
+            metricId: {}
+            value: {}
+            unit: {}
+            status: {}
+            coverage: {}
+            lastUpdated: {}
+            estimated: {}
+            estimationBasis:
+              type: string
+              minLength: 1
+              maxLength: 200
+            reason: {}
+    C11TrendPoint:
+      additionalProperties: false
+      properties:
+        period:
+          $ref: '#/components/schemas/C11TimeRange'
+        indicator:
+          $ref: '#/components/schemas/C11Indicator'
+      required:
+      - period
+      - indicator
+      title: C11TrendPoint
+      type: object
+    C11KPISet:
+      additionalProperties: false
+      properties:
+        scope:
+          $ref: '#/components/schemas/C11AnalysisScope'
+        metricDefinitionVersion:
+          maxLength: 200
+          minLength: 1
+          title: Metricdefinitionversion
+          type: string
+        schemaVersion:
+          const: 1
+          default: 1
+          title: Schemaversion
+          type: integer
+        generatedAt:
+          format: date-time
+          title: Generatedat
+          type: string
+          pattern: Z$
+          description: UTC ISO 8601 timestamp with Z suffix.
+        status:
+          enum:
+          - current
+          - partial
+          - stale
+          title: Status
+          type: string
+        indicators:
+          items:
+            $ref: '#/components/schemas/C11Indicator'
+          minItems: 1
+          title: Indicators
+          type: array
+        trends:
+          items:
+            $ref: '#/components/schemas/C11TrendPoint'
+          title: Trends
+          type: array
+        failure:
+          anyOf:
+          - maxLength: 200
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Failure
+      required:
+      - scope
+      - metricDefinitionVersion
+      - generatedAt
+      - status
+      - indicators
+      title: C11KPISet
+      type: object
+      x-python-model: app.components.c11_kpi_analytics.contracts.KPISet
+      description: metricId is unique per set. Units and definition version remain consistent across
+        trend points. Missing values are null, never invented zero.
+      allOf:
+      - if:
+          properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status:
+              const: stale
+            indicators: {}
+            trends: {}
+            failure: {}
+          required:
+          - status
+        then:
+          required:
+          - failure
+          properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status: {}
+            indicators: {}
+            trends: {}
+            failure:
+              type: string
+              minLength: 1
+              maxLength: 200
+        else:
+          properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status: {}
+            indicators: {}
+            trends: {}
+            failure:
+              type: 'null'
+      - if:
+          properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status:
+              const: current
+            indicators: {}
+            trends: {}
+            failure: {}
+          required:
+          - status
+        then:
+          properties:
+            scope: {}
+            metricDefinitionVersion: {}
+            schemaVersion: {}
+            generatedAt: {}
+            status: {}
+            indicators:
+              items:
+                properties:
+                  metricId: {}
+                  value: {}
+                  unit: {}
+                  status:
+                    const: available
+                  coverage: {}
+                  lastUpdated: {}
+                  estimated: {}
+                  estimationBasis: {}
+                  reason: {}
+            trends: {}
+            failure: {}
+    C11Breakdown:
+      additionalProperties: false
+      properties:
+        scope:
+          $ref: '#/components/schemas/C11AnalysisScope'
+        metricDefinitionVersion:
+          maxLength: 200
+          minLength: 1
+          title: Metricdefinitionversion
+          type: string
+        metricId:
+          maxLength: 200
+          minLength: 1
+          title: Metricid
+          type: string
+        records:
+          items:
+            additionalProperties: true
+            type: object
+          title: Records
+          type: array
+          description: At most 100 page-local supporting records, and never more than the requested
+            limit (default 20). The HTTP service enforces the request-relative limit; a response schema
+            alone cannot compare it to a query parameter.
+          maxItems: 100
+        sourceEventIds:
+          items:
+            format: uuid
+            type: string
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+          title: Sourceeventids
+          type: array
+          maxItems: 1000
+          uniqueItems: true
+          description: Unique source event IDs referenced by this page's records only, never the full
+            metric population. Hard cap 1000 per page. Do not silently truncate provenance.
+        nextCursor:
+          anyOf:
+          - maxLength: 200
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Nextcursor
+      required:
+      - scope
+      - metricDefinitionVersion
+      - metricId
+      - records
+      - sourceEventIds
+      title: C11Breakdown
+      type: object
+      x-python-model: app.components.c11_kpi_analytics.contracts.Breakdown
+    C11ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - error
+      description: HTTP transport proposal; shared in-process Result<T> is not changed. Error details
+        must not expose another provider's records.
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+          - code
+          - message
+          - correlationId
+          properties:
+            code:
+              type: string
+              enum:
+              - Unauthenticated
+              - Forbidden
+              - NotFound
+              - Conflict
+              - Invalid
+              - Unavailable
+            message:
+              type: string
+              minLength: 1
+            correlationId:
+              type: string
+              format: uuid
+              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+  responses:
+    C11Unauthenticated:
+      description: Bearer credentials missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C11ErrorResponse'
+          examples:
+            synthetic:
+              summary: Synthetic review example; not runtime evidence
+              value:
+                error:
+                  code: Unauthenticated
+                  message: Bearer credentials missing or invalid.
+                  correlationId: 55555555-5555-4555-8555-555555555555
+      headers:
+        WWW-Authenticate:
+          description: Bearer authentication challenge.
+          schema:
+            type: string
+            example: Bearer
+    C11Forbidden:
+      description: Authenticated principal lacks the required role or requested provider/area/resource
+        scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C11ErrorResponse'
+          examples:
+            synthetic:
+              summary: Synthetic review example; not runtime evidence
+              value:
+                error:
+                  code: Forbidden
+                  message: Authenticated principal lacks the required role or requested provider/area/resource
+                    scope.
+                  correlationId: 55555555-5555-4555-8555-555555555555
+    C11NotFound:
+      description: Requested resource does not exist or is not visible to this principal.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C11ErrorResponse'
+          examples:
+            synthetic:
+              summary: Synthetic review example; not runtime evidence
+              value:
+                error:
+                  code: NotFound
+                  message: Requested resource does not exist or is not visible to this principal.
+                  correlationId: 55555555-5555-4555-8555-555555555555
+    C11Conflict:
+      description: Cursor/state conflict or an idempotency key reused for different input; no mutation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C11ErrorResponse'
+          examples:
+            synthetic:
+              summary: Synthetic review example; not runtime evidence
+              value:
+                error:
+                  code: Conflict
+                  message: Cursor/state conflict or an idempotency key reused for different input;
+                    no mutation.
+                  correlationId: 55555555-5555-4555-8555-555555555555
+    C11Invalid:
+      description: Invalid fields, range, definition version, filter or command.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C11ErrorResponse'
+          examples:
+            synthetic:
+              summary: Synthetic review example; not runtime evidence
+              value:
+                error:
+                  code: Invalid
+                  message: Invalid fields, range, definition version, filter or command.
+                  correlationId: 55555555-5555-4555-8555-555555555555
+    C11Unavailable:
+      description: Required storage/source/service unavailable and no usable domain response exists.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/C11ErrorResponse'
+          examples:
+            synthetic:
+              summary: Synthetic review example; not runtime evidence
+              value:
+                error:
+                  code: Unavailable
+                  message: Required storage/source/service unavailable and no usable domain response
+                    exists.
+                  correlationId: 55555555-5555-4555-8555-555555555555

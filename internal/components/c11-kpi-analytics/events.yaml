@@ -1,0 +1,69 @@
+asyncapi: 3.0.0
+info:
+  title: C11 KPI Analytics Events
+  version: 1.0.0
+  description: |
+    C04 receive worker is implemented in the current integration increment.
+    CityStateUpdated below remains a proposed input, not an implemented subscription.
+    Preserves the #15/#22 review gate while adopting the component layout (#35).
+    C06 owns CityStateUpdated; this consumer references that definition unchanged.
+    C05/C08 operational event consumption and C10 access contracts remain pending
+    producer/consumer agreement. No substitute message definitions are invented.
+    See internal.md for service boundaries, limitations and remaining agreements.
+    C11 publishes no event under this proposal.
+  contact:
+    name: C11 (Jolin + Qingyuan)
+defaultContentType: application/json
+servers:
+  rabbitmq:
+    host: localhost
+    protocol: amqp
+    description: Local broker; exchange, queue names and subscriptions still need agreement.
+channels:
+  deliveryInput:
+    address: ulop.events
+    description: >-
+      Queue c11.delivery-observations. Receives C04-owned version 1 delivery outcomes.
+      C11 binds authoritative C04 payload.providerId atomically; legacy unbound
+      observations stay private. C12 records only explicitly registered simulation
+      runs and matching providerId; captured coverage is
+      C04-only and is labelled incomplete. Playback has no broker input/output.
+    messages:
+      submitted:
+        $ref: '../c04-delivery-management/events.yaml#/components/messages/DeliverySubmitted'
+      updated:
+        $ref: '../c04-delivery-management/events.yaml#/components/messages/DeliveryUpdated'
+      progress:
+        $ref: '../c04-delivery-management/events.yaml#/components/messages/DeliveryProgressChanged'
+  cityStateInput:
+    address: ulop.events
+    description: |
+      Proposed topic exchange ulop.events, routing key CityStateUpdated, producer C06.
+      Queue name and binding are not agreed. This consumer may mark the relevant projection stale or update agreed congestion inputs.
+      The full producer-owned synthetic example is
+      ../c06-city-monitoring/examples/city-state-updated-event.json.
+    messages:
+      cityStateUpdated:
+        $ref: '../c06-city-monitoring/events.yaml#/components/messages/CityStateUpdated'
+operations:
+  receiveDeliveryOutcomes:
+    action: receive
+    channel:
+      $ref: '#/channels/deliveryInput'
+    title: Receive C04 delivery outcomes
+    messages:
+    - $ref: '#/channels/deliveryInput/messages/submitted'
+    - $ref: '#/channels/deliveryInput/messages/updated'
+    - $ref: '#/channels/deliveryInput/messages/progress'
+  receiveCityStateUpdated:
+    action: receive
+    channel:
+      $ref: '#/channels/cityStateInput'
+    title: Receive a producer-owned City State notification
+    summary: Proposed input; validate producer, schema version and run scope before use.
+    messages:
+      - $ref: '#/channels/cityStateInput/messages/cityStateUpdated'
+    description: |
+      Deduplicate eventId atomically with projection updates. Authorise provider,
+      area and run scope; live and simulation populations are always separate.
+      C06 notifications do not by themselves define a congestion metric/formula.

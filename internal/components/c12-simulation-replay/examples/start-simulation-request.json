@@ -1,0 +1,6 @@
+{
+  "scenarioId": "synthetic-dublin-two-deliveries",
+  "seed": 42,
+  "configurationVersion": "fixture-v1",
+  "idempotencyKey": "synthetic-dublin-run-1"
+}
