@@ -221,6 +221,46 @@ docker compose up -d rabbitmq
 TEST_RABBITMQ_URL=amqp://ulop:ulop@localhost:5672/%2F uv run pytest
 ```
 
+## C10 evidence in Supabase Storage
+
+Every time `recordDecision` stores a decision, C10 also uploads each of its
+`EvidenceSnapshot`s as an immutable JSON object to a private Supabase Storage
+bucket (#130). This covers C05's proposal (API) and replan (C07 worker) decisions.
+Objects use the C10 prefix `c10/evidence/<decisionId>/<snapshotId>.json`. Uploads
+never overwrite, and a retry finds the object already there. Postgres stays the
+source of truth: without the settings below nothing is uploaded, and a Storage
+failure is logged (`evidence upload failed`) without failing the decision.
+
+One-time setup in the shared Supabase project:
+
+1. **Storage → New bucket**: name `c10-evidence`, **private** (not public).
+2. **Project Settings → API Keys → Legacy API keys**: copy the `service_role`
+   key (a JWT starting with `eyJ`). The new `sb_secret_...` keys are not JWTs;
+   Storage rejects them in the `Authorization` header (403 "Invalid Compact JWS"),
+   so the client refuses them up front.
+
+Put both values in `backend/.env` only. The key bypasses Supabase's row-level
+security, so never commit it, paste it into chat or send it to the browser. In Azure,
+store it as a deployment secret.
+
+```sh
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_KEY=<legacy service_role key, eyJ...>
+C10_EVIDENCE_BUCKET=c10-evidence   # optional; this is the default
+```
+
+To check it end to end, run the walking skeleton (root README, "Walking-skeleton
+check") with `ULOP_TOKEN` set. Compose passes `backend/.env` to `api` and
+`c07-worker`, and they log one line per uploaded object:
+
+```sh
+docker compose logs api c07-worker | grep "evidence stored at"
+```
+
+The object then appears under **Storage → c10-evidence → c10/evidence/<decisionId>/**.
+Unit tests (`tests/test_c10_evidence_storage.py`) use a fake HTTP layer and never
+contact Supabase.
+
 ## C05 and C06 outbox publishers
 
 C05 publishes committed `PlanReady` events and C06 publishes `CityStateUpdated`

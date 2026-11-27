@@ -24,6 +24,11 @@ from app.components.c07_disruption_detection.postgres_store import (
     PostgresDisruptionStore,
 )
 from app.components.c07_disruption_detection.telemetry import C07Telemetry
+from app.components.c10_decision_records.evidence_storage import (
+    SupabaseEvidenceStorage,
+    from_settings,
+)
+from app.config import get_settings
 from app.shared.contracts import EventEnvelope
 from app.shared.events import DEFAULT_EXCHANGE, Disposition, EventConsumer, EventHandler
 from app.shared.logging import configure_logging, trace
@@ -90,11 +95,14 @@ def make_consumer(
 
 
 def make_detection(
-    conninfo: str, *, clock: Callable[[], datetime] | None = None
+    conninfo: str,
+    *,
+    clock: Callable[[], datetime] | None = None,
+    evidence: SupabaseEvidenceStorage | None = None,
 ) -> DisruptionDetection:
     now = clock or (lambda: datetime.now(UTC))
     return DisruptionDetection(
-        planning=make_replanning(conninfo, clock=now),
+        planning=make_replanning(conninfo, clock=now, evidence=evidence),
         store=PostgresDisruptionStore(conninfo),
         clock=now,
     )
@@ -102,7 +110,9 @@ def make_detection(
 
 def main() -> None:  # pragma: no cover - process entry point
     configure_logging("C07")
-    detection = make_detection(os.environ["DATABASE_URL"])
+    detection = make_detection(
+        os.environ["DATABASE_URL"], evidence=from_settings(get_settings())
+    )
     endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
     telemetry = C07Telemetry(endpoint) if endpoint else None
     try:

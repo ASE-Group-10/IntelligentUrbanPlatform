@@ -125,6 +125,10 @@ class Settings(HttpIngressSettings):
         Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"], host_required=True)]
         | None
     ) = None
+    # Server-only legacy service_role key (a JWT) for C10 evidence
+    # objects in Supabase Storage (#130). Unset means the storage path is off.
+    supabase_service_key: SecretStr | None = None
+    c10_evidence_bucket: str = "c10-evidence"
     mock_dependencies: bool = True
     availability_max_age_seconds: int = 86400
     # Simulation runs every signed-in user may read through C06 and C07 until C12

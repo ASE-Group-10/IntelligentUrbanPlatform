@@ -24,6 +24,9 @@ from app.components.c10_decision_records.contracts import (
     DecisionRecord,
     RecordDecisionResponse,
 )
+from app.components.c10_decision_records.evidence_storage import (
+    SupabaseEvidenceStorage,
+)
 from app.components.c10_decision_records.store import (
     Connection,
     DecisionStore,
@@ -103,10 +106,12 @@ class DecisionRecords:
         store: DecisionStore,
         clock: Callable[[], datetime],
         new_id: Callable[[], UUID] = uuid4,
+        evidence: SupabaseEvidenceStorage | None = None,
     ) -> None:
         self._store = store
         self._clock = clock
         self._new_id = new_id
+        self._evidence = evidence
 
     # ---- recordDecision (internal.md) ----
     def record_decision(
@@ -127,11 +132,29 @@ class DecisionRecords:
                 ", duplicate" if result.value.duplicate else "",
                 extra=trace,
             )
+            if not result.value.duplicate:
+                self._upload_evidence(record, trace)
         else:
             log.warning(
                 "recordDecision %s: %s", result.kind, result.message, extra=trace
             )
         return result
+
+    def _upload_evidence(self, record: DecisionRecord, trace: dict[str, str]) -> None:
+        """Copy each snapshot to Supabase Storage (#130). Postgres keeps the
+        record, so a Storage failure is logged and never fails the decision.
+        shortcut: uploads before the caller commits, so a rolled-back decision
+        leaves an orphan object; move to an outbox if that matters."""
+        if self._evidence is None:
+            return
+        for snapshot in record.evidence_snapshots:
+            data = snapshot.model_dump(mode="json", by_alias=True)
+            try:
+                key = self._evidence.put_snapshot(record.decision_id, data)
+            except StoreUnavailableError as exc:
+                log.warning("evidence upload failed: %s", exc, extra=trace)
+            else:
+                log.info("evidence stored at %s", key, extra=trace)
 
     def _record_decision(
         self, conn: Connection, ctx: AuthContext, record: DecisionRecord

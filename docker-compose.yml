@@ -161,6 +161,10 @@ services:
   c07-worker:
     <<: *backend
     command: ["python", "-m", "app.components.c07_disruption_detection.worker"]
+    # Replans record C10 evidence; SUPABASE_SERVICE_KEY there uploads it (#130).
+    env_file:
+      - path: backend/.env
+        required: false
     environment:
       <<: *backend-env
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
