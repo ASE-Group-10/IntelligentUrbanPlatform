@@ -37,11 +37,11 @@ from app.components.c10_decision_records.store import (
     StoredDecision,
     StoredOutcome,
     StoreUnavailableError,
+    recorded_in,
 )
 from app.shared.c09_c10_common import (
     AuthContext,
     PrincipalType,
-    RunMode,
     RunScope,
 )
 from app.shared.result import Failure, Ok, Result
@@ -128,17 +128,6 @@ def _may_read(ctx: AuthContext) -> bool:
         ctx.scope.provider_ids is not None or ctx.scope.zone_ids is not None
     )
     return not limited and not READ_ROLES.isdisjoint(ctx.roles)
-
-
-def _recorded_in(record: DecisionRecord, run_id: UUID | None) -> bool:
-    """Without ``run_id`` only live decisions match, so leaving it out cannot be
-    used to read a simulation run."""
-    if run_id is None:
-        return record.run_scope.mode is RunMode.LIVE
-    return (
-        record.run_scope.mode is RunMode.SIMULATION
-        and record.run_scope.run_id == run_id
-    )
 
 
 def _view(stored: StoredDecision) -> DecisionRecordView:
@@ -387,7 +376,7 @@ class DecisionRecords:
             stored = self._store.find_by_decision_id(conn, selector.decision_id)
         except StoreUnavailableError as exc:
             return Failure("Unavailable", f"{UNAVAILABLE}: {exc}")
-        if stored is None or not _recorded_in(stored.record, selector.run_id):
+        if stored is None or not recorded_in(stored.record, selector.run_id):
             return _not_found()
         return Ok(stored)
 
@@ -397,17 +386,9 @@ class DecisionRecords:
         if not _may_read(ctx):
             return _forbidden()
         try:
-            stored = self._store.find_by_subject(
-                conn, selector.subject_type, selector.subject_id
-            )
+            matches = self._store.find_by_subject(conn, selector)
         except StoreUnavailableError as exc:
             return Failure("Unavailable", f"{UNAVAILABLE}: {exc}")
-        matches = [
-            s
-            for s in stored
-            if _recorded_in(s.record, selector.run_id)
-            and selector.subject_version in (None, s.record.subject.version)
-        ]
         if not matches:
             return _not_found()
         if len(matches) > 1:

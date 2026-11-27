@@ -325,3 +325,67 @@ def test_stored_record_that_no_longer_validates_is_unavailable(service, conn):
     )
 
     _assert_failure(result, "Unavailable", "C10.UNAVAILABLE")
+
+
+def _store_unreadable(conn, record: DecisionRecord) -> None:
+    """Add ``record`` with content that breaks the contract (rows cannot be
+    updated, so it is inserted directly)."""
+    content = record.model_dump(mode="json", by_alias=True) | {"reasons": []}
+    conn.execute(
+        "insert into c10_decision_records.decisions"
+        " (decision_id, idempotency_key, request_hash, producer, decision_type,"
+        "  subject_type, subject_id, subject_version, attempt_outcome, run_mode,"
+        "  run_id, decided_at, recorded_at, record)"
+        " values (%s, %s, 'x', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            record.decision_id,
+            record.idempotency_key,
+            record.producer,
+            record.decision_type.value,
+            record.subject.type.value,
+            record.subject.id,
+            record.subject.version,
+            record.attempt_outcome.value,
+            record.run_scope.mode.value,
+            record.run_scope.run_id,
+            record.decided_at,
+            RECORDED_AT,
+            Jsonb(content),
+        ),
+    )
+
+
+@pytest.mark.parametrize("opened", ["postgres"], indirect=True)
+@pytest.mark.parametrize(
+    "elsewhere",
+    [
+        {"version": 1, "runScope": {"mode": "Simulation", "runId": str(OTHER_RUN)}},
+        {"version": 1, "runScope": SIMULATED},
+        {"version": 2, "runScope": LIVE},
+    ],
+    ids=["another run and version", "another version", "live"],
+)
+def test_unreadable_record_outside_the_selection_is_not_read(service, conn, elsewhere):
+    wanted = _another(version=2, runScope=SIMULATED)
+    _save(service, conn, wanted)
+    _store_unreadable(conn, _another(**elsewhere))
+
+    result = service.find_decision(
+        conn, OPERATOR, _by_subject(wanted, subject_version=2, run_id=RUN)
+    )
+
+    assert isinstance(result, Ok)
+    assert result.value.decision_id == wanted.decision_id
+
+
+@pytest.mark.parametrize("opened", ["postgres"], indirect=True)
+def test_unreadable_record_inside_the_selection_is_unavailable(service, conn):
+    wanted = _another(version=2, runScope=SIMULATED)
+    _save(service, conn, wanted)
+    _store_unreadable(conn, _another(version=2, runScope=SIMULATED))
+
+    result = service.find_decision(
+        conn, OPERATOR, _by_subject(wanted, subject_version=2, run_id=RUN)
+    )
+
+    _assert_failure(result, "Unavailable", "C10.UNAVAILABLE")
