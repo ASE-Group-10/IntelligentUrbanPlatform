@@ -328,9 +328,18 @@ key. Submission and progress timestamps use the current UTC time. The window
 opens 30 minutes later and keeps the example's original duration. The plan,
 its decision and its Plans link retain the supplied run and trace.
 
-When testing the C08 driver commitment with
-[PR #122](https://github.com/ASE-Group-10/IntelligentUrbanPlatform/pull/122),
-bind the vehicle and driver to the proposal **before** confirmation.
+C08 only allocates plans with a vehicle binding. Without one, it acknowledges
+`PlanReady` as `outside configured demo`. Bind a van and driver to the proposal
+**before** confirmation. The one-shot `demo-bind` service creates a local
+fixture provider, driver and C03 van once, then binds them through C08:
+
+```sh
+docker compose run --rm demo-bind "$plan" --run-id "$run"
+```
+
+The fixture driver can't sign in. To accept the offer in Plans, bind real C02
+users and a registered van with `app.demo.c08 --c05-plan` instead (see
+[backend/README.md](../../../backend/README.md#use-a-generated-c05-plan)).
 Choose one way to confirm the new proposal.
 
 - **C01 browser check.** Select **Confirm plan** on the linked proposal.
@@ -370,7 +379,8 @@ $proposal = Get-Content -Raw contracts/components/c04-delivery-management/exampl
 $plan = ($proposal | ConvertFrom-Json).planId
 ```
 
-Confirm through Plans or run
+Bind with `docker compose run --rm demo-bind $plan --run-id $run`, then
+confirm through Plans or run
 `docker compose run --rm demo-confirm $plan --run-id $run --correlation-id $trace`.
 Then run `python scripts/hello_world.py --run-id $run --correlation-id $trace --plan-id $plan`.
 
@@ -380,6 +390,7 @@ The report follows the plan through the following records.
 | --- | --- |
 | 3–4 | C04's `DeliverySubmitted` outbox record and retained API logs identify the original submission and the actual in-process handoff for this delivery and plan. The C05 generation receipt and C10 decision identify the saved proposal and its C09 evidence. The checker reports `PASS` for the complete handoff and `WIRED` for generation from a saved example. |
 | 5 | The operator confirmation receipt, linked C04 delivery, confirmed version and published outbox envelope identify the first `PlanReady`. The checker looks back in the C08 worker logs for acknowledgement of that exact event. |
+| 6 | C08's binding and latest allocation for this plan and run. The checker reports `PASS` only after the driver accepts. An allocated or offered van stays `WIRED`, and a missing binding says to run `demo-bind`. |
 | 8 | C07 must record `PlanSaved` for this plan and its confirmed base version under the triggering closure. The C10 replan decision, revised plan and second outbox envelope identify the detour. C05 publisher and C08 worker logs must match the revised event in the same run and trace. |
 
 To review the same delivery again, pass the C06 closure event ID from the

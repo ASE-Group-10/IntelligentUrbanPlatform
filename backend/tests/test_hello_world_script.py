@@ -203,10 +203,20 @@ def test_observed_event_must_match_the_saved_revision(monkeypatch):
     )
     monkeypatch.setattr(hello_world.time, "sleep", lambda _: None)
     monkeypatch.setattr(hello_world, "wait_for_log", lambda *args: {"eventId": FIRST})
-    hello_world.check_saved_plan(hops, {"planId": PLAN}, EVENT, OTHER_EVENT)
+    plan_ready = hello_world.check_saved_plan(
+        hops, {"planId": PLAN}, EVENT, OTHER_EVENT
+    )
     assert hops[5].status == "PASS"
     assert hops[8].status == "WIRED"
     assert "matched" in hops[8].notes[-1]
+    # The unmatched revision doesn't count, so hop 6 matches the confirmation.
+    assert plan_ready == (FIRST, 2)
+
+    monkeypatch.setattr(hello_world, "saved_plan_evidence", lambda *args: saved)
+    hops = {n: hello_world.Hop(n, "test") for n in (4, 5, 8)}
+    assert hello_world.check_saved_plan(
+        hops, {"planId": PLAN}, EVENT, REVISION_EVENT
+    ) == (REVISION_EVENT, 3)
 
 
 @pytest.mark.parametrize(
@@ -567,3 +577,59 @@ def test_signed_in_checker_submits_fresh_window_and_defers_closure(
         assert next(
             line for line in output.splitlines() if "C04 → C05 generatePlan" in line
         ).endswith(expected)
+
+
+RUN = "c3f1a2b4-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+REVISED = (REVISION_EVENT, 3)
+
+
+@pytest.mark.parametrize(
+    ("evidence", "expected", "words"),
+    [
+        ((True, "3", "accepted", REVISION_EVENT), "PASS", "driver accepted"),
+        ((True, "3", "allocated", REVISION_EVENT), "WIRED", "v3 (allocated)"),
+        ((True, "2", "offered", FIRST), "WIRED", "accept the driver offer"),
+        ((True, "3", "unresolved", REVISION_EVENT), "WIRED", "is unresolved"),
+        ((True, "", "", ""), "WIRED", "no allocation"),
+        ((False, "", "", ""), "WIRED", "Run demo-bind"),
+    ],
+)
+def test_hop6_passes_only_once_the_driver_accepts(evidence, expected, words):
+    status, note = hello_world.judge_hop6(*evidence, REVISED)
+    assert status == expected
+    assert words in note
+
+
+@pytest.mark.parametrize(
+    ("evidence", "plan_ready", "words"),
+    [
+        # An earlier run of the same plan accepted v2; this trace revised to v3.
+        ((True, "2", "accepted", OTHER_EVENT), REVISED, "does not match"),
+        # Same version, but C08 applied another trace's PlanReady.
+        ((True, "3", "accepted", OTHER_EVENT), REVISED, "does not match"),
+        # A stale acceptance without any verified PlanReady for this trace.
+        ((True, "2", "accepted", FIRST), None, "no PlanReady was verified"),
+    ],
+)
+def test_hop6_ignores_an_acceptance_from_another_trace(evidence, plan_ready, words):
+    status, note = hello_world.judge_hop6(*evidence, plan_ready)
+    assert status == "WIRED"
+    assert words in note
+
+
+def test_allocation_evidence_reads_one_psql_row(monkeypatch):
+    calls = []
+
+    def compose(*args, **kwargs):
+        calls.append(args)
+        return f"t|3|allocated|{REVISION_EVENT}\n"
+
+    monkeypatch.setattr(hello_world, "compose", compose)
+    assert hello_world.allocation_evidence(RUN, PLAN) == (
+        True,
+        "3",
+        "allocated",
+        REVISION_EVENT,
+    )
+    assert calls[0][:3] == ("exec", "-T", "db")
+    assert PLAN in calls[0][-1] and RUN in calls[0][-1]
